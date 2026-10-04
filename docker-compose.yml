@@ -1,0 +1,260 @@
+name: blackcloud
+
+# Мережі:
+#   edge     — Traefik <-> frontend/backend (доступ ззовні лише через Traefik)
+#   internal — БД, Redis, ClamAV, пошта (без виходу в інтернет)
+#   mailnet  — Postfix/Dovecot: публікують поштові порти та відправляють листи назовні
+networks:
+  edge:
+  internal:
+    internal: true
+    ipam:
+      config:
+        # фіксована підмережа: Postfix/Dovecot/Rspamd довіряють лише їй
+        - subnet: 172.30.0.0/24
+  mailnet:
+
+volumes:
+  postgres_data:
+  redis_data:
+  objects_data:
+  clamav_db:
+  mail_data:
+  mail_spool:
+  rspamd_data:
+  traefik_acme:
+  static_files:
+
+secrets:
+  django_secret_key:
+    file: ./secrets/django_secret_key
+  postgres_password:
+    file: ./secrets/postgres_password
+  mail_db_password:
+    file: ./secrets/mail_db_password
+  redis_password:
+    file: ./secrets/redis_password
+  file_master_keys:
+    file: ./secrets/file_master_keys
+  field_encryption_key:
+    file: ./secrets/field_encryption_key
+  dovecot_master_password:
+    file: ./secrets/dovecot_master_password
+
+x-backend-common: &backend-common
+  build:
+    context: ./backend
+  image: blackcloud/backend:latest
+  restart: unless-stopped
+  env_file: .env
+  environment:
+    POSTGRES_HOST: postgres
+    REDIS_HOST: redis
+    OBJECT_STORE: local
+    LOCAL_OBJECT_STORE_DIR: /data/objects
+    CLAMAV_HOST: clamav
+    IMAP_HOST: dovecot
+    SMTP_HOST: postfix
+  secrets:
+    - django_secret_key
+    - postgres_password
+    - redis_password
+    - file_master_keys
+    - field_encryption_key
+    - dovecot_master_password
+  read_only: true
+  tmpfs:
+    - /tmp:size=256m,mode=1777
+  # Зашифровані чанки файлів (на диску лише шифротекст AES-256-GCM)
+  volumes:
+    - objects_data:/data/objects
+  security_opt:
+    - no-new-privileges:true
+  cap_drop: [ALL]
+  depends_on:
+    postgres:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+
+services:
+  traefik:
+    image: traefik:v3.1
+    restart: unless-stopped
+    # Статична конфігурація — лише через CLI (Traefik не дозволяє змішувати джерела).
+    # Docker-сокет НЕ монтується: маршрути описані у file provider.
+    command:
+      - --global.checkNewVersion=false
+      - --global.sendAnonymousUsage=false
+      - --api.dashboard=false
+      - --log.level=INFO
+      - --accesslog=true
+      - --accesslog.fields.headers.defaultmode=drop
+      - --entrypoints.web.address=:80
+      - --entrypoints.web.http.redirections.entrypoint.to=websecure
+      - --entrypoints.web.http.redirections.entrypoint.scheme=https
+      - --entrypoints.websecure.address=:443
+      - --entrypoints.websecure.http.tls=true
+      - --entrypoints.websecure.transport.respondingTimeouts.readTimeout=300s
+      - --entrypoints.websecure.transport.respondingTimeouts.writeTimeout=300s
+      - --providers.file.directory=/etc/traefik/dynamic
+      - --providers.file.watch=true
+      - --certificatesresolvers.letsencrypt.acme.email=${ACME_EMAIL}
+      - --certificatesresolvers.letsencrypt.acme.storage=/acme/acme.json
+      - --certificatesresolvers.letsencrypt.acme.tlschallenge=true
+    environment:
+      DOMAIN: ${DOMAIN}
+      TLS_RESOLVER: ${TLS_RESOLVER-letsencrypt}
+      SNI_STRICT: ${SNI_STRICT:-true}
+      ADMIN_URL_PREFIX: ${ADMIN_URL_PREFIX:-bc-admin}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./traefik/dynamic:/etc/traefik/dynamic:ro
+      - traefik_acme:/acme
+    networks: [edge]
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+    cap_add: [NET_BIND_SERVICE]
+
+  frontend:
+    build:
+      context: ./frontend
+    image: blackcloud/frontend:latest
+    restart: unless-stopped
+    networks: [edge]
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+
+  backend:
+    <<: *backend-common
+    command: ["web"]
+    volumes:
+      - objects_data:/data/objects
+      - static_files:/app/staticfiles
+    networks: [edge, internal]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8000/api/health/')"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+
+  worker:
+    <<: *backend-common
+    command: ["worker"]
+    networks: [internal]
+
+  beat:
+    <<: *backend-common
+    command: ["beat"]
+    networks: [internal]
+
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: blackcloud
+      POSTGRES_USER: blackcloud
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+    secrets: [postgres_password, mail_db_password]
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./mailserver/postgres-init:/docker-entrypoint-initdb.d:ro
+    networks: [internal]
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U blackcloud -d blackcloud"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["sh", "-c", "exec redis-server --requirepass \"$$(cat /run/secrets/redis_password)\" --appendonly yes --protected-mode yes --rename-command FLUSHALL '' --rename-command CONFIG ''"]
+    secrets: [redis_password]
+    volumes:
+      - redis_data:/data
+    networks: [internal]
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$$(cat /run/secrets/redis_password)\" --no-auth-warning ping | grep PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+
+  clamav:
+    build:
+      context: ./mailserver/clamav
+    image: blackcloud/clamav:latest
+    restart: unless-stopped
+    volumes:
+      - clamav_db:/var/lib/clamav
+    # freshclam потребує доступу до інтернету для оновлення баз
+    networks: [internal, mailnet]
+    security_opt:
+      - no-new-privileges:true
+
+  postfix:
+    build:
+      context: ./mailserver/postfix
+    image: blackcloud/postfix:latest
+    restart: unless-stopped
+    environment:
+      MAIL_HOSTNAME: ${MAIL_HOSTNAME}
+      MAIL_DOMAIN: ${MAIL_DOMAIN}
+    secrets: [mail_db_password]
+    ports:
+      - "25:25"
+      - "465:465"
+      - "587:587"
+    volumes:
+      - ./certs:/certs:ro
+      - mail_spool:/var/spool/postfix
+    networks: [internal, mailnet]
+    depends_on: [postgres, dovecot, rspamd]
+    security_opt:
+      - no-new-privileges:true
+
+  dovecot:
+    build:
+      context: ./mailserver/dovecot
+    image: blackcloud/dovecot:latest
+    restart: unless-stopped
+    environment:
+      MAIL_HOSTNAME: ${MAIL_HOSTNAME}
+    secrets: [mail_db_password, dovecot_master_password]
+    ports:
+      - "993:993"
+    volumes:
+      - mail_data:/var/mail/vhosts
+      - ./certs:/certs:ro
+    networks: [internal, mailnet]
+    depends_on: [postgres]
+    security_opt:
+      - no-new-privileges:true
+
+  rspamd:
+    build:
+      context: ./mailserver/rspamd
+    image: blackcloud/rspamd:latest
+    restart: unless-stopped
+    environment:
+      MAIL_DOMAIN: ${MAIL_DOMAIN}
+    secrets: [redis_password]
+    volumes:
+      - rspamd_data:/var/lib/rspamd
+    networks: [internal, mailnet]
+    depends_on: [redis, clamav]
+    security_opt:
+      - no-new-privileges:true

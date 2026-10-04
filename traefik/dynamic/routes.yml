@@ -1,0 +1,146 @@
+{{ $domain := env "DOMAIN" }}
+{{ $resolver := env "TLS_RESOLVER" }}
+http:
+  routers:
+    api:
+      rule: 'Host(`{{ $domain }}`) && (PathPrefix(`/api`) || PathPrefix(`/ws`) || PathPrefix(`/django-static`) || PathPrefix(`/{{ env "ADMIN_URL_PREFIX" | default "bc-admin" }}`))'
+      entryPoints: [websecure]
+      service: backend
+      middlewares: [security-headers, api-csp]
+      priority: 100
+      tls:
+        {{ if $resolver }}certResolver: {{ $resolver }}{{ end }}
+        domains:
+          - main: '{{ $domain }}'
+
+    auth:
+      rule: 'Host(`{{ $domain }}`) && PathPrefix(`/api/auth`)'
+      entryPoints: [websecure]
+      service: backend
+      middlewares: [security-headers, api-csp, auth-ratelimit]
+      priority: 200
+      tls:
+        {{ if $resolver }}certResolver: {{ $resolver }}{{ end }}
+
+    public-links:
+      rule: 'Host(`{{ $domain }}`) && PathPrefix(`/api/public`)'
+      entryPoints: [websecure]
+      service: backend
+      middlewares: [security-headers, api-csp, public-ratelimit]
+      priority: 150
+      tls:
+        {{ if $resolver }}certResolver: {{ $resolver }}{{ end }}
+
+    # HTML листів рендериться в sandbox-iframe того ж origin; CSP задає сам Django
+    mail-render:
+      rule: 'Host(`{{ $domain }}`) && PathPrefix(`/api/mail/render`)'
+      entryPoints: [websecure]
+      service: backend
+      middlewares: [security-headers-framable]
+      priority: 300
+      tls:
+        {{ if $resolver }}certResolver: {{ $resolver }}{{ end }}
+
+    # Завантаження файлів: CSP і X-Frame-Options задає Django (inline-перегляд у iframe)
+    file-download:
+      rule: 'Host(`{{ $domain }}`) && PathRegexp(`^/api/files/items/[0-9a-f-]+/download/$`)'
+      entryPoints: [websecure]
+      service: backend
+      middlewares: [security-headers-framable]
+      priority: 300
+      tls:
+        {{ if $resolver }}certResolver: {{ $resolver }}{{ end }}
+
+    frontend:
+      rule: 'Host(`{{ $domain }}`)'
+      entryPoints: [websecure]
+      service: frontend
+      middlewares: [security-headers, spa-csp]
+      priority: 1
+      tls:
+        {{ if $resolver }}certResolver: {{ $resolver }}{{ end }}
+
+  services:
+    backend:
+      loadBalancer:
+        servers:
+          - url: http://backend:8000
+        healthCheck:
+          path: /api/health/
+          interval: 30s
+    frontend:
+      loadBalancer:
+        servers:
+          - url: http://frontend:8080
+
+  middlewares:
+    security-headers:
+      headers:
+        stsSeconds: 63072000
+        stsIncludeSubdomains: true
+        stsPreload: true
+        forceSTSHeader: true
+        frameDeny: true
+        contentTypeNosniff: true
+        referrerPolicy: same-origin
+        permissionsPolicy: 'camera=(), microphone=(), geolocation=(), payment=(), usb=(), interest-cohort=()'
+        customResponseHeaders:
+          Cross-Origin-Opener-Policy: same-origin
+          Cross-Origin-Resource-Policy: same-origin
+          X-Permitted-Cross-Domain-Policies: none
+          Server: ''
+          X-Powered-By: ''
+
+    security-headers-framable:
+      headers:
+        stsSeconds: 63072000
+        stsIncludeSubdomains: true
+        forceSTSHeader: true
+        contentTypeNosniff: true
+        referrerPolicy: no-referrer
+        customFrameOptionsValue: SAMEORIGIN
+
+    spa-csp:
+      headers:
+        contentSecurityPolicy: >-
+          default-src 'self';
+          script-src 'self';
+          style-src 'self';
+          img-src 'self' data: blob:;
+          font-src 'self';
+          connect-src 'self' wss://{{ $domain }};
+          frame-src 'self' blob:;
+          object-src 'none';
+          base-uri 'none';
+          form-action 'self';
+          frame-ancestors 'none';
+          upgrade-insecure-requests
+
+    api-csp:
+      headers:
+        contentSecurityPolicy: "default-src 'none'; frame-ancestors 'none'; sandbox"
+
+    auth-ratelimit:
+      rateLimit:
+        average: 10
+        period: 1m
+        burst: 10
+
+    public-ratelimit:
+      rateLimit:
+        average: 60
+        period: 1m
+        burst: 20
+
+tls:
+  options:
+    default:
+      minVersion: VersionTLS12
+      sniStrict: {{ env "SNI_STRICT" | default "true" }}
+      cipherSuites:
+        - TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384
+        - TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
+        - TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305
+        - TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305
+        - TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256
+        - TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256

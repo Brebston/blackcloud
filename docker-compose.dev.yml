@@ -1,0 +1,9 @@
+# Локальна розробка: https://localhost із самопідписаним сертифікатом Traefik.
+#   cp .env.example .env  →  DOMAIN=localhost, TLS_RESOLVER=, SNI_STRICT=false, DJANGO_DEBUG=true
+#   make up-dev
+services:
+  backend:
+    environment:
+      DJANGO_DEBUG: "true"
+  # Поштовий сервер для локальної розробки зазвичай не потрібен:
+  #   docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --scale postfix=0
