@@ -22,6 +22,10 @@ class MaxBodySizeMiddleware:
         from django.conf import settings
         from django.http import JsonResponse
 
+        if request.META.get("CONTENT_LENGTH") in (None, "") and "chunked" in request.META.get(
+            "HTTP_TRANSFER_ENCODING", ""
+        ).lower():
+            return JsonResponse({"detail": "Потрібен заголовок Content-Length."}, status=411)
         try:
             length = int(request.META.get("CONTENT_LENGTH") or 0)
         except ValueError:

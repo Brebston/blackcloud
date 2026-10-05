@@ -1,13 +1,15 @@
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { del, errorText, get, patch, post } from "../api/client";
-import type { Conversation, Message } from "../api/types";
+import type { Conversation, Message, Reaction } from "../api/types";
+import EmojiPicker from "../components/EmojiPicker";
 import Icon from "../components/Icon";
 import Modal from "../components/Modal";
 import { useToast } from "../components/Toast";
 import UserPicker from "../components/UserPicker";
 import { useAuth } from "../hooks/useAuth";
 import { sendEvent, useEvents } from "../hooks/useEvents";
+import { QUICK_REACTIONS, rememberEmoji } from "../lib/emoji";
 import { formatBytes, formatDate } from "../lib/format";
 
 export default function ChatPage() {
@@ -22,6 +24,22 @@ export default function ChatPage() {
   const [typing, setTyping] = useState<string | null>(null);
   const [newChat, setNewChat] = useState(false);
   const [editing, setEditing] = useState<Message | null>(null);
+  const [emojiOpen, setEmojiOpen] = useState(false);
+  // id повідомлення, для якого відкрито панель реакцій; full — повний вибір емоджі
+  // up — відкривати панель над повідомленням чи під ним (залежно від вільного місця у вікні чату)
+  const [reactingTo, setReactingTo] = useState<{ id: string; full: boolean; up: boolean } | null>(null);
+  const messagesRef = useRef<HTMLDivElement>(null);
+
+  /** Скільки місця над і під повідомленням усередині області прокрутки. */
+  const spaceAround = (el: Element | null) => {
+    const box = messagesRef.current?.getBoundingClientRect();
+    const rect = el?.getBoundingClientRect();
+    if (!box || !rect) return { above: 999, below: 999 };
+    return { above: rect.top - box.top, below: box.bottom - rect.bottom };
+  };
+  const BAR_HEIGHT = 52;
+  const PICKER_HEIGHT = 370;
+  const textRef = useRef<HTMLTextAreaElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const typingTimer = useRef<number>();
   const lastTypingSent = useRef(0);
@@ -65,6 +83,9 @@ export default function ChatPage() {
     if (event === "message.updated" && payload.conversation === id) {
       setMessages((ms) => ms.map((m) => (m.id === payload.id ? payload : m)));
     }
+    if (event === "message.reactions" && payload.conversation === id) {
+      setMessages((ms) => ms.map((m) => (m.id === payload.id ? { ...m, reactions: payload.reactions } : m)));
+    }
     if (event === "conversation.updated") loadConversations();
     if (event === "typing" && payload.conversation === id) {
       setTyping(payload.username);
@@ -103,6 +124,32 @@ export default function ChatPage() {
     } catch (err) {
       toast(errorText(err), "error");
     }
+  };
+
+  const react = async (messageId: string, emoji: string) => {
+    setReactingTo(null);
+    rememberEmoji(emoji);
+    try {
+      const r = await post<{ id: string; reactions: Reaction[] }>(`/api/chat/messages/${messageId}/reactions/`, { emoji });
+      setMessages((ms) => ms.map((m) => (m.id === r.id ? { ...m, reactions: r.reactions } : m)));
+    } catch (err) {
+      toast(errorText(err), "error");
+    }
+  };
+
+  // Вставка емоджі в місце курсора
+  const insertEmoji = (emoji: string) => {
+    const el = textRef.current;
+    const start = el?.selectionStart ?? text.length;
+    const end = el?.selectionEnd ?? text.length;
+    const next = text.slice(0, start) + emoji + text.slice(end);
+    if (next.length > 10000) return;
+    setText(next);
+    setTimeout(() => {
+      el?.focus();
+      const pos = start + emoji.length;
+      el?.setSelectionRange(pos, pos);
+    }, 0);
   };
 
   const current = conversations.find((c) => c.id === id);
@@ -170,7 +217,7 @@ export default function ChatPage() {
                   </button>
                 )}
               </div>
-              <div className="messages">
+              <div className="messages" ref={messagesRef}>
                 {hasMore && (
                   <button className="link-btn center" onClick={loadOlder}>
                     Завантажити попередні
@@ -194,6 +241,49 @@ export default function ChatPage() {
                             )}
                           </>
                         )}
+                        {!m.deleted && (
+                          <button
+                            type="button"
+                            className="msg-react-btn"
+                            aria-label="Реакція"
+                            title="Реакція"
+                            onClick={(ev) => {
+                              if (reactingTo?.id === m.id) return setReactingTo(null);
+                              const { above } = spaceAround(ev.currentTarget.closest(".bubble"));
+                              setReactingTo({ id: m.id, full: false, up: above >= BAR_HEIGHT });
+                            }}
+                          >
+                            ☺︎
+                          </button>
+                        )}
+                        {reactingTo?.id === m.id && !reactingTo.full && (
+                          <div className={`reaction-bar ${reactingTo.up ? "" : "below"}`} role="menu">
+                            {QUICK_REACTIONS.map((e) => (
+                              <button key={e} type="button" className="emoji-btn" onClick={() => react(m.id, e)}>
+                                {e}
+                              </button>
+                            ))}
+                            <button
+                              type="button"
+                              className="emoji-btn more"
+                              aria-label="Більше емоджі"
+                              onClick={(ev) => {
+                                const { above, below } = spaceAround(ev.currentTarget.closest(".bubble"));
+                                const up = below < PICKER_HEIGHT && above > below;
+                                setReactingTo({ id: m.id, full: true, up });
+                              }}
+                            >
+                              <Icon name="plus" size={16} />
+                            </button>
+                          </div>
+                        )}
+                        {reactingTo?.id === m.id && reactingTo.full && (
+                          <EmojiPicker
+                            className={`${mine ? "picker-left" : "picker-right"} ${reactingTo.up ? "picker-above" : ""}`}
+                            onPick={(e) => react(m.id, e)}
+                            onClose={() => setReactingTo(null)}
+                          />
+                        )}
                         <div className="msg-meta">
                           {formatDate(m.created_at)}
                           {m.edited_at && " · змінено"}
@@ -212,6 +302,25 @@ export default function ChatPage() {
                           )}
                         </div>
                       </div>
+                      {m.reactions?.length > 0 && (
+                        <div className="reactions">
+                          {m.reactions.map((r) => {
+                            const mineR = !!user && r.users.includes(user.username);
+                            return (
+                              <button
+                                key={r.emoji}
+                                type="button"
+                                className={`reaction ${mineR ? "mine" : ""}`}
+                                title={r.users.join(", ")}
+                                onClick={() => react(m.id, r.emoji)}
+                              >
+                                <span className="reaction-emoji">{r.emoji}</span>
+                                <span className="reaction-count">{r.count}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
                     </div>
                   );
                 })}
@@ -226,7 +335,23 @@ export default function ChatPage() {
                     </button>
                   </div>
                 )}
+                <div className="composer-emoji">
+                  <button
+                    type="button"
+                    className="icon-btn emoji-toggle"
+                    aria-label="Емоджі"
+                    title="Емоджі"
+                    onMouseDown={(e) => e.stopPropagation()}
+                    onClick={() => setEmojiOpen((v) => !v)}
+                  >
+                    😊
+                  </button>
+                  {emojiOpen && (
+                    <EmojiPicker className="picker-up" onPick={insertEmoji} onClose={() => setEmojiOpen(false)} />
+                  )}
+                </div>
                 <textarea
+                  ref={textRef}
                   rows={1}
                   placeholder="Повідомлення…"
                   value={text}

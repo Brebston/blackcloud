@@ -85,8 +85,9 @@ class RegisterSerializer(serializers.Serializer):
         from .models import USERNAME_VALIDATOR
 
         USERNAME_VALIDATOR(value)
-        reserved = {"admin", "root", "postmaster", "abuse", "webmaster", "hostmaster", "noreply", "mailer-daemon", "webmail"}
-        if value in reserved:
+        from .models import is_reserved_username
+
+        if is_reserved_username(value) and not self.context.get("allow_reserved"):
             raise serializers.ValidationError("Це ім'я зарезервоване.")
         if User.objects.filter(username=value).exists():
             raise serializers.ValidationError("Це ім'я вже зайняте.")
@@ -116,10 +117,16 @@ class SessionSerializer(serializers.ModelSerializer):
 
     def to_representation(self, instance):
         data = super().to_representation(instance)
-        # Повний ключ сесії не віддаємо — лише ідентифікатор для відкликання
-        data["id"] = instance.session_key[:12]
+        # Ні ключ сесії, ні його частина не віддаються: лише хеш як ідентифікатор
+        data["id"] = session_public_id(instance.session_key)
         data.pop("session_key")
         return data
+
+
+def session_public_id(session_key: str) -> str:
+    import hashlib
+
+    return hashlib.sha256(f"sess-id:{session_key}".encode()).hexdigest()[:20]
 
 
 class AdminUserSerializer(serializers.ModelSerializer):

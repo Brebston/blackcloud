@@ -8,6 +8,7 @@ import ChatPage from "./pages/Chat";
 import FilesPage from "./pages/Files";
 import LoginPage from "./pages/Login";
 import MailPage from "./pages/Mail";
+import OfficeEditorPage from "./pages/OfficeEditor";
 import PublicSharePage from "./pages/PublicShare";
 import RegisterPage from "./pages/Register";
 import SettingsPage from "./pages/Settings";
@@ -22,11 +23,21 @@ function Protected({ children }: { children: ReactNode }) {
   return <Layout>{children}</Layout>;
 }
 
+// Без бічного меню: для повноекранного редактора
+function ProtectedBare({ children }: { children: ReactNode }) {
+  const { user, loading } = useAuth();
+  const location = useLocation();
+  if (loading) return <div className="splash">Завантаження…</div>;
+  if (!user) return <Navigate to={`/login?next=${encodeURIComponent(location.pathname + location.search)}`} replace />;
+  return <>{children}</>;
+}
+
 export default function App() {
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
       <Route path="/register" element={<RegisterPage />} />
+      <Route path="/s" element={<PublicSharePage />} />
       <Route path="/s/:token" element={<PublicSharePage />} />
       <Route path="/files" element={<Protected><FilesPage /></Protected>} />
       <Route path="/shared" element={<Protected><SharedPage /></Protected>} />
@@ -36,6 +47,7 @@ export default function App() {
       <Route path="/chat" element={<Protected><ChatPage /></Protected>} />
       <Route path="/chat/:id" element={<Protected><ChatPage /></Protected>} />
       <Route path="/settings" element={<Protected><SettingsPage /></Protected>} />
+      <Route path="/edit/:id" element={<ProtectedBare><OfficeEditorPage /></ProtectedBare>} />
       <Route path="/admin" element={<Protected><AdminPage /></Protected>} />
       <Route path="*" element={<Navigate to="/files" replace />} />
     </Routes>

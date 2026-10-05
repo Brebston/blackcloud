@@ -2,7 +2,8 @@
 set -eu
 
 : "${MAIL_HOSTNAME:?MAIL_HOSTNAME is required}"
-INTERNAL_SUBNET="${INTERNAL_SUBNET:-172.30.0.0/24}"
+# Master-user веб-пошти приймається лише з адреси контейнера backend
+WEBMAIL_CLIENT_IP="${WEBMAIL_CLIENT_IP:-172.30.0.10}"
 DB_PW="$(cat /run/secrets/mail_db_password)"
 MASTER_PW="$(cat /run/secrets/dovecot_master_password)"
 
@@ -33,9 +34,26 @@ chmod 640 /etc/dovecot/dovecot-sql.conf.ext
 
 # ─── Master-user для веб-пошти (лише з внутрішньої мережі) ───
 HASH="$(doveadm pw -s ARGON2ID -p "$MASTER_PW")"
-printf 'webmail:%s::::::allow_nets=%s\n' "$HASH" "$INTERNAL_SUBNET" > /etc/dovecot/master-users
+printf 'webmail:%s::::::allow_nets=%s\n' "$HASH" "$WEBMAIL_CLIENT_IP/32" > /etc/dovecot/master-users
 chown root:dovecot /etc/dovecot/master-users
 chmod 640 /etc/dovecot/master-users
+
+# ─── Шифрування листів на диску ───
+# Нові листи шифруються глобальним публічним ключем; старі (незашифровані) читаються як раніше.
+if [ -s /run/secrets/mail_crypt_private_key ] && [ -s /run/secrets/mail_crypt_public_key ]; then
+  cat > /etc/dovecot/mail-crypt.conf <<'EOM'
+mail_plugins = $mail_plugins mail_crypt
+plugin {
+  mail_crypt_global_private_key = </run/secrets/mail_crypt_private_key
+  mail_crypt_global_public_key = </run/secrets/mail_crypt_public_key
+  mail_crypt_save_version = 2
+}
+EOM
+  echo "mail_crypt: шифрування листів на диску увімкнено"
+else
+  rm -f /etc/dovecot/mail-crypt.conf
+  echo "WARN: mail_crypt вимкнено — немає ключів у secrets/ (make secrets)"
+fi
 
 mkdir -p /var/mail/vhosts
 chown -R vmail:vmail /var/mail/vhosts

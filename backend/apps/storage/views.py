@@ -1,9 +1,13 @@
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.contrib.auth.hashers import check_password, make_password
-from django.core import signing
+import hashlib
+import secrets
+
+from django.core.cache import cache
 from django.db import transaction
 from django.db.models import Count, F, Q, Sum
+from django.http import HttpResponse
 from django.utils import timezone
 from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
 from rest_framework.parsers import BaseParser
@@ -13,7 +17,7 @@ from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 
 from apps.core.audit import audit
-from apps.core.realtime import notify
+from apps.core.realtime import alert_staff, notify
 
 from . import services
 from .models import File, Folder, PublicLink, Share
@@ -30,7 +34,33 @@ from .serializers import (
 )
 
 User = get_user_model()
-DOWNLOAD_SIGNER_SALT = "bc-public-download"
+
+
+# ─── Одноразові/короткоживучі квитки (зберігається лише хеш у кеші) ───
+
+
+def _ticket_key(kind: str, ticket: str) -> str:
+    return f"ticket:{kind}:" + hashlib.sha256(ticket.encode()).hexdigest()
+
+
+def issue_ticket(kind: str, data: dict, ttl: int) -> str:
+    ticket = secrets.token_urlsafe(32)
+    cache.set(_ticket_key(kind, ticket), data, ttl)
+    return ticket
+
+
+def peek_ticket(kind: str, ticket: str) -> dict | None:
+    if not ticket or len(ticket) > 100:
+        return None
+    return cache.get(_ticket_key(kind, ticket))
+
+
+def consume_ticket(kind: str, ticket: str) -> dict | None:
+    """Одноразовий квиток: delete() повертає True лише першому з паралельних запитів."""
+    data = peek_ticket(kind, ticket)
+    if data is None or not cache.delete(_ticket_key(kind, ticket)):
+        return None
+    return data
 
 
 def _visible_files(qs):
@@ -221,15 +251,77 @@ class FileDetailView(APIView):
         return Response(status=204)
 
 
+class ThumbnailView(APIView):
+    def get(self, request, pk):
+        f = services.get_readable_file(request.user, pk)
+        if not f.has_thumbnail or not f.is_downloadable:
+            raise NotFound()
+        response = HttpResponse(services.read_thumbnail(f), content_type="image/webp")
+        # URL містить ?v=<версія>, тож можна кешувати у браузері (лише приватно)
+        response["Cache-Control"] = "private, max-age=604800, immutable"
+        response["X-Content-Type-Options"] = "nosniff"
+        response["Content-Security-Policy"] = "default-src 'none'; sandbox"
+        return response
+
+
 class FileDownloadView(APIView):
+    """Завантаження з основного домену — завжди як вкладення (attachment).
+
+    Перегляд у браузері (PDF, відео, текст) відбувається лише з окремого origin
+    usercontent.<домен> — див. PreviewTicketView / PreviewServeView."""
+
     def get(self, request, pk):
         f = services.get_readable_file(request.user, pk)
         if f.deleted_at is not None:
             raise NotFound("Файл у кошику.")
-        inline = request.query_params.get("inline") == "1"
         if f.owner_id != request.user.pk:
             audit(request, "file.shared_download", target=str(f.pk))
-        return services.file_response(f, inline=inline)
+        return services.file_response(f)
+
+
+class PreviewTicketView(APIView):
+    """Видає короткоживучу адресу на usercontent-піддомені для перегляду файлу в браузері."""
+
+    def get(self, request, pk):
+        f = services.get_readable_file(request.user, pk)
+        if f.deleted_at is not None:
+            raise NotFound("Файл у кошику.")
+        if not f.is_downloadable:
+            raise PermissionDenied("Файл недоступний для перегляду.")
+        if f.mime_type not in services.SAFE_INLINE_MIME:
+            raise ValidationError({"detail": "Цей тип файлу не переглядається в браузері."})
+        ticket = issue_ticket(
+            "preview",
+            {"f": str(f.pk), "u": str(request.user.pk), "v": f.content_version},
+            settings.PREVIEW_TICKET_TTL,
+        )
+        return Response({"url": f"https://{settings.USERCONTENT_HOST}/api/preview/{ticket}/"})
+
+
+class PreviewServeView(APIView):
+    """Віддає файл inline, але ЛИШЕ на хості usercontent.<домен>.
+
+    Cookie основного сайту сюди не надсилаються (__Host- cookie прив'язані до хоста),
+    а навіть якщо PDF чи інший вміст виконає скрипт, він працює в чужому origin
+    і не може читати API чи сесію користувача."""
+
+    permission_classes = [AllowAny]
+    authentication_classes = []
+
+    def get(self, request, ticket):
+        if request.get_host().split(":")[0] != settings.USERCONTENT_HOST:
+            raise NotFound()
+        data = peek_ticket("preview", ticket)
+        if data is None:
+            raise NotFound("Посилання для перегляду прострочене. Відкрийте файл знову.")
+        user = User.objects.filter(pk=data["u"], is_active=True).first()
+        if user is None:
+            raise NotFound()
+        # Доступ перевіряється повторно: його могли відкликати після видачі квитка
+        f = services.get_readable_file(user, data["f"])
+        if f.deleted_at is not None or f.content_version != data["v"]:
+            raise NotFound()
+        return services.file_response(f, inline=True, frame_ancestor=f"https://{settings.DOMAIN}")
 
 
 # ═══════════════════════════ Завантаження чанками ═══════════════════════════
@@ -456,7 +548,9 @@ class PublicLinksView(APIView):
         )
         audit(request, "public_link.created", target=str(f.pk), expires=link.expires_at.isoformat())
         data = PublicLinkSerializer(link).data
-        data["url"] = f"https://{settings.DOMAIN}/s/{token}"  # показується лише один раз
+        # Токен — у фрагменті (#): браузер не надсилає його на сервер, тож він не
+        # потрапляє в журнали проксі, заголовок Referer чи історію запитів
+        data["url"] = f"https://{settings.DOMAIN}/s#{token}"  # показується лише один раз
         return Response(data, status=201)
 
 
@@ -471,25 +565,57 @@ class PublicLinkDetailView(APIView):
         return Response(status=204)
 
 
-def _get_active_link(token: str) -> PublicLink:
-    link = (
-        PublicLink.objects.select_related("file")
-        .filter(token_hash=PublicLink.hash_token(token or ""))
-        .first()
-    )
+def _get_active_link(token) -> PublicLink:
+    if not isinstance(token, str) or not token or len(token) > 100:
+        raise NotFound("Посилання недійсне або прострочене.")
+    link = PublicLink.objects.select_related("file", "owner").filter(token_hash=PublicLink.hash_token(token)).first()
     if link is None or not link.is_active or link.file.deleted_at is not None or not link.file.is_downloadable:
         raise NotFound("Посилання недійсне або прострочене.")
     return link
 
 
-class PublicLinkInfoView(APIView):
+def _link_fail_key(link) -> str:
+    return f"pl-fail:{link.pk}"
+
+
+def _link_locked(link) -> bool:
+    return (cache.get(_link_fail_key(link)) or 0) >= settings.PUBLIC_LINK_MAX_FAILURES
+
+
+def _link_register_failure(request, link) -> None:
+    key = _link_fail_key(link)
+    if cache.add(key, 1, 3600):
+        count = 1
+    else:
+        try:
+            count = cache.incr(key)
+        except ValueError:
+            cache.set(key, 1, 3600)
+            count = 1
+    if count == settings.PUBLIC_LINK_MAX_FAILURES:
+        audit(request, "public_link.locked", user=link.owner, target=str(link.pk))
+        notify(
+            link.owner,
+            "security",
+            "Хтось підбирає пароль до вашого посилання",
+            f"Посилання на «{link.file.name}» тимчасово заблоковано на годину. Можливо, варто його відкликати.",
+            "/files",
+        )
+        alert_staff("Підбір пароля публічного посилання", f"Власник: {link.owner.username}")
+
+
+class PublicView(APIView):
+    """Публічні ендпоінти: токен посилання приходить у тілі POST, а не в URL."""
+
     permission_classes = [AllowAny]
     authentication_classes = []
     throttle_classes = [ScopedRateThrottle]
     throttle_scope = "public_link"
 
-    def get(self, request, token):
-        link = _get_active_link(token)
+
+class PublicLinkInfoView(PublicView):
+    def post(self, request):
+        link = _get_active_link(request.data.get("token"))
         return Response(
             {
                 "name": link.file.name,
@@ -501,39 +627,30 @@ class PublicLinkInfoView(APIView):
         )
 
 
-class PublicLinkAuthorizeView(APIView):
-    """Перевіряє пароль і видає короткоживучий підписаний URL для завантаження."""
+class PublicLinkAuthorizeView(PublicView):
+    """Перевіряє пароль і видає одноразову адресу для завантаження (дійсна 60 с)."""
 
-    permission_classes = [AllowAny]
-    authentication_classes = []
-    throttle_classes = [ScopedRateThrottle]
-    throttle_scope = "public_link"
+    def post(self, request):
+        link = _get_active_link(request.data.get("token"))
+        if link.password_hash:
+            if _link_locked(link):
+                return Response({"detail": "Забагато невдалих спроб. Спробуйте через годину."}, status=429)
+            if not check_password(request.data.get("password") or "", link.password_hash):
+                audit(request, "public_link.bad_password", user=link.owner, target=str(link.pk))
+                _link_register_failure(request, link)
+                return Response({"detail": "Невірний пароль."}, status=403)
+        ticket = issue_ticket("public-dl", {"link": str(link.pk)}, settings.DOWNLOAD_TICKET_TTL)
+        return Response({"download_url": f"/api/public/dl/{ticket}/"})
 
-    def post(self, request, token):
-        link = _get_active_link(token)
-        if link.password_hash and not check_password(request.data.get("password") or "", link.password_hash):
-            audit(request, "public_link.bad_password", user=link.owner, target=str(link.pk))
-            return Response({"detail": "Невірний пароль."}, status=403)
-        sig = signing.TimestampSigner(salt=DOWNLOAD_SIGNER_SALT).sign(str(link.pk))
-        return Response({"download_url": f"/api/public/{token}/download/?sig={sig}"})
 
-
-class PublicLinkDownloadView(APIView):
-    permission_classes = [AllowAny]
-    authentication_classes = []
-    throttle_classes = [ScopedRateThrottle]
-    throttle_scope = "public_link"
-
-    def get(self, request, token):
-        link = _get_active_link(token)
-        try:
-            link_id = signing.TimestampSigner(salt=DOWNLOAD_SIGNER_SALT).unsign(
-                request.query_params.get("sig", ""), max_age=120
-            )
-        except signing.BadSignature:
+class PublicLinkDownloadView(PublicView):
+    def get(self, request, ticket):
+        data = consume_ticket("public-dl", ticket)
+        if data is None:
             raise PermissionDenied("Посилання для завантаження прострочене. Оновіть сторінку.")
-        if link_id != str(link.pk):
-            raise PermissionDenied()
+        link = PublicLink.objects.select_related("file", "owner").filter(pk=data["link"]).first()
+        if link is None or not link.is_active or link.file.deleted_at is not None or not link.file.is_downloadable:
+            raise NotFound("Посилання недійсне або прострочене.")
         # Атомарний лічильник з перевіркою ліміту
         q = PublicLink.objects.filter(pk=link.pk)
         if link.max_downloads is not None:

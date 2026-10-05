@@ -4,7 +4,7 @@ import { ensureCsrf, errorText, post } from "../api/client";
 import Icon from "../components/Icon";
 import { useAuth } from "../hooks/useAuth";
 
-const SPA_ROOTS = ["files", "shared", "trash", "calendar", "mail", "chat", "settings", "admin"];
+const SPA_ROOTS = ["files", "shared", "trash", "calendar", "mail", "chat", "settings", "admin", "edit"];
 
 function safeNext(next: string | null): { spa: boolean; path: string } {
   // Лише відносні шляхи цього ж сайту (захист від open redirect)
@@ -65,8 +65,9 @@ export default function LoginPage() {
       setError("Код складається з 6 цифр.");
       return;
     }
-    if (useBackup && clean.replace(/[-\s]/g, "").length !== 10) {
-      setError("Резервний код має формат xxxxx-xxxxx.");
+    // Нові коди: xxxx-xxxx-xxxx-xxxx (16 символів); старі, видані раніше: xxxxx-xxxxx
+    if (useBackup && ![10, 16].includes(clean.replace(/[-\s]/g, "").length)) {
+      setError("Резервний код має формат xxxx-xxxx-xxxx-xxxx.");
       return;
     }
     setBusy(true);
@@ -131,7 +132,7 @@ export default function LoginPage() {
                 autoFocus
                 inputMode={useBackup ? "text" : "numeric"}
                 autoComplete="one-time-code"
-                maxLength={useBackup ? 11 : 6}
+                maxLength={useBackup ? 24 : 6}
                 value={code}
                 onChange={(e) => setCode(e.target.value)}
                 className="code-input"

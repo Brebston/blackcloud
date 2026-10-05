@@ -497,7 +497,7 @@ tr:hover .row-actions { opacity: 1; }
 .msg { display: flex; flex-direction: column; align-items: flex-start; max-width: 72%; }
 .msg.mine { align-self: flex-end; align-items: flex-end; }
 .msg-sender { font-size: 12px; color: var(--text-3); margin: 0 0 2px 10px; }
-.bubble { background: var(--surface-3); padding: 8px 12px; border-radius: 14px; border-bottom-left-radius: 4px; }
+.bubble { position: relative; background: var(--surface-3); padding: 8px 12px; border-radius: 14px; border-bottom-left-radius: 4px; }
 .msg.mine .bubble { background: var(--accent-strong); color: #fff; border-bottom-left-radius: 14px; border-bottom-right-radius: 4px; }
 .msg-text { white-space: pre-wrap; word-wrap: break-word; }
 .msg-file { display: flex; align-items: center; gap: 6px; margin-top: 6px; color: inherit; text-decoration: underline; }
@@ -550,3 +550,125 @@ tr:hover .row-actions { opacity: 1; }
   .search input { min-width: 120px; }
   .msg { max-width: 88%; }
 }
+
+/* ─── Мініатюри та сітка ─── */
+.thumb { display: block; object-fit: cover; border-radius: 4px; background: var(--surface-3); }
+.thumb-sm { width: 32px; height: 32px; }
+.thumb-lg { width: 100%; height: 100%; border-radius: 0; }
+.thumb-btn { background: none; border: none; padding: 0; cursor: pointer; color: var(--text-2); display: grid; place-items: center; width: 32px; height: 32px; flex-shrink: 0; }
+.segmented { display: inline-flex; border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+.segmented button { background: var(--surface-2); border: none; color: var(--text-3); padding: 6px 9px; cursor: pointer; display: grid; place-items: center; }
+.segmented button.active { background: var(--accent-bg); color: var(--accent); }
+.file-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(168px, 1fr)); gap: 12px; }
+.grid-card { position: relative; display: flex; flex-direction: column; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; color: var(--text); font: inherit; text-align: left; padding: 0; cursor: pointer; transition: border-color 0.15s; }
+.grid-card:hover { border-color: var(--border-strong); }
+.grid-preview { aspect-ratio: 4 / 3; display: grid; place-items: center; background: var(--surface-2); color: var(--text-3); border: none; padding: 0; width: 100%; cursor: pointer; overflow: hidden; }
+.grid-name { padding: 8px 10px 0; font-weight: 500; min-width: 0; display: flex; }
+.grid-name .link-btn { color: var(--text); }
+.grid-card > .grid-name:last-child { padding-bottom: 10px; }
+.grid-meta { display: flex; gap: 6px; align-items: center; padding: 2px 10px 10px; }
+.grid-actions { position: absolute; top: 6px; right: 6px; background: var(--surface); border-radius: var(--radius); box-shadow: var(--shadow); opacity: 0; transition: opacity 0.15s; }
+.grid-card:hover .grid-actions, .grid-card:focus-within .grid-actions { opacity: 1; }
+.grid-actions .row-actions { opacity: 1; }
+.grid-empty { grid-column: 1 / -1; }
+
+/* ─── Повноекранний переглядач ─── */
+.viewer { position: fixed; inset: 0; z-index: 150; background: rgba(8, 8, 12, 0.96); display: flex; flex-direction: column; color: #ecebf3; }
+.viewer-bar { display: flex; align-items: center; gap: 12px; padding: 10px 14px; border-bottom: 1px solid rgba(255, 255, 255, 0.08); }
+.viewer .icon-btn { color: #cfcfe0; }
+.viewer .icon-btn:hover { background: rgba(255, 255, 255, 0.08); color: #fff; }
+.viewer-title { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.viewer-actions { display: flex; gap: 8px; }
+.viewer-body { flex: 1; min-height: 0; position: relative; display: flex; align-items: center; justify-content: center; }
+.viewer-pdf, .viewer-text { width: 100%; height: 100%; border: none; background: #fff; }
+.viewer-media { max-width: 100%; max-height: 100%; }
+.viewer-empty { display: flex; flex-direction: column; align-items: center; gap: 12px; color: #a9a8b8; padding: 24px; text-align: center; }
+.viewer-nav { position: absolute; top: 50%; transform: translateY(-50%); z-index: 2; width: 48px; height: 72px; border: none; border-radius: var(--radius); background: rgba(255, 255, 255, 0.06); color: #fff; cursor: pointer; display: grid; place-items: center; }
+.viewer-nav:hover { background: rgba(255, 255, 255, 0.14); }
+.viewer-nav.prev { left: 12px; }
+.viewer-nav.next { right: 12px; }
+
+.zoom { position: relative; width: 100%; height: 100%; }
+.zoom-stage { width: 100%; height: 100%; overflow: hidden; display: grid; place-items: center; touch-action: none; cursor: zoom-in; user-select: none; }
+.zoom-stage.zoomed { cursor: grab; }
+.zoom-stage.zoomed:active { cursor: grabbing; }
+.zoom-stage img { max-width: 100%; max-height: 100%; object-fit: contain; transform-origin: center center; will-change: transform; }
+.zoom-controls { position: absolute; bottom: 18px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 4px; background: rgba(23, 23, 31, 0.9); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 999px; padding: 4px 8px; font-size: 18px; }
+.zoom-level { background: none; border: none; color: #ecebf3; font: inherit; font-size: 13px; min-width: 52px; cursor: pointer; }
+
+/* ─── Онлайн-редактор ─── */
+.office-page { position: fixed; inset: 0; display: flex; flex-direction: column; background: var(--bg); }
+.office-bar { background: var(--surface); border-bottom: 1px solid var(--border); }
+.office-frame { flex: 1; min-height: 0; }
+.office-frame > div, .office-frame iframe { width: 100%; height: 100%; border: none; }
+
+/* ─── Меню користувача ─── */
+button.user-chip { background: none; border: none; font: inherit; cursor: pointer; padding: 4px 6px; border-radius: var(--radius); }
+button.user-chip:hover { background: var(--surface-2); }
+.user-menu { width: 260px; padding: 6px; }
+.user-menu-head { display: flex; gap: 10px; align-items: center; padding: 8px 8px 10px; border-bottom: 1px solid var(--border); margin-bottom: 4px; min-width: 0; }
+.user-menu-head > div:last-child { min-width: 0; display: flex; flex-direction: column; }
+.menu-item { display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px 10px; border: none; background: none; color: var(--text); font: inherit; border-radius: var(--radius); cursor: pointer; text-align: left; }
+.menu-item:hover { background: var(--surface-2); }
+.menu-item.danger { color: var(--danger); }
+.menu-sep { height: 1px; background: var(--border); margin: 4px 0; }
+
+@media (max-width: 820px) {
+  .file-grid { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); }
+  .grid-actions { opacity: 1; }
+  .viewer-actions .btn { padding: 4px 8px; }
+  .viewer-nav { width: 36px; height: 56px; }
+}
+
+/* ─── Емоджі та реакції ─── */
+.emoji-picker {
+  position: absolute; z-index: 50; width: 320px; max-width: calc(100vw - 32px); height: 360px;
+  display: flex; flex-direction: column; background: var(--surface); color: var(--text);
+  border: 1px solid var(--border-strong); border-radius: var(--radius-lg); box-shadow: var(--shadow);
+}
+.emoji-picker.picker-up { bottom: calc(100% + 8px); left: 0; }
+.emoji-picker.picker-left { top: calc(100% + 6px); right: 0; }
+.emoji-picker.picker-right { top: calc(100% + 6px); left: 0; }
+.emoji-search { margin: 8px; width: auto; }
+.emoji-body { flex: 1; overflow-y: auto; padding: 0 8px 8px; }
+.emoji-cat-title { font-size: 12px; color: var(--text-3); margin: 8px 2px 4px; position: sticky; top: 0; background: var(--surface); padding: 2px 0; }
+.emoji-grid { display: grid; grid-template-columns: repeat(8, 1fr); gap: 2px; }
+.emoji-btn {
+  font-size: 22px; line-height: 1; padding: 5px 0; border: 0; background: transparent; border-radius: 6px; cursor: pointer;
+  font-family: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif; color: var(--text);
+}
+.emoji-btn:hover, .emoji-btn:focus-visible { background: var(--accent-bg); }
+.emoji-btn.more { display: inline-flex; align-items: center; justify-content: center; font-size: 16px; }
+.emoji-empty { padding: 16px; text-align: center; }
+.emoji-tabs { display: flex; justify-content: space-between; border-top: 1px solid var(--border); padding: 4px 6px; }
+.emoji-tab { border: 0; background: transparent; font-size: 17px; padding: 4px; border-radius: 6px; cursor: pointer; opacity: 0.6; }
+.emoji-tab.active, .emoji-tab:hover { opacity: 1; background: var(--accent-bg); }
+.composer-emoji { position: relative; align-self: flex-end; }
+.emoji-toggle { font-size: 20px; height: 40px; width: 40px; }
+
+.msg-react-btn {
+  position: absolute; top: 50%; transform: translateY(-50%); right: -34px;
+  width: 28px; height: 28px; border-radius: 50%; border: 1px solid var(--border); background: var(--surface);
+  color: var(--text-2); cursor: pointer; font-size: 15px; opacity: 0; transition: opacity 0.15s;
+}
+.msg.mine .msg-react-btn { right: auto; left: -34px; }
+.msg:hover .msg-react-btn, .msg-react-btn:focus-visible { opacity: 1; }
+@media (hover: none) { .msg-react-btn { opacity: 0.7; } }
+.reaction-bar {
+  position: absolute; z-index: 40; bottom: calc(100% + 4px); left: 0; display: flex; gap: 2px; padding: 4px;
+  background: var(--surface); border: 1px solid var(--border-strong); border-radius: 999px; box-shadow: var(--shadow);
+}
+.msg.mine .reaction-bar { left: auto; right: 0; }
+/* Для верхніх повідомлень (над ними немає місця) панель відкривається знизу */
+.reaction-bar.below { bottom: auto; top: calc(100% + 4px); }
+.emoji-picker.picker-above { top: auto; bottom: calc(100% + 6px); }
+.reaction-bar .emoji-btn { padding: 4px 6px; }
+.reactions { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.reaction {
+  display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 999px; cursor: pointer;
+  border: 1px solid var(--border); background: var(--surface-2); color: var(--text); font-size: 13px;
+}
+.reaction.mine { border-color: var(--accent); background: var(--accent-bg); }
+.reaction-emoji { font-size: 15px; font-family: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif; }
+.reaction-count { font-variant-numeric: tabular-nums; color: var(--text-2); }
+.msg-text { font-family: inherit; }

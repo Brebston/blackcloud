@@ -21,6 +21,7 @@ export interface User {
   mailbox: string | null;
   preferences: Preferences;
   must_enroll_2fa: boolean;
+  features?: { office: boolean };
 }
 
 export interface Folder {
@@ -45,6 +46,8 @@ export interface FileItem {
   status_display: string;
   scan_detail: string;
   downloadable: boolean;
+  has_thumbnail: boolean;
+  content_version: number;
   owner: string;
   shared: boolean | null;
   created_at: string;
@@ -134,6 +137,13 @@ export interface Message {
   created_at: string;
   edited_at: string | null;
   deleted: boolean;
+  reactions: Reaction[];
+}
+
+export interface Reaction {
+  emoji: string;
+  count: number;
+  users: string[];
 }
 
 export interface MailFolder {

@@ -22,6 +22,42 @@ def push_to_user(user_id, event: str, payload: dict) -> None:
         logger.warning("realtime push failed", exc_info=True)
 
 
+def session_group(session_key: str) -> str:
+    import hashlib
+
+    return "sess_" + hashlib.sha256(session_key.encode()).hexdigest()[:32]
+
+
+def _close(group: str) -> None:
+    layer = get_channel_layer()
+    if layer is None:
+        return
+    try:
+        async_to_sync(layer.group_send)(group, {"type": "force_close"})
+    except Exception:
+        logger.warning("realtime close failed", exc_info=True)
+
+
+def close_user_sockets(user_id) -> None:
+    """Закрити всі WebSocket користувача (деактивація, скидання 2FA, зміна пароля)."""
+    _close(user_group(user_id))
+
+
+def close_session_sockets(session_keys) -> None:
+    """Закрити WebSocket конкретних сесій (вихід, відкликання пристрою)."""
+    for key in session_keys:
+        if key:
+            _close(session_group(key))
+
+
+def alert_staff(title: str, body: str = "") -> None:
+    """Сповіщення всім адміністраторам про підозрілу активність."""
+    from django.contrib.auth import get_user_model
+
+    for admin_user in get_user_model().objects.filter(is_staff=True, is_active=True):
+        notify(admin_user, "security", title, body, "/admin")
+
+
 def notify(user, kind: str, title: str, body: str = "", link: str = ""):
     from .models import Notification
 

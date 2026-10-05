@@ -16,3 +16,4 @@ frontend/dist/
 .idea/
 .vscode/
 .ruff_cache/
+backend/test.sqlite3

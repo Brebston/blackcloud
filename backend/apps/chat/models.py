@@ -44,3 +44,16 @@ class Message(models.Model):
     class Meta:
         ordering = ["created_at"]
         indexes = [models.Index(fields=["conversation", "created_at"])]
+
+
+class Reaction(models.Model):
+    """Реакція-емоджі на повідомлення (один користувач — одна реакція кожного виду)."""
+
+    message = models.ForeignKey(Message, on_delete=models.CASCADE, related_name="reactions")
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="+")
+    emoji = models.CharField(max_length=32)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["created_at"]
+        constraints = [models.UniqueConstraint(fields=["message", "user", "emoji"], name="uniq_reaction")]

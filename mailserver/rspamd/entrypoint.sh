@@ -2,6 +2,12 @@
 set -eu
 : "${MAIL_DOMAIN:?MAIL_DOMAIN is required}"
 REDIS_PW="$(cat /run/secrets/redis_password)"
+WEBMAIL_CLIENT_IP="${WEBMAIL_CLIENT_IP:-172.30.0.10}"
+
+# «Локальний» відправник (підпис DKIM без автентифікації) — лише Postfix-loopback і backend
+cat > /etc/rspamd/local.d/options.inc <<EOM
+local_addrs = [127.0.0.0/8, $WEBMAIL_CLIENT_IP/32];
+EOM
 
 cat > /etc/rspamd/local.d/redis.conf <<EOM
 servers = "redis:6379";

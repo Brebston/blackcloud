@@ -50,7 +50,9 @@ def _to_dt(value, end=False):
 
 
 def import_ics(calendar, data: bytes, user) -> int:
-    from .recurrence import validate_rrule
+    from .recurrence import recurring_quota_left, validate_rrule
+
+    recurring_left = recurring_quota_left(user)
 
     cal = ICal.from_ical(data)
     count = 0
@@ -66,11 +68,13 @@ def import_ics(calendar, data: bytes, user) -> int:
             if end < start:
                 end = start
             rrule = ""
-            if comp.get("rrule") is not None:
+            if comp.get("rrule") is not None and recurring_left > 0:
                 try:
                     rrule = validate_rrule(comp.get("rrule").to_ical().decode(), start)
                 except Exception:
                     rrule = ""
+                if rrule:
+                    recurring_left -= 1
             uid = str(comp.get("uid", ""))[:255]
             defaults = {
                 "title": str(comp.get("summary", "Без назви"))[:200],

@@ -45,6 +45,10 @@ const paths: Record<string, string> = {
   eye: "M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12zM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z",
   menu: "M4 6h16M4 12h16M4 18h16",
   refresh: "M20 12a8 8 0 1 1-2.3-5.7M20 4v5h-5",
+  external: "M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5",
+  grid: "M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z",
+  list: "M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01",
+  chevronDown: "M6 9l6 6 6-6",
 };
 
 export default function Icon({ name, size = 18, className }: { name: string; size?: number; className?: string }) {

@@ -11,12 +11,9 @@ class SecureAdminSite(admin.AdminSite):
     index_title = "Керування"
 
     def has_permission(self, request):
-        user = request.user
-        if not (user.is_active and user.is_staff):
-            return False
-        if settings.REQUIRE_2FA_FOR_STAFF and not user.has_2fa:
-            return False
-        return True
+        from .permissions import staff_mfa_ok
+
+        return staff_mfa_ok(request)
 
     def login(self, request, extra_context=None):
         return redirect(f"/login?next=/{settings.ADMIN_URL_PREFIX}/")
