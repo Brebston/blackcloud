@@ -8,16 +8,38 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 TESTING = env_bool("DJANGO_TEST") or "pytest" in sys.modules
 DEBUG = env_bool("DJANGO_DEBUG")
-
-SECRET_KEY = read_secret("DJANGO_SECRET_KEY")
-if not SECRET_KEY:
-    if DEBUG or TESTING:
-        SECRET_KEY = "insecure-dev-only-key-" + "x" * 40
-    else:
-        raise RuntimeError("DJANGO_SECRET_KEY не задано (див. scripts/init-secrets.sh)")
-
 DOMAIN = env("DOMAIN", "localhost")
-ALLOWED_HOSTS = [DOMAIN, "backend", "127.0.0.1", "localhost"]
+IS_LOCAL_DOMAIN = DOMAIN == "localhost" or DOMAIN.endswith(".localhost")
+
+if DEBUG and not (IS_LOCAL_DOMAIN or TESTING):
+    # DEBUG розкриває трасування, налаштування й SQL — лише для локальної розробки
+    raise RuntimeError("DJANGO_DEBUG=true дозволено лише з DOMAIN=localhost")
+
+# Вбудовані «ключі для розробки» відомі всім, хто бачив код. Вони дозволені лише
+# в тестах або явно (ALLOW_INSECURE_DEV_KEYS=true) на localhost з DEBUG.
+ALLOW_DEV_KEYS = TESTING or (DEBUG and IS_LOCAL_DOMAIN and env_bool("ALLOW_INSECURE_DEV_KEYS"))
+
+
+def _require_secret(name: str, dev_value: str) -> str:
+    value = read_secret(name)
+    if value:
+        return value
+    if ALLOW_DEV_KEYS:
+        return dev_value
+    raise RuntimeError(f"Секрет {name} не задано (запустіть make secrets)")
+
+
+SECRET_KEY = _require_secret("DJANGO_SECRET_KEY", "insecure-dev-only-key-" + "x" * 40)
+
+# Окремі піддомени: редактор документів і «чужий» вміст файлів (перегляд у браузері).
+# Інший origin = скрипти звідти не мають доступу до cookie/API основного сайту.
+OFFICE_HOST = env("OFFICE_HOST", f"office.{DOMAIN}")
+USERCONTENT_HOST = env("USERCONTENT_HOST", f"usercontent.{DOMAIN}")
+
+# "backend" — для внутрішніх запитів ONLYOFFICE; 127.0.0.1 — healthcheck контейнера
+ALLOWED_HOSTS = [DOMAIN, USERCONTENT_HOST, "backend", "127.0.0.1"]
+if IS_LOCAL_DOMAIN or TESTING:
+    ALLOWED_HOSTS += ["localhost", "testserver"]
 CSRF_TRUSTED_ORIGINS = [f"https://{DOMAIN}"]
 ADMIN_URL_PREFIX = env("ADMIN_URL_PREFIX", "bc-admin").strip("/")
 
@@ -76,12 +98,19 @@ TEMPLATES = [
 if TESTING or env("DATABASE_URL", "").startswith("sqlite"):
     DATABASES = {"default": {"ENGINE": "django.db.backends.sqlite3", "NAME": BASE_DIR / "test.sqlite3"}}
 else:
+    # DB_ROLE=app (web/worker/beat): обмежена роль bc_app — лише DML, без DDL і без суперкористувача.
+    # DB_ROLE=admin (одноразовий сервіс migrate): власник схеми, виконує міграції.
+    DB_ROLE = env("DB_ROLE", "admin")
+    if DB_ROLE == "app":
+        _db_user, _db_password = env("APP_DB_USER", "bc_app"), read_secret("APP_DB_PASSWORD")
+    else:
+        _db_user, _db_password = env("POSTGRES_USER", "blackcloud"), read_secret("POSTGRES_PASSWORD")
     DATABASES = {
         "default": {
             "ENGINE": "django.db.backends.postgresql",
             "NAME": env("POSTGRES_DB", "blackcloud"),
-            "USER": env("POSTGRES_USER", "blackcloud"),
-            "PASSWORD": read_secret("POSTGRES_PASSWORD"),
+            "USER": _db_user,
+            "PASSWORD": _db_password,
             "HOST": env("POSTGRES_HOST", "postgres"),
             "PORT": env("POSTGRES_PORT", "5432"),
             "CONN_MAX_AGE": 60,
@@ -125,6 +154,7 @@ CELERY_BEAT_SCHEDULE = {
     "expire-public-links": {"task": "apps.storage.tasks.expire_public_links", "schedule": timedelta(hours=1)},
     "event-reminders": {"task": "apps.calendars.tasks.send_due_reminders", "schedule": timedelta(minutes=1)},
     "cleanup-sessions": {"task": "apps.accounts.tasks.cleanup_sessions", "schedule": timedelta(hours=12)},
+    "purge-old-audit": {"task": "apps.core.tasks.purge_old_audit", "schedule": timedelta(days=1)},
 }
 
 # ─── Автентифікація ─────────────────────────────────────────────
@@ -149,9 +179,10 @@ LOGIN_MAX_FAILURES = env_int("LOGIN_MAX_FAILURES", 5)
 LOGIN_LOCKOUT_SECONDS = env_int("LOGIN_LOCKOUT_SECONDS", 15 * 60)
 # Скільки секунд після підтвердження пароля дозволені чутливі дії ("sudo mode")
 REAUTH_WINDOW_SECONDS = 10 * 60
-FIELD_ENCRYPTION_KEY = read_secret("FIELD_ENCRYPTION_KEY")
-if not FIELD_ENCRYPTION_KEY and (DEBUG or TESTING):
-    FIELD_ENCRYPTION_KEY = "ZGV2LW9ubHktaW5zZWN1cmUtZmVybmV0LWtleS0wMDA="
+FIELD_ENCRYPTION_KEY = _require_secret("FIELD_ENCRYPTION_KEY", "ZGV2LW9ubHktaW5zZWN1cmUtZmVybmV0LWtleS0wMDA=")
+# Невдалі введення 2FA на акаунт (незалежно від IP і успішних паролів)
+TWO_FACTOR_MAX_FAILURES = env_int("TWO_FACTOR_MAX_FAILURES", 10)
+TWO_FACTOR_FAILURE_WINDOW = 3600
 
 # ─── Сесії та cookie ────────────────────────────────────────────
 SECURE_COOKIES = not (DEBUG or TESTING) or env_bool("FORCE_SECURE_COOKIES")
@@ -220,6 +251,10 @@ REST_FRAMEWORK = {
         "user_search": "60/min",
     },
     "EXCEPTION_HANDLER": "apps.core.exceptions.exception_handler",
+    # Ідентифікація клієнта для лімітів — лише REMOTE_ADDR (його вже виставив uvicorn
+    # з X-Forwarded-For від довіреного Traefik). Інакше DRF брав би весь заголовок
+    # X-Forwarded-For, і зміною його значення можна було б обійти ліміти запитів.
+    "NUM_PROXIES": 0,
     "UNAUTHENTICATED_USER": "django.contrib.auth.models.AnonymousUser",
 }
 if TESTING:
@@ -233,6 +268,11 @@ UPLOAD_CHUNK_SIZE = 8 * 1024 * 1024
 UPLOAD_SESSION_TTL = timedelta(hours=24)
 TRASH_RETENTION = timedelta(days=env_int("TRASH_RETENTION_DAYS", 30))
 PUBLIC_LINK_MAX_DAYS = env_int("PUBLIC_LINK_MAX_DAYS", 30)
+PUBLIC_LINK_MIN_PASSWORD = 8
+PUBLIC_LINK_MAX_FAILURES = 10  # невдалих паролів на посилання за годину → блокування
+# Квитки на перегляд у браузері (usercontent-піддомен) і на публічні завантаження
+PREVIEW_TICKET_TTL = 120
+DOWNLOAD_TICKET_TTL = 60
 UNSCANNED_POLICY = env("UNSCANNED_POLICY", "block")  # block | allow
 
 # local — шифровані чанки на Docker-томі (за замовчуванням);
@@ -243,14 +283,32 @@ S3_ENDPOINT_URL = env("S3_ENDPOINT_URL", "")
 S3_ACCESS_KEY = read_secret("S3_ACCESS_KEY")
 S3_SECRET_KEY = read_secret("S3_SECRET_KEY")
 S3_BUCKET = env("S3_BUCKET", "blackcloud-files")
-FILE_MASTER_KEYS = read_secret("FILE_MASTER_KEYS")
-if not FILE_MASTER_KEYS and (DEBUG or TESTING):
-    FILE_MASTER_KEYS = "1:" + "QUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUE="
+FILE_MASTER_KEYS = _require_secret("FILE_MASTER_KEYS", "1:" + "QUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUE=")
 
 CLAMAV_HOST = env("CLAMAV_HOST", "clamav")
 CLAMAV_PORT = env_int("CLAMAV_PORT", 3310)
 CLAMAV_MAX_STREAM = env_int("CLAMAV_MAX_STREAM_MB", 2000) * 1024 * 1024
 CLAMAV_ENABLED = not TESTING and env_bool("CLAMAV_ENABLED", True)
+
+# ─── Онлайн-редактор документів (ONLYOFFICE) ───
+OFFICE_ENABLED = env_bool("OFFICE_ENABLED", False)
+OFFICE_JWT_SECRET = read_secret("OFFICE_JWT_SECRET")
+OFFICE_PUBLIC_URL = env("OFFICE_PUBLIC_URL", f"https://{OFFICE_HOST}")
+OFFICE_INTERNAL_URL = env("OFFICE_INTERNAL_URL", "http://onlyoffice")
+OFFICE_BACKEND_URL = env("OFFICE_BACKEND_URL", "http://backend:8000")
+OFFICE_MAX_BYTES = 100 * 1024 * 1024
+OFFICE_FILE_TOKEN_TTL = 5 * 60  # підписане посилання, за яким Document Server забирає файл
+OFFICE_EDITOR_TOKEN_TTL = 4 * 3600
+THUMBNAILS_ENABLED = env_bool("THUMBNAILS_ENABLED", True)
+# Ізольований сервіс мініатюр (декодування зображень/PDF без секретів і мережі).
+# Порожньо — рендер у процесі воркера (лише для тестів і розробки).
+THUMBNAILER_URL = "" if TESTING else env("THUMBNAILER_URL", "")
+
+# ─── Календар ──────────────────────────────────────────────────
+MAX_RECURRING_EVENTS_PER_USER = env_int("MAX_RECURRING_EVENTS_PER_USER", 300)
+
+# ─── Журнал аудиту ─────────────────────────────────────────────
+AUDIT_RETENTION_DAYS = env_int("AUDIT_RETENTION_DAYS", 365)
 
 # ─── Пошта ─────────────────────────────────────────────────────
 MAIL_DOMAIN = env("MAIL_DOMAIN", "example.com")

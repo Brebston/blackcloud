@@ -1,4 +1,4 @@
-import { ReactNode, useCallback, useEffect, useState } from "react";
+import { ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { Link, NavLink, useNavigate } from "react-router-dom";
 import { get, post } from "../api/client";
 import type { Notification } from "../api/types";
@@ -26,6 +26,19 @@ export default function Layout({ children }: { children: ReactNode }) {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [showNotif, setShowNotif] = useState(false);
   const [navOpen, setNavOpen] = useState(false);
+  const [showUserMenu, setShowUserMenu] = useState(false);
+  const userMenuRef = useRef<HTMLDivElement>(null);
+  const notifRef = useRef<HTMLDivElement>(null);
+
+  // Закривати меню кліком поза ними
+  useEffect(() => {
+    const onDown = (e: MouseEvent) => {
+      if (userMenuRef.current && !userMenuRef.current.contains(e.target as Node)) setShowUserMenu(false);
+      if (notifRef.current && !notifRef.current.contains(e.target as Node)) setShowNotif(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, []);
 
   const loadNotifications = useCallback(async () => {
     try {
@@ -104,7 +117,7 @@ export default function Layout({ children }: { children: ReactNode }) {
               <Icon name="alert" size={14} /> Увімкніть 2FA
             </Link>
           )}
-          <div className="dropdown">
+          <div className="dropdown" ref={notifRef}>
             <button className="icon-btn" onClick={() => setShowNotif(!showNotif)} aria-label="Сповіщення">
               <Icon name="bell" />
               {unread > 0 && <span className="badge">{unread}</span>}
@@ -137,13 +150,53 @@ export default function Layout({ children }: { children: ReactNode }) {
               </div>
             )}
           </div>
-          <div className="user-chip">
-            <div className="avatar">{(user.display_name || user.username).slice(0, 1).toUpperCase()}</div>
-            <span className="desktop-only">{user.display_name || user.username}</span>
+          <div className="dropdown" ref={userMenuRef}>
+            <button
+              className="user-chip"
+              onClick={() => setShowUserMenu(!showUserMenu)}
+              aria-haspopup="menu"
+              aria-expanded={showUserMenu}
+            >
+              <div className="avatar">{(user.display_name || user.username).slice(0, 1).toUpperCase()}</div>
+              <span className="desktop-only">{user.display_name || user.username}</span>
+              <Icon name="chevronDown" size={14} />
+            </button>
+            {showUserMenu && (
+              <div className="dropdown-menu user-menu" role="menu">
+                <div className="user-menu-head">
+                  <div className="avatar">{(user.display_name || user.username).slice(0, 1).toUpperCase()}</div>
+                  <div className="truncate">
+                    <strong className="truncate">{user.display_name || user.username}</strong>
+                    <div className="small muted truncate">{user.mailbox || user.email}</div>
+                  </div>
+                </div>
+                {[
+                  { to: "/settings?tab=profile", icon: "user", label: "Мій профіль" },
+                  { to: "/settings?tab=security", icon: "shield", label: "Безпека та 2FA" },
+                  { to: "/settings?tab=sessions", icon: "lock", label: "Мої пристрої" },
+                  { to: "/settings?tab=mail", icon: "mail", label: "Поштові клієнти" },
+                  { to: "/settings?tab=activity", icon: "eye", label: "Журнал входів" },
+                  ...(user.is_staff ? [{ to: "/admin", icon: "admin", label: "Адміністрування" }] : []),
+                ].map((item) => (
+                  <button
+                    key={item.to}
+                    role="menuitem"
+                    className="menu-item"
+                    onClick={() => {
+                      setShowUserMenu(false);
+                      navigate(item.to);
+                    }}
+                  >
+                    <Icon name={item.icon} size={16} /> {item.label}
+                  </button>
+                ))}
+                <div className="menu-sep" />
+                <button role="menuitem" className="menu-item danger" onClick={doLogout}>
+                  <Icon name="logout" size={16} /> Вийти
+                </button>
+              </div>
+            )}
           </div>
-          <button className="icon-btn" onClick={doLogout} aria-label="Вийти" title="Вийти">
-            <Icon name="logout" />
-          </button>
         </header>
         {user.must_enroll_2fa && (
           <div className="banner banner-warning">

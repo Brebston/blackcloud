@@ -6,14 +6,15 @@ logger = logging.getLogger("blackcloud.audit")
 
 
 def client_ip(request) -> str | None:
-    """IP клієнта. За Traefik довіряємо лише останньому значенню X-Forwarded-For,
-    яке додає сам Traefik (клієнт не може його підробити)."""
+    """IP клієнта.
+
+    X-Forwarded-For тут НЕ читається: його розбирає uvicorn (--proxy-headers) і лише
+    для запитів від Traefik (--forwarded-allow-ips = фіксована адреса Traefik).
+    Тому REMOTE_ADDR — це або справжня адреса клієнта, або адреса сусіднього
+    контейнера, але ніколи не значення, яке клієнт підставив у заголовок."""
     if request is None:
         return None
-    forwarded = request.META.get("HTTP_X_FORWARDED_FOR", "")
-    if forwarded:
-        return forwarded.split(",")[-1].strip() or None
-    return request.META.get("REMOTE_ADDR")
+    return request.META.get("REMOTE_ADDR") or None
 
 
 def audit(request, action: str, *, user=None, target: str = "", **metadata) -> None:

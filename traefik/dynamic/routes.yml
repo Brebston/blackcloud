@@ -1,5 +1,7 @@
 {{ $domain := env "DOMAIN" }}
 {{ $resolver := env "TLS_RESOLVER" }}
+{{ $office := env "OFFICE_HOST" | default (printf "office.%s" $domain) }}
+{{ $uc := env "USERCONTENT_HOST" | default (printf "usercontent.%s" $domain) }}
 http:
   routers:
     api:
@@ -41,15 +43,42 @@ http:
       tls:
         {{ if $resolver }}certResolver: {{ $resolver }}{{ end }}
 
-    # Завантаження файлів: CSP і X-Frame-Options задає Django (inline-перегляд у iframe)
-    file-download:
-      rule: 'Host(`{{ $domain }}`) && PathRegexp(`^/api/files/items/[0-9a-f-]+/download/$`)'
+    # Внутрішні ендпоінти ONLYOFFICE (file/, callback/) викликає лише Document Server
+    # напряму через Docker-мережу. Ззовні вони закриті (403).
+    office-internal-deny:
+      rule: 'Host(`{{ $domain }}`) && (PathPrefix(`/api/office/file/`) || PathPrefix(`/api/office/callback/`))'
       entryPoints: [websecure]
       service: backend
-      middlewares: [security-headers-framable]
-      priority: 300
+      middlewares: [deny-all]
+      priority: 500
       tls:
         {{ if $resolver }}certResolver: {{ $resolver }}{{ end }}
+
+    # ONLYOFFICE Document Server на окремому піддомені: його JavaScript працює в іншому
+    # origin і не може читати cookie, CSRF-токен чи API основного сайту.
+    office:
+      rule: 'Host(`{{ $office }}`)'
+      entryPoints: [websecure]
+      service: office
+      middlewares: [office-headers]
+      priority: 400
+      tls:
+        {{ if $resolver }}certResolver: {{ $resolver }}{{ end }}
+        domains:
+          - main: '{{ $office }}'
+
+    # Перегляд файлів користувачів у браузері (PDF, відео, текст) — окремий origin.
+    # Тут доступний ЛИШЕ /api/preview/<квиток>/; решта шляхів → 404.
+    usercontent:
+      rule: 'Host(`{{ $uc }}`) && PathPrefix(`/api/preview/`)'
+      entryPoints: [websecure]
+      service: backend
+      middlewares: [usercontent-headers]
+      priority: 400
+      tls:
+        {{ if $resolver }}certResolver: {{ $resolver }}{{ end }}
+        domains:
+          - main: '{{ $uc }}'
 
     frontend:
       rule: 'Host(`{{ $domain }}`)'
@@ -68,6 +97,10 @@ http:
         healthCheck:
           path: /api/health/
           interval: 30s
+    office:
+      loadBalancer:
+        servers:
+          - url: http://onlyoffice:80
     frontend:
       loadBalancer:
         servers:
@@ -100,16 +133,48 @@ http:
         referrerPolicy: no-referrer
         customFrameOptionsValue: SAMEORIGIN
 
+    deny-all:
+      ipAllowList:
+        sourceRange: ["127.0.0.1/32"]
+
+    office-headers:
+      headers:
+        stsSeconds: 63072000
+        stsIncludeSubdomains: true
+        forceSTSHeader: true
+        contentTypeNosniff: true
+        referrerPolicy: same-origin
+        customRequestHeaders:
+          X-Forwarded-Proto: https
+        customResponseHeaders:
+          # Редактор вбудовується лише в основний сайт
+          Content-Security-Policy: "frame-ancestors 'self' https://{{ $domain }}"
+          X-Frame-Options: ''
+
+    usercontent-headers:
+      headers:
+        stsSeconds: 63072000
+        stsIncludeSubdomains: true
+        forceSTSHeader: true
+        contentTypeNosniff: true
+        referrerPolicy: no-referrer
+        permissionsPolicy: 'camera=(), microphone=(), geolocation=(), payment=(), usb=()'
+        # Мапа лише з порожніми значеннями — для Traefik «standalone element», тому є непорожній заголовок
+        customResponseHeaders:
+          X-Permitted-Cross-Domain-Policies: none
+          Server: ''
+
     spa-csp:
       headers:
         contentSecurityPolicy: >-
           default-src 'self';
-          script-src 'self';
+          script-src 'self' https://{{ $office }};
           style-src 'self';
-          img-src 'self' data: blob:;
+          img-src 'self' data: blob: https://{{ $uc }};
+          media-src 'self' https://{{ $uc }};
           font-src 'self';
-          connect-src 'self' wss://{{ $domain }};
-          frame-src 'self' blob:;
+          connect-src 'self' wss://{{ $domain }} https://{{ $office }};
+          frame-src 'self' blob: https://{{ $office }} https://{{ $uc }};
           object-src 'none';
           base-uri 'none';
           form-action 'self';

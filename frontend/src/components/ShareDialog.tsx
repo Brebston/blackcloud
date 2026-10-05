@@ -46,8 +46,8 @@ export default function ShareDialog({
   const createLink = async (e: FormEvent) => {
     e.preventDefault();
     setError("");
-    if (linkForm.password && linkForm.password.length < 6) {
-      setError("Пароль посилання — щонайменше 6 символів.");
+    if (linkForm.password && linkForm.password.length < 8) {
+      setError("Пароль посилання — щонайменше 8 символів.");
       return;
     }
     try {

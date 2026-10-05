@@ -17,6 +17,32 @@ USERNAME_VALIDATOR = RegexValidator(
 )
 
 
+# Імена, з якими можна видати себе за службу або отримати службову пошту
+# (postmaster@, abuse@, ssl-admin@ — на них ЦС надсилають листи підтвердження домену).
+RESERVED_USERNAMES = {
+    "admin", "administrator", "root", "system", "sysadmin", "superuser", "staff", "moderator",
+    "postmaster", "hostmaster", "webmaster", "abuse", "security", "noreply", "no-reply",
+    "mailer-daemon", "daemon", "nobody", "webmail", "mail", "smtp", "imap", "pop", "pop3",
+    "support", "help", "helpdesk", "info", "contact", "billing", "sales", "office", "usercontent",
+    "ssl-admin", "ssladmin", "ssladministrator", "admin-ssl", "dmarc", "dkim", "spf", "bounce",
+    "bounces", "rspamd", "dovecot", "postfix", "clamav", "blackcloud", "api", "www", "ftp",
+    "privacy", "legal", "team", "it", "owner", "test", "verify", "verification", "accounts",
+}
+
+
+def _normalize_name(value: str) -> str:
+    return "".join(ch for ch in value.lower() if ch.isalnum())
+
+
+_RESERVED_NORMALIZED = {_normalize_name(n) for n in RESERVED_USERNAMES}
+
+
+def is_reserved_username(value: str) -> bool:
+    """«Ad.min», «post_master», «security-1»? Порівнюємо без '.', '-', '_' і хвостових цифр."""
+    norm = _normalize_name(value)
+    return norm in _RESERVED_NORMALIZED or norm.rstrip("0123456789") in _RESERVED_NORMALIZED
+
+
 class UserManager(BaseUserManager):
     use_in_migrations = True
 

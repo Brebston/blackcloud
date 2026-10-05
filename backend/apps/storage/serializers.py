@@ -29,6 +29,8 @@ class FileSerializer(serializers.ModelSerializer):
             "status_display",
             "scan_detail",
             "downloadable",
+            "has_thumbnail",
+            "content_version",
             "owner",
             "shared",
             "created_at",
@@ -115,3 +117,12 @@ class CreatePublicLinkSerializer(serializers.Serializer):
     expires_days = serializers.IntegerField(min_value=1, max_value=365, default=7)
     password = serializers.CharField(max_length=200, required=False, allow_blank=True, trim_whitespace=False)
     max_downloads = serializers.IntegerField(min_value=1, max_value=100000, required=False, allow_null=True)
+
+    def validate_password(self, value):
+        from django.conf import settings
+
+        if value and len(value) < settings.PUBLIC_LINK_MIN_PASSWORD:
+            raise serializers.ValidationError(
+                f"Пароль посилання — щонайменше {settings.PUBLIC_LINK_MIN_PASSWORD} символів."
+            )
+        return value

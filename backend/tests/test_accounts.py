@@ -130,7 +130,9 @@ def test_admin_api_requires_2fa_for_staff(make_user, client_for, settings):
     admin = make_user("root1", is_staff=True)
     assert client_for(admin).get("/api/admin/users/").status_code == 403
     _enable_totp(admin)
-    assert client_for(admin).get("/api/admin/users/").status_code == 200
+    # 2FA увімкнена, але ця сесія не проходила другий фактор → доступу немає
+    assert client_for(admin).get("/api/admin/users/").status_code == 403
+    assert client_for(admin, mfa=True).get("/api/admin/users/").status_code == 200
 
 
 @pytest.mark.django_db

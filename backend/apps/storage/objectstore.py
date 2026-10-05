@@ -35,6 +35,13 @@ class LocalObjectStore:
     def get(self, key: str) -> bytes:
         return self._path(key).read_bytes()
 
+    def delete(self, keys: list[str]) -> None:
+        for key in keys:
+            try:
+                self._path(key).unlink()
+            except FileNotFoundError:
+                pass
+
     def delete_prefix(self, prefix: str) -> None:
         base = self._path(prefix)
         if base.is_dir():
@@ -76,6 +83,12 @@ class S3ObjectStore:
 
     def get(self, key: str) -> bytes:
         return self.client.get_object(Bucket=self.bucket, Key=key)["Body"].read()
+
+    def delete(self, keys: list[str]) -> None:
+        for i in range(0, len(keys), 1000):
+            batch = [{"Key": k} for k in keys[i : i + 1000]]
+            if batch:
+                self.client.delete_objects(Bucket=self.bucket, Delete={"Objects": batch, "Quiet": True})
 
     def delete_prefix(self, prefix: str) -> None:
         paginator = self.client.get_paginator("list_objects_v2")

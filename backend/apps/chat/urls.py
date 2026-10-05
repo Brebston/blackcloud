@@ -10,4 +10,5 @@ urlpatterns = [
     path("conversations/<uuid:pk>/leave/", views.LeaveView.as_view()),
     path("conversations/<uuid:pk>/members/", views.MembersView.as_view()),
     path("messages/<uuid:pk>/", views.MessageDetailView.as_view()),
+    path("messages/<uuid:pk>/reactions/", views.ReactionView.as_view()),
 ]

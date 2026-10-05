@@ -2,6 +2,7 @@
 
 import base64
 import hmac
+import re
 import io
 import secrets
 import time
@@ -84,8 +85,9 @@ def regenerate_backup_codes(user) -> list[str]:
     with transaction.atomic():
         BackupCode.objects.filter(user=user).delete()
         for _ in range(BACKUP_CODES_COUNT):
-            raw = secrets.token_hex(5)  # 10 hex-символів, ~40 біт
-            code = f"{raw[:5]}-{raw[5:]}"
+            # 10 байтів = 80 біт ентропії → 16 символів base32 у форматі xxxx-xxxx-xxxx-xxxx
+            raw = base64.b32encode(secrets.token_bytes(10)).decode().lower()
+            code = "-".join(raw[i : i + 4] for i in range(0, 16, 4))
             codes.append(code)
             BackupCode.objects.create(user=user, code_hash=BackupCode.hash_code(code))
     return codes
@@ -113,7 +115,9 @@ def verify_second_factor(user, code: str) -> str | None:
         return None
     if verify_totp(device, code):
         return "totp"
-    if "-" in (code or "") or len((code or "").strip()) == 10:
+    compact = re.sub(r"[\s-]", "", code or "")
+    # 16 символів — нові коди (80 біт); 10 — старі, видані до оновлення (діють до перевипуску)
+    if len(compact) in (10, 16):
         if use_backup_code(user, code):
             return "backup_code"
     return None

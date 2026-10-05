@@ -1,7 +1,7 @@
 from rest_framework import serializers
 
 from .models import Calendar, CalendarShare, Event
-from .recurrence import validate_rrule
+from .recurrence import recurring_quota_left, validate_rrule
 
 
 class CalendarSerializer(serializers.ModelSerializer):
@@ -60,8 +60,12 @@ class EventSerializer(serializers.ModelSerializer):
         end = attrs.get("end", getattr(self.instance, "end", None))
         if start and end and end < start:
             raise serializers.ValidationError({"end": ["Кінець раніше за початок."]})
-        if "rrule" in attrs:
-            attrs["rrule"] = validate_rrule(attrs["rrule"], start)
+        if "rrule" in attrs or (self.instance is not None and self.instance.rrule and "start" in attrs):
+            attrs["rrule"] = validate_rrule(attrs.get("rrule", getattr(self.instance, "rrule", "")), start)
+            request = self.context.get("request")
+            becomes_recurring = attrs["rrule"] and not (self.instance is not None and self.instance.rrule)
+            if becomes_recurring and request is not None and recurring_quota_left(request.user) <= 0:
+                raise serializers.ValidationError({"rrule": ["Досягнуто ліміту повторюваних подій."]})
         if attrs.get("reminder_minutes") is not None and attrs["reminder_minutes"] > 60 * 24 * 30:
             raise serializers.ValidationError({"reminder_minutes": ["Максимум 30 днів."]})
         return attrs

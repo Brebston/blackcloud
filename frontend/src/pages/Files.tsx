@@ -1,7 +1,8 @@
 import { DragEvent, FormEvent, useCallback, useEffect, useRef, useState } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { del, errorText, get, patch, post } from "../api/client";
 import type { BrowseResult, FileItem, Folder } from "../api/types";
+import FileViewer from "../components/FileViewer";
 import Icon from "../components/Icon";
 import Modal from "../components/Modal";
 import ShareDialog from "../components/ShareDialog";
@@ -10,8 +11,25 @@ import { useAuth } from "../hooks/useAuth";
 import { useEvents } from "../hooks/useEvents";
 import { fileIcon, formatBytes, formatDate } from "../lib/format";
 import { uploadFile, UploadProgress } from "../lib/upload";
+import { downloadUrl, thumbnailUrl, viewKind } from "../lib/viewer";
 
-const PREVIEWABLE = ["image/png", "image/jpeg", "image/gif", "image/webp", "image/avif", "application/pdf", "text/plain", "video/mp4", "video/webm", "audio/mpeg", "audio/ogg"];
+type ViewMode = "list" | "grid";
+
+function loadViewMode(): ViewMode {
+  try {
+    return localStorage.getItem("bc_files_view") === "grid" ? "grid" : "list";
+  } catch {
+    return "list";
+  }
+}
+
+function FileThumb({ f, size = "sm" }: { f: FileItem; size?: "sm" | "lg" }) {
+  const [failed, setFailed] = useState(false);
+  if (f.has_thumbnail && f.downloadable && !failed) {
+    return <img className={`thumb thumb-${size}`} src={thumbnailUrl(f)} alt="" loading="lazy" onError={() => setFailed(true)} />;
+  }
+  return <Icon name={fileIcon(f.mime_type, f.name)} size={size === "lg" ? 48 : 18} />;
+}
 
 // Підпис у панелі завантажень відображає актуальний статус файлу зі списку
 function doneLabel(status?: string): string {
@@ -36,7 +54,6 @@ type Dialog =
   | { kind: "rename"; type: "file" | "folder"; id: string; name: string }
   | { kind: "move"; type: "file" | "folder"; id: string; name: string }
   | { kind: "share"; type: "file" | "folder"; id: string; name: string; downloadable?: boolean }
-  | { kind: "preview"; file: FileItem }
   | { kind: "info"; file: FileItem }
   | null;
 
@@ -44,7 +61,11 @@ export default function FilesPage() {
   const [params, setParams] = useSearchParams();
   const folderId = params.get("folder") || "root";
   const toast = useToast();
-  const { refresh: refreshUser } = useAuth();
+  const { user, refresh: refreshUser } = useAuth();
+  const navigate = useNavigate();
+  const officeEnabled = !!user?.features?.office;
+  const [viewMode, setViewMode] = useState<ViewMode>(loadViewMode);
+  const [viewerIndex, setViewerIndex] = useState<number | null>(null);
   const [data, setData] = useState<BrowseResult | null>(null);
   const [error, setError] = useState("");
   const [dialog, setDialog] = useState<Dialog>(null);
@@ -132,6 +153,58 @@ export default function FilesPage() {
   const listFolders = searchResults ? searchResults.folders : data?.folders || [];
   const listFiles = searchResults ? searchResults.files : data?.files || [];
   const writable = !!data?.writable && !searchResults;
+  const viewable = listFiles.filter((f) => viewKind(f, officeEnabled) !== null);
+
+  const openFile = (f: FileItem) => {
+    const kind = viewKind(f, officeEnabled);
+    if (kind === "office") navigate(`/edit/${f.id}`);
+    else if (kind) setViewerIndex(viewable.findIndex((x) => x.id === f.id));
+    else setDialog({ kind: "info", file: f });
+  };
+
+  const switchView = (mode: ViewMode) => {
+    setViewMode(mode);
+    try {
+      localStorage.setItem("bc_files_view", mode);
+    } catch {
+      /* приватний режим — просто не запам'ятовуємо */
+    }
+  };
+
+  const fileActions = (f: FileItem) => (
+    <div className="row-actions">
+      {f.downloadable && (
+        <a className="icon-btn" title="Завантажити" href={downloadUrl(f)}>
+          <Icon name="download" size={16} />
+        </a>
+      )}
+      {writable && (
+        <>
+          <button className="icon-btn" title="Поділитися" onClick={() => setDialog({ kind: "share", type: "file", id: f.id, name: f.name, downloadable: f.downloadable })}>
+            <Icon name="share" size={16} />
+          </button>
+          <button className="icon-btn" title="Перейменувати" onClick={() => setDialog({ kind: "rename", type: "file", id: f.id, name: f.name })}>
+            <Icon name="edit" size={16} />
+          </button>
+          <button className="icon-btn" title="Перемістити" onClick={() => setDialog({ kind: "move", type: "file", id: f.id, name: f.name })}>
+            <Icon name="move" size={16} />
+          </button>
+          <button className="icon-btn danger" title="У кошик" onClick={() => remove("file", f.id, f.name)}>
+            <Icon name="trash" size={16} />
+          </button>
+        </>
+      )}
+    </div>
+  );
+
+  const statusPills = (f: FileItem) => (
+    <>
+      {f.status === "scanning" && <span className="pill">перевірка</span>}
+      {f.status === "infected" && <span className="pill pill-danger">вірус</span>}
+      {f.status === "unscanned" && <span className="pill pill-warning">не перевірено</span>}
+      {f.status === "failed" && <span className="pill pill-danger">помилка</span>}
+    </>
+  );
 
   return (
     <div
@@ -163,6 +236,14 @@ export default function FilesPage() {
           <div className="search">
             <Icon name="search" size={16} />
             <input placeholder="Пошук файлів…" value={query} onChange={(e) => setQuery(e.target.value)} />
+          </div>
+          <div className="segmented" role="group" aria-label="Вигляд">
+            <button className={viewMode === "list" ? "active" : ""} onClick={() => switchView("list")} aria-label="Список" title="Список">
+              <Icon name="list" size={16} />
+            </button>
+            <button className={viewMode === "grid" ? "active" : ""} onClick={() => switchView("grid")} aria-label="Сітка" title="Сітка">
+              <Icon name="grid" size={16} />
+            </button>
           </div>
           {data?.writable && (
             <>
@@ -223,6 +304,49 @@ export default function FilesPage() {
         </div>
       )}
 
+      {viewMode === "grid" ? (
+        <div className="file-grid">
+          {data?.folder && !searchResults && (
+            <button className="grid-card grid-back" onClick={() => openFolder(data.breadcrumbs.length > 1 ? data.breadcrumbs[data.breadcrumbs.length - 2].id : null)}>
+              <div className="grid-preview">
+                <Icon name="chevronLeft" size={40} />
+              </div>
+              <div className="grid-name muted">Назад</div>
+            </button>
+          )}
+          {listFolders.map((f) => (
+            <button key={f.id} className="grid-card" onClick={() => openFolder(f.id)}>
+              <div className="grid-preview">
+                <Icon name="folder" size={52} className="ico-folder" />
+              </div>
+              <div className="grid-name truncate">{f.name}</div>
+            </button>
+          ))}
+          {listFiles.map((f) => (
+            <div key={f.id} className="grid-card">
+              <button className="grid-preview" onClick={() => openFile(f)} aria-label={f.name}>
+                <FileThumb f={f} size="lg" />
+              </button>
+              <div className="grid-name">
+                <button className="link-btn truncate" onClick={() => openFile(f)} title={f.name}>
+                  {f.name}
+                </button>
+              </div>
+              <div className="grid-meta">
+                <span className="muted small">{formatBytes(f.size)}</span>
+                {statusPills(f)}
+              </div>
+              <div className="grid-actions">{fileActions(f)}</div>
+            </div>
+          ))}
+          {data && listFolders.length === 0 && listFiles.length === 0 && (
+            <div className="empty grid-empty">
+              <Icon name={searchResults ? "search" : "upload"} size={32} />
+              <div>{searchResults ? "Нічого не знайдено" : data.writable ? "Перетягніть файли сюди або натисніть «Завантажити»" : "Папка порожня"}</div>
+            </div>
+          )}
+        </div>
+      ) : (
       <div className="card table-card">
         <table className="table files-table">
           <thead>
@@ -275,51 +399,19 @@ export default function FilesPage() {
               <tr key={f.id}>
                 <td>
                   <span className="name-cell">
-                    <Icon name={fileIcon(f.mime_type, f.name)} />
-                    <button
-                      className="link-btn truncate"
-                      onClick={() =>
-                        f.downloadable && PREVIEWABLE.includes(f.mime_type)
-                          ? setDialog({ kind: "preview", file: f })
-                          : setDialog({ kind: "info", file: f })
-                      }
-                    >
+                    <button className="thumb-btn" onClick={() => openFile(f)} tabIndex={-1} aria-hidden="true">
+                      <FileThumb f={f} />
+                    </button>
+                    <button className="link-btn truncate" onClick={() => openFile(f)}>
                       {f.name}
                     </button>
-                    {f.status === "scanning" && <span className="pill">перевірка</span>}
-                    {f.status === "infected" && <span className="pill pill-danger">вірус</span>}
-                    {f.status === "unscanned" && <span className="pill pill-warning">не перевірено</span>}
-                    {f.status === "failed" && <span className="pill pill-danger">помилка</span>}
+                    {statusPills(f)}
                     {f.shared && <Icon name="share" size={13} className="muted" />}
                   </span>
                 </td>
                 <td className="col-size muted">{formatBytes(f.size)}</td>
                 <td className="col-date muted">{formatDate(f.updated_at)}</td>
-                <td className="col-actions">
-                  <div className="row-actions">
-                    {f.downloadable && (
-                      <a className="icon-btn" title="Завантажити" href={`/api/files/items/${f.id}/download/`}>
-                        <Icon name="download" size={16} />
-                      </a>
-                    )}
-                    {writable && (
-                      <>
-                        <button className="icon-btn" title="Поділитися" onClick={() => setDialog({ kind: "share", type: "file", id: f.id, name: f.name, downloadable: f.downloadable })}>
-                          <Icon name="share" size={16} />
-                        </button>
-                        <button className="icon-btn" title="Перейменувати" onClick={() => setDialog({ kind: "rename", type: "file", id: f.id, name: f.name })}>
-                          <Icon name="edit" size={16} />
-                        </button>
-                        <button className="icon-btn" title="Перемістити" onClick={() => setDialog({ kind: "move", type: "file", id: f.id, name: f.name })}>
-                          <Icon name="move" size={16} />
-                        </button>
-                        <button className="icon-btn danger" title="У кошик" onClick={() => remove("file", f.id, f.name)}>
-                          <Icon name="trash" size={16} />
-                        </button>
-                      </>
-                    )}
-                  </div>
-                </td>
+                <td className="col-actions">{fileActions(f)}</td>
               </tr>
             ))}
             {data && listFolders.length === 0 && listFiles.length === 0 && (
@@ -335,6 +427,7 @@ export default function FilesPage() {
           </tbody>
         </table>
       </div>
+      )}
 
       {dialog?.kind === "newFolder" && (
         <NameDialog
@@ -369,7 +462,15 @@ export default function FilesPage() {
         />
       )}
       {dialog?.kind === "share" && <ShareDialog target={dialog} onClose={() => { setDialog(null); load(); }} />}
-      {dialog?.kind === "preview" && <PreviewDialog file={dialog.file} onClose={() => setDialog(null)} />}
+      {viewerIndex !== null && viewable[viewerIndex] && (
+        <FileViewer
+          files={viewable}
+          index={viewerIndex}
+          officeEnabled={officeEnabled}
+          onIndex={setViewerIndex}
+          onClose={() => setViewerIndex(null)}
+        />
+      )}
       {dialog?.kind === "info" && <InfoDialog file={dialog.file} onClose={() => setDialog(null)} />}
       {dragging && (
         <div className="drop-overlay">
@@ -484,26 +585,6 @@ function MoveDialog({
         <button className="btn btn-primary" onClick={move}>
           Перемістити сюди
         </button>
-      </div>
-    </Modal>
-  );
-}
-
-function PreviewDialog({ file, onClose }: { file: FileItem; onClose: () => void }) {
-  const src = `/api/files/items/${file.id}/download/?inline=1`;
-  return (
-    <Modal title={file.name} onClose={onClose} wide>
-      <div className="preview">
-        {file.mime_type.startsWith("image/") && <img src={src} alt={file.name} />}
-        {file.mime_type.startsWith("video/") && <video src={src} controls />}
-        {file.mime_type.startsWith("audio/") && <audio src={src} controls />}
-        {file.mime_type === "application/pdf" && <iframe src={src} title={file.name} />}
-        {file.mime_type === "text/plain" && <iframe src={src} title={file.name} sandbox="" />}
-      </div>
-      <div className="modal-actions">
-        <a className="btn btn-primary" href={`/api/files/items/${file.id}/download/`}>
-          <Icon name="download" size={16} /> Завантажити
-        </a>
       </div>
     </Modal>
   );

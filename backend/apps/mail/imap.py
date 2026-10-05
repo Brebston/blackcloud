@@ -201,17 +201,36 @@ def _parse_fetch(data) -> list[dict]:
     return items
 
 
+_CONTROL = re.compile(r"[\x00-\x1f\x7f]")
+
+
+def _search(conn, query: str) -> set[int]:
+    """Пошук за темою або відправником (будь-якою мовою).
+
+    Текст передається IMAP-літералом {n}: так він не може «вийти» з рядка й додати
+    власні команди (CRLF-ін'єкція), а кирилиця передається як UTF-8."""
+    q = _CONTROL.sub("", query).strip()[:100]
+    if not q:
+        return set()
+    found: set[int] = set()
+    for field in ("SUBJECT", "FROM"):
+        conn.literal = q.encode("utf-8")
+        typ, data = conn.uid("SEARCH", "CHARSET", "UTF-8", field)
+        if typ == "OK":
+            found.update(int(x) for x in (data[0] or b"").split())
+    return found
+
+
 def list_messages(address: str, folder: str, page: int = 1, page_size: int = 50, query: str = "") -> dict:
     page = max(1, page)
     page_size = max(1, min(page_size, 100))
     with imap_session(address) as conn:
         _select(conn, folder, readonly=True)
         if query:
-            q = query.replace("\\", "").replace('"', "")[:100]
-            typ, data = conn.uid("SEARCH", "CHARSET", "UTF-8", "OR", "SUBJECT", f'"{q}"', "FROM", f'"{q}"')
+            uids = sorted(_search(conn, query), reverse=True)
         else:
             typ, data = conn.uid("SEARCH", None, "ALL")
-        uids = sorted((int(x) for x in (data[0] or b"").split()), reverse=True) if typ == "OK" else []
+            uids = sorted((int(x) for x in (data[0] or b"").split()), reverse=True) if typ == "OK" else []
         total = len(uids)
         page_uids = uids[(page - 1) * page_size : page * page_size]
         items = []

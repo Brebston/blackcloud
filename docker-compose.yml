@@ -1,17 +1,28 @@
 name: blackcloud
 
 # Мережі:
-#   edge     — Traefik <-> frontend/backend (доступ ззовні лише через Traefik)
+#   edge     — Traefik <-> frontend/backend/ONLYOFFICE (доступ ззовні лише через Traefik)
 #   internal — БД, Redis, ClamAV, пошта (без виходу в інтернет)
+#   thumbs   — лише worker <-> thumbnailer (ізольований рендер мініатюр)
 #   mailnet  — Postfix/Dovecot: публікують поштові порти та відправляють листи назовні
 networks:
   edge:
+    ipam:
+      config:
+        # фіксована адреса Traefik (.2): лише їй backend довіряє X-Forwarded-For.
+        # ip_range — пул для решти контейнерів (.128–.254), щоб Docker не віддав .2 комусь іншому
+        - subnet: 172.31.250.0/24
+          ip_range: 172.31.250.128/25
   internal:
     internal: true
     ipam:
       config:
-        # фіксована підмережа: Postfix/Dovecot/Rspamd довіряють лише їй
+        # фіксована адреса backend (.10): лише їй Postfix/Dovecot/Rspamd дозволяють веб-пошту.
+        # ip_range — пул для решти контейнерів (.128–.254), щоб .10 не зайняв хтось інший
         - subnet: 172.30.0.0/24
+          ip_range: 172.30.0.128/25
+  thumbs:
+    internal: true
   mailnet:
 
 volumes:
@@ -24,12 +35,16 @@ volumes:
   rspamd_data:
   traefik_acme:
   static_files:
+  office_data:
+  office_lib:
 
 secrets:
   django_secret_key:
     file: ./secrets/django_secret_key
   postgres_password:
     file: ./secrets/postgres_password
+  app_db_password:
+    file: ./secrets/app_db_password
   mail_db_password:
     file: ./secrets/mail_db_password
   redis_password:
@@ -40,14 +55,20 @@ secrets:
     file: ./secrets/field_encryption_key
   dovecot_master_password:
     file: ./secrets/dovecot_master_password
+  mail_crypt_private_key:
+    file: ./secrets/mail_crypt_private_key
+  mail_crypt_public_key:
+    file: ./secrets/mail_crypt_public_key
 
 x-backend-common: &backend-common
   build:
     context: ./backend
+    args:
+      PYTHON_IMAGE: ${PYTHON_IMAGE:-python:3.12-slim-bookworm}
   image: blackcloud/backend:latest
   restart: unless-stopped
   env_file: .env
-  environment:
+  environment: &backend-env
     POSTGRES_HOST: postgres
     REDIS_HOST: redis
     OBJECT_STORE: local
@@ -55,13 +76,17 @@ x-backend-common: &backend-common
     CLAMAV_HOST: clamav
     IMAP_HOST: dovecot
     SMTP_HOST: postfix
+    # Обмежена роль PostgreSQL (лише DML). Міграції виконує окремий сервіс migrate.
+    DB_ROLE: app
+    THUMBNAILER_URL: http://thumbnailer:8100
+    TRUSTED_PROXY_IP: 172.31.250.2
+  # Пароля власника БД (postgres_password) тут немає
   secrets:
     - django_secret_key
-    - postgres_password
+    - app_db_password
     - redis_password
     - file_master_keys
     - field_encryption_key
-    - dovecot_master_password
   read_only: true
   tmpfs:
     - /tmp:size=256m,mode=1777
@@ -76,10 +101,32 @@ x-backend-common: &backend-common
       condition: service_healthy
     redis:
       condition: service_healthy
+    migrate:
+      condition: service_completed_successfully
 
 services:
+  # Одноразовий: міграції від імені власника БД + створення ролі bc_app
+  migrate:
+    <<: *backend-common
+    command: ["migrate"]
+    restart: "no"
+    environment:
+      <<: *backend-env
+      DB_ROLE: admin
+    secrets:
+      - django_secret_key
+      - postgres_password
+      - app_db_password
+      - redis_password
+      - file_master_keys
+      - field_encryption_key
+    networks: [internal]
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   traefik:
-    image: traefik:v3.1
+    image: ${TRAEFIK_IMAGE:-traefik:v3.1}
     restart: unless-stopped
     # Статична конфігурація — лише через CLI (Traefik не дозволяє змішувати джерела).
     # Docker-сокет НЕ монтується: маршрути описані у file provider.
@@ -107,13 +154,17 @@ services:
       TLS_RESOLVER: ${TLS_RESOLVER-letsencrypt}
       SNI_STRICT: ${SNI_STRICT:-true}
       ADMIN_URL_PREFIX: ${ADMIN_URL_PREFIX:-bc-admin}
+      OFFICE_HOST: ${OFFICE_HOST:-}
+      USERCONTENT_HOST: ${USERCONTENT_HOST:-}
     ports:
       - "80:80"
       - "443:443"
     volumes:
       - ./traefik/dynamic:/etc/traefik/dynamic:ro
       - traefik_acme:/acme
-    networks: [edge]
+    networks:
+      edge:
+        ipv4_address: 172.31.250.2
     read_only: true
     security_opt:
       - no-new-privileges:true
@@ -123,6 +174,9 @@ services:
   frontend:
     build:
       context: ./frontend
+      args:
+        NODE_IMAGE: ${NODE_IMAGE:-node:22-alpine}
+        NGINX_IMAGE: ${NGINX_IMAGE:-nginxinc/nginx-unprivileged:1.27-alpine}
     image: blackcloud/frontend:latest
     restart: unless-stopped
     networks: [edge]
@@ -136,10 +190,20 @@ services:
   backend:
     <<: *backend-common
     command: ["web"]
+    secrets:
+      - django_secret_key
+      - app_db_password
+      - redis_password
+      - file_master_keys
+      - field_encryption_key
+      - dovecot_master_password
     volumes:
       - objects_data:/data/objects
       - static_files:/app/staticfiles
-    networks: [edge, internal]
+    networks:
+      edge: {}
+      internal:
+        ipv4_address: 172.30.0.10
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8000/api/health/')"]
       interval: 30s
@@ -149,15 +213,38 @@ services:
   worker:
     <<: *backend-common
     command: ["worker"]
-    networks: [internal]
+    networks: [internal, thumbs]
 
   beat:
     <<: *backend-common
     command: ["beat"]
     networks: [internal]
 
+  # Ізольований рендер мініатюр: розбір зображень/PDF без секретів, без БД і без інтернету.
+  # Навіть експлойт у декодері не дає доступу до ключів шифрування.
+  thumbnailer:
+    build:
+      context: ./backend
+      args:
+        PYTHON_IMAGE: ${PYTHON_IMAGE:-python:3.12-slim-bookworm}
+    image: blackcloud/backend:latest
+    command: ["thumbnailer"]
+    restart: unless-stopped
+    environment:
+      THUMB_CONCURRENCY: "2"
+      THUMB_MAX_MEMORY_MB: "700"
+    networks: [thumbs]
+    read_only: true
+    tmpfs:
+      - /tmp:size=256m,mode=1777
+    mem_limit: 768m
+    pids_limit: 64
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+
   postgres:
-    image: postgres:16-alpine
+    image: ${POSTGRES_IMAGE:-postgres:16-alpine}
     restart: unless-stopped
     environment:
       POSTGRES_DB: blackcloud
@@ -177,7 +264,7 @@ services:
       retries: 10
 
   redis:
-    image: redis:7-alpine
+    image: ${REDIS_IMAGE:-redis:7-alpine}
     restart: unless-stopped
     command: ["sh", "-c", "exec redis-server --requirepass \"$$(cat /run/secrets/redis_password)\" --appendonly yes --protected-mode yes --rename-command FLUSHALL '' --rename-command CONFIG ''"]
     secrets: [redis_password]
@@ -196,6 +283,8 @@ services:
   clamav:
     build:
       context: ./mailserver/clamav
+      args: &debian-args
+        DEBIAN_IMAGE: ${DEBIAN_IMAGE:-debian:bookworm-slim}
     image: blackcloud/clamav:latest
     restart: unless-stopped
     volumes:
@@ -208,11 +297,13 @@ services:
   postfix:
     build:
       context: ./mailserver/postfix
+      args: *debian-args
     image: blackcloud/postfix:latest
     restart: unless-stopped
     environment:
       MAIL_HOSTNAME: ${MAIL_HOSTNAME}
       MAIL_DOMAIN: ${MAIL_DOMAIN}
+      WEBMAIL_CLIENT_IP: 172.30.0.10
     secrets: [mail_db_password]
     ports:
       - "25:25"
@@ -229,11 +320,13 @@ services:
   dovecot:
     build:
       context: ./mailserver/dovecot
+      args: *debian-args
     image: blackcloud/dovecot:latest
     restart: unless-stopped
     environment:
       MAIL_HOSTNAME: ${MAIL_HOSTNAME}
-    secrets: [mail_db_password, dovecot_master_password]
+      WEBMAIL_CLIENT_IP: 172.30.0.10
+    secrets: [mail_db_password, dovecot_master_password, mail_crypt_private_key, mail_crypt_public_key]
     ports:
       - "993:993"
     volumes:
@@ -247,10 +340,12 @@ services:
   rspamd:
     build:
       context: ./mailserver/rspamd
+      args: *debian-args
     image: blackcloud/rspamd:latest
     restart: unless-stopped
     environment:
       MAIL_DOMAIN: ${MAIL_DOMAIN}
+      WEBMAIL_CLIENT_IP: 172.30.0.10
     secrets: [redis_password]
     volumes:
       - rspamd_data:/var/lib/rspamd
@@ -258,3 +353,23 @@ services:
     depends_on: [redis, clamav]
     security_opt:
       - no-new-privileges:true
+
+  # Онлайн-редактор Word/Excel/PowerPoint. Вмикається через COMPOSE_PROFILES=office у .env
+  # (потребує ~2–3 ГБ RAM). Доступний лише через Traefik на піддомені office.<DOMAIN>
+  # (окремий origin: його скрипти не мають доступу до cookie та API основного сайту).
+  onlyoffice:
+    image: ${OFFICE_IMAGE:-onlyoffice/documentserver:9.4.0}
+    profiles: [office]
+    restart: unless-stopped
+    environment:
+      JWT_ENABLED: "true"
+      JWT_SECRET: ${OFFICE_JWT_SECRET:-}
+      JWT_HEADER: Authorization
+      # Document Server звертається до backend у внутрішній Docker-мережі
+      ALLOW_PRIVATE_IP_ADDRESS: "true"
+      WOPI_ENABLED: "false"
+    volumes:
+      - office_data:/var/www/onlyoffice/Data
+      - office_lib:/var/lib/onlyoffice
+    # Лише edge: Document Server бачить backend і Traefik, але не БД, Redis чи пошту
+    networks: [edge]

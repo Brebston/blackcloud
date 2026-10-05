@@ -127,18 +127,24 @@ def test_public_link_password_and_limit(alice, client_for):
         "/api/files/links/", {"file": info["id"], "password": "pw-123456", "max_downloads": 1}, format="json"
     )
     assert r.status_code == 201
-    token = r.json()["url"].rsplit("/", 1)[1]
+    url = r.json()["url"]
+    assert "/s#" in url  # токен у фрагменті — не надсилається на сервер
+    token = url.split("#", 1)[1]
     assert not PublicLink.objects.filter(token_hash=token).exists()  # у БД лише хеш
 
     anon = APIClient()
-    assert anon.get(f"/api/public/{token}/").json()["requires_password"] is True
-    assert anon.post(f"/api/public/{token}/authorize/", {"password": "nope"}, format="json").status_code == 403
-    url = anon.post(f"/api/public/{token}/authorize/", {"password": "pw-123456"}, format="json").json()["download_url"]
-    assert body(anon.get(url)) == b"public bytes"
-    # ліміт завантажень вичерпано
-    assert anon.get(url).status_code == 404
-    # без підпису завантаження неможливе
-    assert anon.get(f"/api/public/{token}/download/").status_code in (403, 404)
+    assert anon.post("/api/public/info/", {"token": token}, format="json").json()["requires_password"] is True
+    assert anon.post("/api/public/authorize/", {"token": token, "password": "nope"}, format="json").status_code == 403
+    dl = anon.post("/api/public/authorize/", {"token": token, "password": "pw-123456"}, format="json").json()
+    assert token not in dl["download_url"]
+    assert body(anon.get(dl["download_url"])) == b"public bytes"
+    # квиток одноразовий
+    assert anon.get(dl["download_url"]).status_code == 403
+    # ліміт завантажень вичерпано — посилання більше не видає квитків
+    r = anon.post("/api/public/authorize/", {"token": token, "password": "pw-123456"}, format="json")
+    assert r.status_code == 404
+    # вигаданий квиток не працює
+    assert anon.get("/api/public/dl/forged-ticket/").status_code == 403
 
 
 @pytest.mark.parametrize(

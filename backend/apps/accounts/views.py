@@ -3,6 +3,7 @@ import time
 from django.conf import settings
 from django.contrib.auth import authenticate, login, logout, update_session_auth_hash
 from django.contrib.sessions.models import Session
+from django.core.cache import cache
 from django.db import transaction
 from django.db.models import Count, Q, Sum
 from django.middleware.csrf import get_token
@@ -20,7 +21,7 @@ from rest_framework.views import APIView
 from apps.core.audit import audit, client_ip
 from apps.core.models import AuditLog
 from apps.core.permissions import IsStaffWith2FA
-from apps.core.realtime import notify
+from apps.core.realtime import alert_staff, close_session_sockets, close_user_sockets, notify
 
 from . import lockout, twofactor
 from .models import Invite, Preferences, User, UserSession
@@ -39,12 +40,46 @@ from .serializers import (
     SessionSerializer,
     TwoFactorSerializer,
     UserSerializer,
+    session_public_id,
 )
 
 PRE2FA_KEY = "pre2fa"
 PRE2FA_TTL = 300
 PRE2FA_MAX_ATTEMPTS = 5
 GENERIC_LOGIN_ERROR = "Невірний логін або пароль."
+
+
+# ─── Лічильник невдалих 2FA на акаунт ───
+# Не залежить від IP і НЕ скидається успішним паролем: інакше зловмисник із
+# відомим паролем міг би перебирати коди нескінченними циклами «пароль → 5 кодів».
+def _mfa_fail_key(user) -> str:
+    return f"mfa-fail:{user.pk}"
+
+
+def _mfa_locked(user) -> bool:
+    return (cache.get(_mfa_fail_key(user)) or 0) >= settings.TWO_FACTOR_MAX_FAILURES
+
+
+def _mfa_register_failure(request, user) -> None:
+    key = _mfa_fail_key(user)
+    if cache.add(key, 1, settings.TWO_FACTOR_FAILURE_WINDOW):
+        count = 1
+    else:
+        try:
+            count = cache.incr(key)
+        except ValueError:
+            cache.set(key, 1, settings.TWO_FACTOR_FAILURE_WINDOW)
+            count = 1
+    if count == settings.TWO_FACTOR_MAX_FAILURES:
+        audit(request, "login.2fa_locked", user=user)
+        notify(
+            user,
+            "security",
+            "Хтось підбирає код 2FA до вашого акаунта",
+            "Пароль введено правильно, але код — ні. Вхід тимчасово заблоковано. Змініть пароль.",
+            "/settings/security",
+        )
+        alert_staff("Підбір 2FA", f"Акаунт {user.username}: {count} невдалих кодів за годину.")
 
 
 def _resolve_username(login_value: str) -> str:
@@ -102,6 +137,7 @@ class MeView(APIView):
         data = UserSerializer(user).data
         data["preferences"] = PreferencesSerializer(Preferences.objects.get_or_create(user=user)[0]).data
         data["must_enroll_2fa"] = bool(user.is_staff and settings.REQUIRE_2FA_FOR_STAFF and not user.has_2fa)
+        data["features"] = {"office": bool(settings.OFFICE_ENABLED and settings.OFFICE_JWT_SECRET)}
         return Response({"authenticated": True, "user": data})
 
 
@@ -133,6 +169,12 @@ class LoginView(APIView):
         lockout.reset(login_value)
 
         if user.has_2fa:
+            if _mfa_locked(user):
+                audit(request, "login.2fa_locked", user=user)
+                return Response(
+                    {"detail": "Забагато невдалих кодів. Спробуйте пізніше."},
+                    status=status.HTTP_429_TOO_MANY_REQUESTS,
+                )
             request.session.cycle_key()
             request.session[PRE2FA_KEY] = {"uid": str(user.pk), "ts": int(time.time()), "attempts": 0}
             audit(request, "login.password_ok", user=user)
@@ -163,13 +205,19 @@ class LoginTwoFactorView(APIView):
             request.session.pop(PRE2FA_KEY, None)
             return Response({"detail": GENERIC_LOGIN_ERROR}, status=400)
 
+        if _mfa_locked(user):
+            request.session.pop(PRE2FA_KEY, None)
+            return Response({"detail": "Забагато невдалих кодів. Спробуйте пізніше."}, status=429)
+
         method = twofactor.verify_second_factor(user, ser.validated_data["code"])
         if method is None:
             pending["attempts"] += 1
             request.session[PRE2FA_KEY] = pending
             audit(request, "login.2fa_failed", user=user)
+            _mfa_register_failure(request, user)
             return Response({"detail": "Невірний код."}, status=400)
 
+        cache.delete(_mfa_fail_key(user))
         request.session.pop(PRE2FA_KEY, None)
         _complete_login(request, user, method)
         if method == "backup_code":
@@ -182,9 +230,11 @@ class LogoutView(APIView):
     permission_classes = [AllowAny]
 
     def post(self, request):
+        key = request.session.session_key
         if request.user.is_authenticated:
             audit(request, "logout")
         logout(request)
+        close_session_sockets([key])
         return Response({"status": "ok"})
 
 
@@ -301,6 +351,7 @@ class TwoFactorDisableView(APIView):
         if twofactor.verify_second_factor(request.user, ser.validated_data["code"]) is None:
             raise ValidationError({"code": ["Невірний код."]})
         twofactor.disable_2fa(request.user)
+        request.session["mfa"] = False
         audit(request, "2fa.disabled")
         notify(request.user, "security", "Двофакторну автентифікацію вимкнено")
         return Response({"status": "ok"})
@@ -325,7 +376,16 @@ def _revoke_other_sessions(request) -> int:
     )
     Session.objects.filter(session_key__in=keys).delete()
     UserSession.objects.filter(session_key__in=keys).delete()
+    close_session_sockets(keys)
     return len(keys)
+
+
+def _revoke_all_sessions(user) -> None:
+    keys = list(UserSession.objects.filter(user=user).values_list("session_key", flat=True))
+    Session.objects.filter(session_key__in=keys).delete()
+    UserSession.objects.filter(user=user).delete()
+    close_session_sockets(keys)
+    close_user_sockets(user.pk)
 
 
 class SessionsViewSet(viewsets.GenericViewSet, mixins.ListModelMixin):
@@ -337,16 +397,17 @@ class SessionsViewSet(viewsets.GenericViewSet, mixins.ListModelMixin):
         return UserSession.objects.filter(user=self.request.user, session_key__in=live).order_by("-last_seen")
 
     def destroy(self, request, pk=None):
-        prefix = (pk or "")[:12]
-        if len(prefix) < 12:
+        public_id = (pk or "").lower()
+        if len(public_id) != 20:
             raise ValidationError({"detail": "Невірний ідентифікатор."})
-        matches = list(self.get_queryset().filter(session_key__startswith=prefix))
+        matches = [s for s in self.get_queryset() if session_public_id(s.session_key) == public_id]
         if len(matches) != 1:
             return Response(status=404)
         key = matches[0].session_key
         Session.objects.filter(session_key=key).delete()
         UserSession.objects.filter(session_key=key).delete()
-        audit(request, "session.revoked", target=prefix)
+        close_session_sockets([key])
+        audit(request, "session.revoked", target=public_id)
         if key == request.session.session_key:
             logout(request)
         return Response(status=204)
@@ -405,21 +466,29 @@ class AdminUserViewSet(
             qs = qs.filter(Q(username__icontains=q) | Q(email__icontains=q) | Q(display_name__icontains=q))
         return qs
 
+    def _check_target(self, target):
+        """Звичайний адміністратор не керує іншими адміністраторами і суперкористувачами:
+        інакше один скомпрометований staff-акаунт міг би вимкнути чи перехопити решту."""
+        me = self.request.user
+        if me.is_superuser or target == me:
+            return
+        if target.is_staff or target.is_superuser:
+            raise PermissionDenied("Керувати адміністраторами може лише суперкористувач.")
+
     def perform_update(self, serializer):
         target = serializer.instance
+        self._check_target(target)
         if target == self.request.user and serializer.validated_data.get("is_active") is False:
             raise ValidationError({"is_active": ["Не можна деактивувати себе."]})
         if "is_staff" in serializer.validated_data and not self.request.user.is_superuser:
             raise PermissionDenied("Лише суперкористувач може змінювати права адміністратора.")
         user = serializer.save()
         if user.is_active is False:
-            keys = list(UserSession.objects.filter(user=user).values_list("session_key", flat=True))
-            Session.objects.filter(session_key__in=keys).delete()
-            UserSession.objects.filter(user=user).delete()
+            _revoke_all_sessions(user)
         audit(self.request, "admin.user_updated", target=user.username, changes=list(serializer.validated_data))
 
     def create(self, request):
-        ser = AdminCreateUserSerializer(data=request.data)
+        ser = AdminCreateUserSerializer(data=request.data, context={"allow_reserved": request.user.is_superuser})
         ser.is_valid(raise_exception=True)
         d = ser.validated_data
         extra = {}
@@ -438,7 +507,10 @@ class AdminUserViewSet(
         user = self.get_object()
         if user == request.user:
             raise ValidationError({"detail": "Використайте власні налаштування безпеки."})
+        self._check_target(user)
         twofactor.disable_2fa(user)
+        # Скидання 2FA зазвичай означає втрату телефону — завершуємо всі сесії користувача
+        _revoke_all_sessions(user)
         audit(request, "admin.2fa_reset", target=user.username)
         notify(user, "security", "Адміністратор скинув вашу 2FA", "Увімкніть її знову в налаштуваннях безпеки.")
         return Response({"status": "ok"})

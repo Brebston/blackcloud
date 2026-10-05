@@ -3,14 +3,28 @@ from rest_framework import serializers
 from .models import Conversation, Message
 
 
+def reactions_summary(message) -> list[dict]:
+    """[{emoji, count, users: [username…]}] у порядку першої появи."""
+    groups: dict[str, list[str]] = {}
+    for r in message.reactions.all():
+        groups.setdefault(r.emoji, []).append(r.user.username)
+    return [{"emoji": e, "count": len(u), "users": u[:50]} for e, u in groups.items()]
+
+
 class MessageSerializer(serializers.ModelSerializer):
     sender = serializers.CharField(source="sender.username", read_only=True, default=None)
     file_info = serializers.SerializerMethodField()
+    reactions = serializers.SerializerMethodField()
 
     class Meta:
         model = Message
-        fields = ["id", "conversation", "sender", "body", "file", "file_info", "created_at", "edited_at", "deleted"]
+        fields = [
+            "id", "conversation", "sender", "body", "file", "file_info", "created_at", "edited_at", "deleted", "reactions",
+        ]
         read_only_fields = fields
+
+    def get_reactions(self, obj):
+        return [] if obj.deleted else reactions_summary(obj)
 
     def get_file_info(self, obj):
         if obj.file_id and obj.file and obj.file.deleted_at is None:
@@ -22,6 +36,7 @@ class MessageSerializer(serializers.ModelSerializer):
         if instance.deleted:
             data["body"] = ""
             data["file_info"] = None
+            data["reactions"] = []
         return data
 
 

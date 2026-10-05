@@ -261,7 +261,8 @@ def content_disposition(disposition: str, filename: str) -> str:
     return f"{disposition}; filename=\"{ascii_name}\"; filename*=UTF-8''{urllib.parse.quote(filename)}"
 
 
-def file_response(f: File, *, inline: bool = False) -> StreamingHttpResponse:
+def file_response(f: File, *, inline: bool = False, frame_ancestor: str | None = None) -> StreamingHttpResponse:
+    """inline=True використовується лише на usercontent-піддомені (окремий origin)."""
     if not f.is_downloadable:
         raise PermissionDenied("Файл недоступний для завантаження (статус: %s)." % f.get_status_display())
     show_inline = inline and f.mime_type in SAFE_INLINE_MIME
@@ -271,16 +272,97 @@ def file_response(f: File, *, inline: bool = False) -> StreamingHttpResponse:
     response = StreamingHttpResponse(aiter_plaintext(f), content_type=content_type)
     response["Content-Length"] = str(f.size)
     response["Content-Disposition"] = content_disposition("inline" if show_inline else "attachment", f.name)
-    if show_inline and f.mime_type == "application/pdf":
-        # Вбудований PDF-переглядач браузера не працює в CSP sandbox
-        response["Content-Security-Policy"] = "frame-ancestors 'self'"
-    else:
-        response["Content-Security-Policy"] = "default-src 'none'; img-src 'self'; media-src 'self'; frame-ancestors 'self'; sandbox"
     response["X-Content-Type-Options"] = "nosniff"
     response["Cache-Control"] = "private, no-store"
-    response["Cross-Origin-Resource-Policy"] = "same-origin"
-    response["X-Frame-Options"] = "SAMEORIGIN" if show_inline else "DENY"
+    response["Referrer-Policy"] = "no-referrer"
+    if show_inline and frame_ancestor:
+        frame_rule = f"frame-ancestors {frame_ancestor}"
+        if f.mime_type == "application/pdf":
+            # Вбудований PDF-переглядач браузера не працює в CSP sandbox; ізоляцію
+            # забезпечує окремий origin (usercontent.<домен>)
+            # (default-src/object-src 'none' у Chrome блокують і сам переглядач PDF)
+            response["Content-Security-Policy"] = frame_rule
+        else:
+            response["Content-Security-Policy"] = f"default-src 'none'; img-src 'self'; media-src 'self'; {frame_rule}; sandbox"
+        # Вбудовується в <img>/<video>/<iframe> основного сайту
+        response["Cross-Origin-Resource-Policy"] = "cross-origin"
+    else:
+        response["Content-Security-Policy"] = "default-src 'none'; frame-ancestors 'none'; sandbox"
+        response["Cross-Origin-Resource-Policy"] = "same-origin"
+        response["X-Frame-Options"] = "DENY"
     return response
+
+
+# ─────────────────────────── Заміна вмісту (онлайн-редактор) ───────────────────────────
+
+
+def replace_content(f: File, data: bytes) -> File:
+    """Записує нову версію файлу (новий ключ даних), стару видаляє після коміту.
+
+    Квота коригується атомарно на різницю розмірів.
+    """
+    from .tasks import scan_file
+
+    if len(data) > settings.MAX_FILE_SIZE:
+        raise ValidationError({"detail": "Файл завеликий."})
+    with transaction.atomic():
+        f = File.objects.select_for_update().select_related("owner").get(pk=f.pk)
+        delta = len(data) - f.size
+        if delta > 0 and not f.owner.try_reserve_bytes(delta):
+            raise PermissionDenied("Недостатньо місця у сховищі для збереження.")
+        if delta < 0:
+            f.owner.release_bytes(-delta)
+
+        old_version, old_chunks, old_thumb = f.content_version, f.chunks_total, f.has_thumbnail
+        new_version = old_version + 1
+        chunk_size = settings.UPLOAD_CHUNK_SIZE
+        data_key = crypto.new_data_key()
+        wrapped, key_version = crypto.wrap_key(data_key, f.id)
+        store = get_store()
+        count = 0
+        for count, offset in enumerate(range(0, len(data), chunk_size), start=1):
+            index = count - 1
+            store.put(
+                f.chunk_key(index, new_version),
+                crypto.encrypt_chunk(data_key, f.id, index, data[offset : offset + chunk_size]),
+            )
+        try:
+            mime = magic.from_buffer(data[:65536], mime=True)[:127] if data else f.mime_type
+        except Exception:
+            mime = f.mime_type
+        File.objects.filter(pk=f.pk).update(
+            size=len(data),
+            wrapped_key=wrapped,
+            key_version=key_version,
+            chunk_size=chunk_size,
+            chunks_received=count,
+            content_version=new_version,
+            mime_type=mime,
+            sha256="",
+            status=File.Status.SCANNING,
+            scan_detail="",
+            has_thumbnail=False,
+            updated_at=timezone.now(),
+        )
+        old_keys = [f.chunk_key(i, old_version) for i in range(old_chunks)]
+        if old_thumb:
+            old_keys.append(f.thumb_key(old_version))
+
+        def _after_commit():
+            try:
+                store.delete(old_keys)
+            except Exception:
+                logger.warning("failed to delete old version of %s", f.pk, exc_info=True)
+            scan_file.delay(str(f.pk))
+
+        transaction.on_commit(_after_commit)
+    f.refresh_from_db()
+    return f
+
+
+def read_thumbnail(f: File) -> bytes:
+    data_key = crypto.unwrap_key(f.wrapped_key, f.key_version, f.id)
+    return crypto.decrypt_chunk(data_key, f.id, crypto.THUMB_INDEX, get_store().get(f.thumb_key()))
 
 
 # ─────────────────────────── Видалення ───────────────────────────

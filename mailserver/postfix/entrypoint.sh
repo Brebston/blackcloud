@@ -4,7 +4,9 @@ set -eu
 
 : "${MAIL_HOSTNAME:?MAIL_HOSTNAME is required}"
 : "${MAIL_DOMAIN:?MAIL_DOMAIN is required}"
-INTERNAL_SUBNET="${INTERNAL_SUBNET:-172.30.0.0/24}"
+# Лише контейнер backend (фіксована адреса) може відправляти через 10025 без пароля.
+# Раніше довірялася вся внутрішня мережа — тобто й ClamAV, Rspamd, Redis тощо.
+WEBMAIL_CLIENT_IP="${WEBMAIL_CLIENT_IP:-172.30.0.10}"
 DB_PW="$(cat /run/secrets/mail_db_password)"
 
 # ─── TLS ─────────────────────────────────────────────────────
@@ -123,12 +125,12 @@ for svc in 587 465; do
 done
 postconf -P "465/inet/smtpd_tls_wrappermode=yes"
 
-# Внутрішній порт для веб-пошти Django: приймає лише з внутрішньої Docker-мережі.
+# Внутрішній порт для веб-пошти Django: приймає лише з адреси контейнера backend.
 # Відповідність From ↔ скринька перевіряє Django.
 postconf -M "10025/inet=10025 inet n - n - - smtpd"
 for opt in \
   "syslog_name=postfix/webmail" \
-  "mynetworks=127.0.0.0/8,$INTERNAL_SUBNET" \
+  "mynetworks=127.0.0.0/8,$WEBMAIL_CLIENT_IP/32" \
   "smtpd_client_restrictions=permit_mynetworks,reject" \
   "smtpd_relay_restrictions=permit_mynetworks,reject" \
   "smtpd_recipient_restrictions=permit_mynetworks,reject" \

@@ -9,7 +9,7 @@ from django.utils import timezone
 from apps.core.models import AuditLog
 from apps.core.realtime import notify, push_to_user
 
-from . import services
+from . import services, thumbnails
 from .models import File, Folder, PublicLink
 from .objectstore import get_store
 from .scanner import ScanError, scan_stream
@@ -52,6 +52,9 @@ def scan_file(self, file_id: str):
     File.objects.filter(pk=f.pk, status=File.Status.SCANNING).update(
         status=status, scan_detail=detail, sha256=digest.hexdigest()
     )
+    if status == File.Status.CLEAN and thumbnails.enabled():
+        f.refresh_from_db()
+        thumbnails.generate(f)
     push_to_user(f.owner_id, "file.updated", {"id": str(f.pk), "status": status})
     if status == File.Status.INFECTED:
         AuditLog.objects.create(
@@ -72,6 +75,19 @@ def requeue_stuck_scans():
         File.objects.filter(pk=pk).update(updated_at=timezone.now())
         scan_file.delay(str(pk))
     return len(ids)
+
+
+@shared_task
+def backfill_thumbnails(limit: int = 5000) -> int:
+    """Мініатюри для файлів, завантажених до появи цієї функції."""
+    done = 0
+    qs = File.objects.filter(status=File.Status.CLEAN, has_thumbnail=False, deleted_at__isnull=True)
+    for f in qs.iterator():
+        if done >= limit:
+            break
+        if thumbnails.supports(f) and thumbnails.generate(f):
+            done += 1
+    return done
 
 
 @shared_task

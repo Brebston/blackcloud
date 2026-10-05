@@ -50,6 +50,9 @@ class File(models.Model):
     chunk_size = models.PositiveIntegerField()
     chunks_received = models.PositiveIntegerField(default=0)
     upload_expires_at = models.DateTimeField(null=True, blank=True)
+    # Версія вмісту: збільшується при кожному збереженні з онлайн-редактора
+    content_version = models.PositiveIntegerField(default=0)
+    has_thumbnail = models.BooleanField(default=False)
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -78,8 +81,20 @@ class File(models.Model):
     def object_prefix(self) -> str:
         return f"files/{self.id}/"
 
-    def chunk_key(self, index: int) -> str:
-        return f"{self.object_prefix}{index:06d}"
+    def version_prefix(self, version: int | None = None) -> str:
+        version = self.content_version if version is None else version
+        return self.object_prefix if version == 0 else f"{self.object_prefix}v{version}/"
+
+    def chunk_key(self, index: int, version: int | None = None) -> str:
+        return f"{self.version_prefix(version)}{index:06d}"
+
+    def thumb_key(self, version: int | None = None) -> str:
+        version = self.content_version if version is None else version
+        return f"{self.object_prefix}thumb-v{version}"
+
+    @property
+    def extension(self) -> str:
+        return self.name.rsplit(".", 1)[-1].lower() if "." in self.name else ""
 
     @property
     def is_downloadable(self) -> bool:

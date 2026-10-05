@@ -49,9 +49,16 @@ def bob(make_user):
 
 @pytest.fixture
 def client_for():
-    def factory(user):
+    def factory(user, mfa=False):
+        """mfa=True — справжня сесія, що пройшла другий фактор (потрібно для адмін-API)."""
         c = APIClient()
-        c.force_authenticate(user=user)
+        if mfa:
+            c.force_login(user)
+            session = c.session
+            session["mfa"] = True
+            session.save()
+        else:
+            c.force_authenticate(user=user)
         return c
 
     return factory

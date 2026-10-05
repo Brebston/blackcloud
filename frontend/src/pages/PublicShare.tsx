@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
 import Icon from "../components/Icon";
 import { formatBytes, formatDate } from "../lib/format";
 
@@ -11,16 +11,39 @@ interface Info {
   expires_at: string;
 }
 
-// Публічна сторінка завантаження: без сесії, без CSRF (ендпоінти не використовують cookie)
+function postPublic(path: string, body: Record<string, string>) {
+  return fetch(`/api/public/${path}/`, {
+    method: "POST",
+    credentials: "omit",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+// Публічна сторінка завантаження: без сесії, без CSRF (ендпоінти не використовують cookie).
+// Токен живе у фрагменті URL (/s#токен): браузер не надсилає фрагмент на сервер,
+// тож токен не потрапляє в журнали, Referer та історію запитів проксі.
 export default function PublicSharePage() {
-  const { token = "" } = useParams();
+  const params = useParams();
+  const location = useLocation();
+  const navigate = useNavigate();
+  const token = params.token || decodeURIComponent(location.hash.replace(/^#/, ""));
   const [info, setInfo] = useState<Info | null>(null);
   const [error, setError] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
 
+  // Старі посилання /s/<токен> переписуються на /s#<токен>
   useEffect(() => {
-    fetch(`/api/public/${encodeURIComponent(token)}/`, { credentials: "omit" })
+    if (params.token) navigate(`/s#${encodeURIComponent(params.token)}`, { replace: true });
+  }, [params.token, navigate]);
+
+  useEffect(() => {
+    if (!token) {
+      setError("Посилання недійсне");
+      return;
+    }
+    postPublic("info", { token })
       .then(async (r) => {
         const d = await r.json();
         if (!r.ok) throw new Error(d.detail || "Посилання недійсне");
@@ -38,12 +61,7 @@ export default function PublicSharePage() {
     }
     setBusy(true);
     try {
-      const r = await fetch(`/api/public/${encodeURIComponent(token)}/authorize/`, {
-        method: "POST",
-        credentials: "omit",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ password }),
-      });
+      const r = await postPublic("authorize", { token, password });
       const d = await r.json();
       if (!r.ok) throw new Error(d.detail || "Помилка");
       window.location.assign(d.download_url);

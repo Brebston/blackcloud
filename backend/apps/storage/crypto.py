@@ -59,6 +59,10 @@ def unwrap_key(wrapped: bytes, version: int, file_id: uuid.UUID) -> bytes:
     return AESGCM(_master_keys()[version]).decrypt(nonce, ct, b"bc-dek:" + file_id.bytes)
 
 
+# Окремий "індекс" для мініатюри, щоб її шифротекст не можна було підставити замість чанка
+THUMB_INDEX = 2**62
+
+
 def _chunk_aad(file_id: uuid.UUID, index: int) -> bytes:
     return b"bc-chunk:" + file_id.bytes + index.to_bytes(8, "big")
 

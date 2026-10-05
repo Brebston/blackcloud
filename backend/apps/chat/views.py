@@ -12,18 +12,22 @@ from rest_framework.views import APIView
 from apps.core.audit import audit
 from apps.storage.models import File, Share
 
-from .models import Conversation, Message, Participant
+from .emoji import is_single_emoji
+from .models import Conversation, Message, Participant, Reaction
 from .serializers import (
     ConversationSerializer,
     CreateConversationSerializer,
     MessageSerializer,
     SendMessageSerializer,
+    reactions_summary,
 )
 from .services import broadcast, member_or_none
 
 User = get_user_model()
 PAGE = 50
 EDIT_WINDOW_HOURS = 48
+MAX_REACTION_KINDS = 30  # різних емоджі на одне повідомлення
+MAX_USER_REACTIONS = 10  # реакцій одного користувача на одне повідомлення
 
 
 def _conversations_qs(user):
@@ -32,6 +36,26 @@ def _conversations_qs(user):
         .prefetch_related(Prefetch("participants", queryset=Participant.objects.select_related("user")))
         .distinct()
     )
+
+
+def _reachable(me, users) -> bool:
+    """Написати можна лише тим, хто дозволив пошук себе (discoverable),
+    або з ким уже є спільна розмова. Інакше чат дозволяв би перебирати імена
+    користувачів і писати тим, хто приховав себе."""
+    if me.is_staff:
+        return True
+    known = set(
+        Participant.objects.filter(conversation__participants__user=me)
+        .exclude(user=me)
+        .values_list("user_id", flat=True)
+    )
+    for u in users:
+        if u.pk in known:
+            continue
+        prefs = getattr(u, "preferences", None)
+        if prefs is None or not prefs.discoverable:
+            return False
+    return True
 
 
 def _membership(user, pk) -> Participant:
@@ -50,8 +74,9 @@ class ConversationsView(APIView):
         ser = CreateConversationSerializer(data=request.data)
         ser.is_valid(raise_exception=True)
         names = {n.lower() for n in ser.validated_data["usernames"]} - {request.user.username}
-        users = list(User.objects.filter(username__in=names, is_active=True))
-        if not users or len(users) != len(names):
+        users = list(User.objects.filter(username__in=names, is_active=True).select_related("preferences"))
+        if not users or len(users) != len(names) or not _reachable(request.user, users):
+            # Однакова відповідь для «не існує» і «приховав себе»
             raise ValidationError({"usernames": ["Деяких користувачів не знайдено."]})
         title = ser.validated_data.get("title", "").strip()
 
@@ -96,7 +121,11 @@ class MessagesView(APIView):
 
     def get(self, request, pk):
         _membership(request.user, pk)
-        qs = Message.objects.filter(conversation_id=pk).select_related("sender", "file")
+        qs = (
+            Message.objects.filter(conversation_id=pk)
+            .select_related("sender", "file")
+            .prefetch_related(Prefetch("reactions", queryset=Reaction.objects.select_related("user")))
+        )
         before = parse_datetime(request.query_params.get("before") or "")
         if before:
             qs = qs.filter(created_at__lt=before)
@@ -161,6 +190,42 @@ class MessageDetailView(APIView):
         return Response(status=204)
 
 
+class ReactionView(APIView):
+    """POST {emoji} — поставити реакцію або зняти, якщо вона вже є (перемикач)."""
+
+    throttle_scope = "chat_send"
+    throttle_classes = [ScopedRateThrottle]
+
+    def post(self, request, pk):
+        emoji = request.data.get("emoji")
+        if not is_single_emoji(emoji):
+            raise ValidationError({"emoji": ["Потрібен один емоджі."]})
+        msg = Message.objects.select_related("conversation").filter(pk=pk, deleted=False).first()
+        if msg is None or member_or_none(request.user, msg.conversation_id) is None:
+            raise NotFound()
+        with transaction.atomic():
+            existing = Reaction.objects.filter(message=msg, user=request.user, emoji=emoji).first()
+            if existing:
+                existing.delete()
+            else:
+                if Reaction.objects.filter(message=msg, user=request.user).count() >= MAX_USER_REACTIONS:
+                    raise ValidationError({"emoji": ["Забагато реакцій на одне повідомлення."]})
+                kinds = set(Reaction.objects.filter(message=msg).values_list("emoji", flat=True))
+                if emoji not in kinds and len(kinds) >= MAX_REACTION_KINDS:
+                    raise ValidationError({"emoji": ["Забагато різних реакцій."]})
+                try:
+                    with transaction.atomic():
+                        Reaction.objects.create(message=msg, user=request.user, emoji=emoji)
+                except IntegrityError:
+                    pass  # паралельний подвійний клік
+        msg = Message.objects.prefetch_related(
+            Prefetch("reactions", queryset=Reaction.objects.select_related("user"))
+        ).get(pk=msg.pk)
+        payload = {"id": str(msg.pk), "conversation": str(msg.conversation_id), "reactions": reactions_summary(msg)}
+        broadcast(msg.conversation, "message.reactions", payload)
+        return Response(payload)
+
+
 class ReadView(APIView):
     def post(self, request, pk):
         me = _membership(request.user, pk)
@@ -193,8 +258,12 @@ class MembersView(APIView):
         conv = me.conversation
         if not conv.is_group or not me.is_admin:
             raise PermissionDenied("Лише адміністратор групи може додавати учасників.")
-        user = User.objects.filter(username=(request.data.get("username") or "").lower(), is_active=True).first()
-        if user is None:
+        user = (
+            User.objects.filter(username=(request.data.get("username") or "").lower(), is_active=True)
+            .select_related("preferences")
+            .first()
+        )
+        if user is None or not _reachable(request.user, [user]):
             raise ValidationError({"username": ["Користувача не знайдено."]})
         if conv.participants.count() >= 200:
             raise ValidationError({"detail": "Забагато учасників."})
