@@ -10,7 +10,14 @@ MASTER_PW="$(cat /run/secrets/dovecot_master_password)"
 # ─── TLS ───
 TLS_DIR=/etc/dovecot/tls
 mkdir -p "$TLS_DIR"
-if [ -s /certs/fullchain.pem ] && [ -s /certs/privkey.pem ]; then
+# Пріоритет: сертифікат Let's Encrypt, який отримав Traefik (сервіс certdumper кладе його
+# в certs/acme/<MAIL_HOSTNAME>/), далі — вручну покладений certs/fullchain.pem
+ACME_DIR="/certs/acme/$MAIL_HOSTNAME"
+if [ -s "$ACME_DIR/fullchain.pem" ] && [ -s "$ACME_DIR/privkey.pem" ]; then
+  cp "$ACME_DIR/fullchain.pem" "$TLS_DIR/fullchain.pem"
+  cp "$ACME_DIR/privkey.pem" "$TLS_DIR/privkey.pem"
+  echo "TLS: сертифікат Let's Encrypt для $MAIL_HOSTNAME"
+elif [ -s /certs/fullchain.pem ] && [ -s /certs/privkey.pem ]; then
   cp /certs/fullchain.pem "$TLS_DIR/fullchain.pem"
   cp /certs/privkey.pem "$TLS_DIR/privkey.pem"
 elif [ ! -s "$TLS_DIR/fullchain.pem" ]; then

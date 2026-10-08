@@ -80,6 +80,22 @@ http:
         domains:
           - main: '{{ $uc }}'
 
+    {{ $mail := env "MAIL_HOSTNAME" }}
+    {{ if and $resolver $mail }}
+    # Лише для того, щоб Traefik отримав сертифікат Let's Encrypt для поштового хоста
+    # (його забирає сервіс certdumper для Postfix/Dovecot). Веб-запити → на основний домен.
+    mail-cert:
+      rule: 'Host(`{{ $mail }}`)'
+      entryPoints: [websecure]
+      service: frontend
+      middlewares: [to-main-domain]
+      priority: 50
+      tls:
+        certResolver: {{ $resolver }}
+        domains:
+          - main: '{{ $mail }}'
+    {{ end }}
+
     frontend:
       rule: 'Host(`{{ $domain }}`)'
       entryPoints: [websecure]
@@ -132,6 +148,12 @@ http:
         contentTypeNosniff: true
         referrerPolicy: no-referrer
         customFrameOptionsValue: SAMEORIGIN
+
+    to-main-domain:
+      redirectRegex:
+        regex: '^https?://[^/]+/(.*)'
+        replacement: 'https://{{ $domain }}/${1}'
+        permanent: true
 
     deny-all:
       ipAllowList:

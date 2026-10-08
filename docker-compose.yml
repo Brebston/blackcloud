@@ -156,6 +156,7 @@ services:
       ADMIN_URL_PREFIX: ${ADMIN_URL_PREFIX:-bc-admin}
       OFFICE_HOST: ${OFFICE_HOST:-}
       USERCONTENT_HOST: ${USERCONTENT_HOST:-}
+      MAIL_HOSTNAME: ${MAIL_HOSTNAME:-}
     ports:
       - "80:80"
       - "443:443"
@@ -346,6 +347,7 @@ services:
     environment:
       MAIL_DOMAIN: ${MAIL_DOMAIN}
       WEBMAIL_CLIENT_IP: 172.30.0.10
+      SPAMHAUS_DQS_KEY: ${SPAMHAUS_DQS_KEY:-}
     secrets: [redis_password]
     volumes:
       - rspamd_data:/var/lib/rspamd
@@ -353,6 +355,35 @@ services:
     depends_on: [redis, clamav]
     security_opt:
       - no-new-privileges:true
+
+  # Вивантажує сертифікат Let's Encrypt для MAIL_HOSTNAME з Traefik у certs/acme/<host>/
+  # (для Postfix і Dovecot). Вмикається профілем mailcert у COMPOSE_PROFILES.
+  certdumper:
+    image: ${CERTDUMPER_IMAGE:-ldez/traefik-certs-dumper:v2.11.4}
+    profiles: [mailcert]
+    restart: unless-stopped
+    command:
+      - file
+      - --version=v3
+      - --source=/acme/acme.json
+      - --dest=/out
+      - --domain-subdir
+      - --crt-name=fullchain
+      - --crt-ext=.pem
+      - --key-name=privkey
+      - --key-ext=.pem
+      - --clean=false
+      - --watch
+    volumes:
+      - traefik_acme:/acme:ro
+      - ./certs/acme:/out
+    network_mode: none
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER]
+    depends_on: [traefik]
 
   # Онлайн-редактор Word/Excel/PowerPoint. Вмикається через COMPOSE_PROFILES=office у .env
   # (потребує ~2–3 ГБ RAM). Доступний лише через Traefik на піддомені office.<DOMAIN>
