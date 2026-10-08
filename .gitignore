@@ -17,3 +17,5 @@ frontend/dist/
 .vscode/
 .ruff_cache/
 backend/test.sqlite3
+# архіви передачі файлів
+*.tgz
