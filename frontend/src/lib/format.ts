@@ -1,6 +1,10 @@
+// Мова інтерфейсу виставляється в <html lang> (див. i18n)
+const isEn = () => document.documentElement.lang === "en";
+const locale = () => (isEn() ? "en-GB" : "uk-UA");
+
 export function formatBytes(bytes: number): string {
-  if (!Number.isFinite(bytes) || bytes <= 0) return "0 Б";
-  const units = ["Б", "КБ", "МБ", "ГБ", "ТБ"];
+  const units = isEn() ? ["B", "KB", "MB", "GB", "TB"] : ["Б", "КБ", "МБ", "ГБ", "ТБ"];
+  if (!Number.isFinite(bytes) || bytes <= 0) return `0 ${units[0]}`;
   const i = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
   const value = bytes / 1024 ** i;
   return `${value >= 100 || i === 0 ? Math.round(value) : value.toFixed(1)} ${units[i]}`;
@@ -11,8 +15,8 @@ export function formatDate(iso: string | null | undefined, withTime = true): str
   const d = new Date(iso);
   const now = new Date();
   const sameDay = d.toDateString() === now.toDateString();
-  if (sameDay && withTime) return d.toLocaleTimeString("uk-UA", { hour: "2-digit", minute: "2-digit" });
-  return d.toLocaleString("uk-UA", {
+  if (sameDay && withTime) return d.toLocaleTimeString(locale(), { hour: "2-digit", minute: "2-digit" });
+  return d.toLocaleString(locale(), {
     day: "2-digit",
     month: "short",
     year: d.getFullYear() === now.getFullYear() ? undefined : "numeric",

@@ -1,0 +1,106 @@
+# Автодеплой на домашній сервер після успішного CI на гілці main.
+#
+# Сервер стоїть за NAT, SSH ззовні закритий, тому деплой виконує self-hosted runner
+# на самому сервері (вихідне з'єднання до GitHub, вхідні порти не потрібні).
+# Секретів у workflow немає: код оновлюється наявним deploy key сервера,
+# а секрети застосунку лишаються у ./secrets і .env на сервері.
+# Налаштування — див. README.md, розділ «Автодеплой».
+name: Deploy
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Ніколи не запускати два деплої паралельно і не переривати розпочатий
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy to production
+    # Лише після успішного CI для push у main цього ж репозиторію (не для PR і не для форків),
+    # або вручну (Actions → Deploy → Run workflow, гілка main).
+    if: >-
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.head_repository.full_name == github.repository)
+    runs-on: [self-hosted, linux, blackcloud]
+    # Середовище дозволяє (за бажанням) увімкнути ручне підтвердження і обмежити деплой гілкою main
+    environment: production
+    timeout-minutes: 45
+    env:
+      DEPLOY_PATH: ${{ vars.DEPLOY_PATH || '/opt/blackcloud' }}
+      DEPLOY_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+    steps:
+      - name: Перевірка робочої копії на сервері
+        run: |
+          set -eu
+          cd "$DEPLOY_PATH"
+          # Відстежувані файли не повинні мати локальних змін (.env, secrets/ і certs/ ігноруються git-ом)
+          if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
+            echo "::error::У $DEPLOY_PATH є незакомічені зміни відстежуваних файлів — деплой зупинено, нічого не перезаписано."
+            git status --short --untracked-files=no
+            exit 1
+          fi
+          for f in .env secrets/django_secret_key; do
+            [ -s "$f" ] || { echo "::error::Немає $f на сервері"; exit 1; }
+          done
+
+      - name: Оновлення коду до перевіреного коміту
+        run: |
+          set -eu
+          cd "$DEPLOY_PATH"
+          git fetch --prune origin main
+          # Деплоїмо саме той коміт, який пройшов CI, і лише якщо він є в origin/main
+          git merge-base --is-ancestor "$DEPLOY_SHA" origin/main || {
+            echo "::error::Коміт $DEPLOY_SHA не належить origin/main"; exit 1; }
+          if [ "$(git rev-parse --abbrev-ref HEAD)" != "main" ]; then
+            git checkout main
+          fi
+          # Лише fast-forward: якщо історія на сервері розійшлася, деплой зупиниться
+          git merge --ff-only "$DEPLOY_SHA"
+          echo "Розгорнуто: $(git log -1 --format='%h %s')"
+
+      - name: Збірка і запуск
+        run: |
+          set -eu
+          cd "$DEPLOY_PATH"
+          # Профілі (mailcert, office) беруться з COMPOSE_PROFILES у .env сервера.
+          # migrate виконується автоматично: backend чекає його успішного завершення.
+          docker compose build
+          docker compose up -d
+
+      - name: Перевірка здоров'я
+        run: |
+          set -eu
+          cd "$DEPLOY_PATH"
+          cid="$(docker compose ps -q backend)"
+          [ -n "$cid" ] || { echo "::error::Контейнер backend не запущено"; docker compose ps; exit 1; }
+          status=""
+          for i in $(seq 1 36); do
+            status="$(docker inspect --format '{{.State.Health.Status}}' "$cid" 2>/dev/null || echo unknown)"
+            [ "$status" = "healthy" ] && break
+            sleep 5
+          done
+          if [ "$status" != "healthy" ]; then
+            echo "::error::backend не став healthy (стан: $status). Логи: docker compose logs backend на сервері."
+            docker compose ps
+            exit 1
+          fi
+          # Наскрізна перевірка через Traefik (локально, без залежності від NAT loopback роутера)
+          domain="$(grep -E '^DOMAIN=' .env | tail -n1 | cut -d= -f2- | tr -d '"'"'"' ')"
+          curl -fsS --max-time 15 --resolve "$domain:443:127.0.0.1" "https://$domain/api/health/"
+          echo
+          docker compose ps
+
+      - name: Прибирання старих образів
+        if: success()
+        run: docker image prune -f

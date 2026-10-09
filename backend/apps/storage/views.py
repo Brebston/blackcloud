@@ -1,9 +1,6 @@
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.contrib.auth.hashers import check_password, make_password
-import hashlib
-import secrets
-
 from django.core.cache import cache
 from django.db import transaction
 from django.db.models import Count, F, Q, Sum
@@ -18,6 +15,7 @@ from rest_framework.views import APIView
 
 from apps.core.audit import audit
 from apps.core.realtime import alert_staff, notify
+from apps.core.tickets import consume_ticket, issue_ticket, peek_ticket
 
 from . import services
 from .models import File, Folder, PublicLink, Share
@@ -36,31 +34,7 @@ from .serializers import (
 User = get_user_model()
 
 
-# ─── Одноразові/короткоживучі квитки (зберігається лише хеш у кеші) ───
-
-
-def _ticket_key(kind: str, ticket: str) -> str:
-    return f"ticket:{kind}:" + hashlib.sha256(ticket.encode()).hexdigest()
-
-
-def issue_ticket(kind: str, data: dict, ttl: int) -> str:
-    ticket = secrets.token_urlsafe(32)
-    cache.set(_ticket_key(kind, ticket), data, ttl)
-    return ticket
-
-
-def peek_ticket(kind: str, ticket: str) -> dict | None:
-    if not ticket or len(ticket) > 100:
-        return None
-    return cache.get(_ticket_key(kind, ticket))
-
-
-def consume_ticket(kind: str, ticket: str) -> dict | None:
-    """Одноразовий квиток: delete() повертає True лише першому з паралельних запитів."""
-    data = peek_ticket(kind, ticket)
-    if data is None or not cache.delete(_ticket_key(kind, ticket)):
-        return None
-    return data
+# Квитки винесено в apps.core.tickets (їх використовує й пошта)
 
 
 def _visible_files(qs):

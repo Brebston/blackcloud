@@ -1,0 +1,106 @@
+# CI: лише ті перевірки, що реально налаштовані в репозиторії.
+#   backend  — Django system check, перевірка відсутніх міграцій, pytest (backend/pytest.ini)
+#   frontend — npm run typecheck і npm run build (frontend/package.json)
+#   compose  — валідність docker-compose.yml (+ dev-оверлей) і синтаксис shell-скриптів
+# Лінтерів (ruff/eslint) у репозиторії не налаштовано, тому тут їх немає.
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend (Django, pytest)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      # Тестовий режим: SQLite, eager Celery, вбудовані тестові ключі (лише в тестах), без ClamAV
+      DJANGO_TEST: "1"
+      PYTHONDONTWRITEBYTECODE: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12" # як у backend/Dockerfile
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Системні бібліотеки (як у backend/Dockerfile)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libmagic1 poppler-utils
+
+      - name: Залежності
+        run: pip install -r requirements.txt
+
+      - name: Django system check
+        run: python manage.py check
+
+      - name: Немає незгенерованих міграцій
+        run: python manage.py makemigrations --check --dry-run
+
+      - name: Тести
+        run: python -m pytest -p no:cacheprovider
+
+  frontend:
+    name: Frontend (typecheck, build)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22" # як у frontend/Dockerfile
+
+      # Як у Dockerfile: npm ci, якщо є package-lock.json, інакше npm install; скрипти пакетів не виконуються
+      - name: Залежності
+        run: |
+          if [ -f package-lock.json ]; then npm ci --ignore-scripts; else npm install --ignore-scripts --no-audit --no-fund; fi
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Build
+        run: npm run build
+
+  compose:
+    name: Docker Compose і shell-скрипти
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      # Одноразові випадкові секрети лише для перевірки конфігурації (тим самим скриптом, що й на сервері).
+      # Вони живуть тільки в цьому runner-і й ніде не зберігаються.
+      - name: Тимчасові секрети і .env
+        run: sh scripts/init-secrets.sh > /dev/null
+
+      - name: docker compose config
+        run: |
+          docker compose config -q
+          docker compose -f docker-compose.yml -f docker-compose.dev.yml config -q
+
+      - name: Синтаксис shell-скриптів
+        run: |
+          git ls-files '*.sh' | while read -r f; do
+            echo "sh -n $f"
+            sh -n "$f"
+          done

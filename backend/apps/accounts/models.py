@@ -133,11 +133,23 @@ class User(AbstractBaseUser, PermissionsMixin):
 class Preferences(models.Model):
     THEMES = [("system", "Системна"), ("dark", "Темна"), ("light", "Світла")]
     LANGS = [("uk", "Українська"), ("en", "English")]
+    # Акцентні кольори інтерфейсу (значення кольорів — у frontend/src/styles.css)
+    ACCENTS = [
+        ("violet", "Фіолетовий"),
+        ("blue", "Синій"),
+        ("teal", "Бірюзовий"),
+        ("green", "Зелений"),
+        ("amber", "Бурштиновий"),
+        ("orange", "Помаранчевий"),
+        ("rose", "Рожевий"),
+        ("slate", "Графітовий"),
+    ]
 
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name="preferences", primary_key=True)
     language = models.CharField(max_length=5, choices=LANGS, default="uk")
     timezone = models.CharField(max_length=64, default="Europe/Kyiv")
     theme = models.CharField(max_length=10, choices=THEMES, default="system")
+    accent = models.CharField(max_length=12, choices=ACCENTS, default="violet")
     discoverable = models.BooleanField(default=True, help_text="Інші користувачі можуть знайти мене в пошуку")
     notify_login_email = models.BooleanField(default=True)
     mail_load_remote_images = models.BooleanField(default=False)

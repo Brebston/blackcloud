@@ -33,9 +33,9 @@ http:
       tls:
         {{ if $resolver }}certResolver: {{ $resolver }}{{ end }}
 
-    # HTML листів рендериться в sandbox-iframe того ж origin; CSP задає сам Django
+    # HTML листів (і конфіденційних листів) рендериться в sandbox-iframe того ж origin; CSP задає сам Django
     mail-render:
-      rule: 'Host(`{{ $domain }}`) && PathPrefix(`/api/mail/render`)'
+      rule: 'Host(`{{ $domain }}`) && (PathPrefix(`/api/mail/render`) || PathPrefix(`/api/public/confidential/r/`))'
       entryPoints: [websecure]
       service: backend
       middlewares: [security-headers-framable]

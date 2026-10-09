@@ -33,7 +33,7 @@ driver = pgsql
 connect = host=postgres dbname=blackcloud user=mailreader password=$DB_PW
 default_pass_scheme = ARGON2ID
 password_query = SELECT address AS user, password FROM mail_mailboxes_v WHERE address = lower('%u') AND password IS NOT NULL
-user_query = SELECT '/var/mail/vhosts/' || domain || '/' || local_part AS home, 5000 AS uid, 5000 AS gid, '*:storage=' || quota_mb || 'M' AS quota_rule FROM mail_mailboxes_v WHERE address = lower('%u')
+user_query = SELECT '/var/mail/vhosts/' || domain || '/' || maildir AS home, 5000 AS uid, 5000 AS gid, '*:storage=' || quota_mb || 'M' AS quota_rule FROM mail_mailboxes_v WHERE address = lower('%u')
 iterate_query = SELECT address AS user FROM mail_mailboxes_v
 EOM
 chown root:dovecot /etc/dovecot/dovecot-sql.conf.ext

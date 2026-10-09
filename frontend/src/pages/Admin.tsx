@@ -5,7 +5,9 @@ import Icon from "../components/Icon";
 import Modal from "../components/Modal";
 import { useToast } from "../components/Toast";
 import { useAuth } from "../hooks/useAuth";
+import { useT } from "../i18n";
 import { formatBytes, formatDate } from "../lib/format";
+import { AntivirusTab, MailboxesTab, QuarantineTab } from "./AdminTabs";
 
 interface AdminUser {
   id: string;
@@ -45,7 +47,8 @@ interface Stats {
 export default function AdminPage() {
   const { user } = useAuth();
   const toast = useToast();
-  const [tab, setTab] = useState<"users" | "invites" | "audit">("users");
+  const t = useT();
+  const [tab, setTab] = useState<"users" | "invites" | "audit" | "mailboxes" | "quarantine" | "antivirus">("users");
   const [stats, setStats] = useState<Stats | null>(null);
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [q, setQ] = useState("");
@@ -79,7 +82,7 @@ export default function AdminPage() {
   return (
     <div className="page">
       <div className="page-head">
-        <h2>Адміністрування</h2>
+        <h2>{t("nav.admin")}</h2>
       </div>
 
       {stats && (
@@ -109,13 +112,22 @@ export default function AdminPage() {
 
       <div className="tabs">
         <button className={`tab ${tab === "users" ? "active" : ""}`} onClick={() => setTab("users")}>
-          <Icon name="users" size={16} /> Користувачі
+          <Icon name="users" size={16} /> {t("admin.tab.users")}
         </button>
         <button className={`tab ${tab === "invites" ? "active" : ""}`} onClick={() => setTab("invites")}>
-          <Icon name="mail" size={16} /> Запрошення
+          <Icon name="mail" size={16} /> {t("admin.tab.invites")}
         </button>
         <button className={`tab ${tab === "audit" ? "active" : ""}`} onClick={() => setTab("audit")}>
-          <Icon name="eye" size={16} /> Аудит
+          <Icon name="eye" size={16} /> {t("admin.tab.audit")}
+        </button>
+        <button className={`tab ${tab === "mailboxes" ? "active" : ""}`} onClick={() => setTab("mailboxes")}>
+          <Icon name="inbox" size={16} /> {t("admin.tab.mailboxes")}
+        </button>
+        <button className={`tab ${tab === "quarantine" ? "active" : ""}`} onClick={() => setTab("quarantine")}>
+          <Icon name="bug" size={16} /> {t("admin.tab.quarantine")}
+        </button>
+        <button className={`tab ${tab === "antivirus" ? "active" : ""}`} onClick={() => setTab("antivirus")}>
+          <Icon name="shield" size={16} /> {t("admin.tab.antivirus")}
         </button>
       </div>
 
@@ -179,6 +191,9 @@ export default function AdminPage() {
 
       {tab === "invites" && <InvitesTab />}
       {tab === "audit" && <AuditTab />}
+      {tab === "mailboxes" && <MailboxesTab />}
+      {tab === "quarantine" && <QuarantineTab />}
+      {tab === "antivirus" && <AntivirusTab />}
 
       {editing && (
         <EditUserDialog

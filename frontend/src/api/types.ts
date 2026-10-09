@@ -2,6 +2,7 @@ export interface Preferences {
   language: "uk" | "en";
   timezone: string;
   theme: "system" | "dark" | "light";
+  accent: "violet" | "blue" | "teal" | "green" | "amber" | "orange" | "rose" | "slate";
   discoverable: boolean;
   notify_login_email: boolean;
   mail_load_remote_images: boolean;

@@ -2,8 +2,10 @@ import { ReactNode } from "react";
 import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import Layout from "./components/Layout";
 import { useAuth } from "./hooks/useAuth";
+import { useT } from "./i18n";
 import AdminPage from "./pages/Admin";
 import CalendarPage from "./pages/Calendar";
+import ConfidentialPage from "./pages/Confidential";
 import ChatPage from "./pages/Chat";
 import FilesPage from "./pages/Files";
 import LoginPage from "./pages/Login";
@@ -18,7 +20,8 @@ import TrashPage from "./pages/Trash";
 function Protected({ children }: { children: ReactNode }) {
   const { user, loading } = useAuth();
   const location = useLocation();
-  if (loading) return <div className="splash">Завантаження…</div>;
+  const t = useT();
+  if (loading) return <div className="splash">{t("common.loading")}</div>;
   if (!user) return <Navigate to={`/login?next=${encodeURIComponent(location.pathname + location.search)}`} replace />;
   return <Layout>{children}</Layout>;
 }
@@ -27,7 +30,8 @@ function Protected({ children }: { children: ReactNode }) {
 function ProtectedBare({ children }: { children: ReactNode }) {
   const { user, loading } = useAuth();
   const location = useLocation();
-  if (loading) return <div className="splash">Завантаження…</div>;
+  const t = useT();
+  if (loading) return <div className="splash">{t("common.loading")}</div>;
   if (!user) return <Navigate to={`/login?next=${encodeURIComponent(location.pathname + location.search)}`} replace />;
   return <>{children}</>;
 }
@@ -39,6 +43,7 @@ export default function App() {
       <Route path="/register" element={<RegisterPage />} />
       <Route path="/s" element={<PublicSharePage />} />
       <Route path="/s/:token" element={<PublicSharePage />} />
+      <Route path="/c" element={<ConfidentialPage />} />
       <Route path="/files" element={<Protected><FilesPage /></Protected>} />
       <Route path="/shared" element={<Protected><SharedPage /></Protected>} />
       <Route path="/trash" element={<Protected><TrashPage /></Protected>} />

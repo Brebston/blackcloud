@@ -21,7 +21,9 @@ VIEWS_SQL = [
              NULLIF(m.client_password_hash, '') AS password,
              m.quota_mb AS quota_mb,
              lower(m.local_part) AS local_part,
-             d.name AS domain
+             d.name AS domain,
+             -- каталог листів на диску; не змінюється при перейменуванні скриньки
+             COALESCE(NULLIF(m.maildir, ''), lower(m.local_part)) AS maildir
         FROM mail_mailbox m
         JOIN mail_maildomain d ON d.id = m.domain_id
         JOIN accounts_user u ON u.id = m.user_id
