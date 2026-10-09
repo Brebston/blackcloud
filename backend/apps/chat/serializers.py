@@ -1,3 +1,4 @@
+from django.utils.translation import gettext as _
 from rest_framework import serializers
 
 from .models import Conversation, Message
@@ -73,7 +74,7 @@ class ConversationSerializer(serializers.ModelSerializer):
         if obj.title:
             return obj.title
         others = [p.user.display_name or p.user.username for p in obj.participants.all() if p.user_id != self._me().pk]
-        return ", ".join(others) or "Нотатки"
+        return ", ".join(others) or _("Нотатки")
 
     def get_last_message(self, obj):
         msg = obj.messages.filter(deleted=False).order_by("-created_at").select_related("sender").first()
@@ -100,5 +101,5 @@ class SendMessageSerializer(serializers.Serializer):
 
     def validate(self, attrs):
         if not attrs.get("body", "").strip() and not attrs.get("file"):
-            raise serializers.ValidationError("Порожнє повідомлення.")
+            raise serializers.ValidationError(_("Порожнє повідомлення."))
         return attrs

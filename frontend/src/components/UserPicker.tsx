@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { get } from "../api/client";
+import { useT } from "../i18n";
 
 interface PublicUser {
   id: string;
@@ -14,6 +15,7 @@ export default function UserPicker({
   onPick: (u: PublicUser) => void;
   placeholder?: string;
 }) {
+  const t = useT();
   const [q, setQ] = useState("");
   const [results, setResults] = useState<PublicUser[]>([]);
 
@@ -22,17 +24,17 @@ export default function UserPicker({
       setResults([]);
       return;
     }
-    const t = setTimeout(() => {
+    const timer = setTimeout(() => {
       get<PublicUser[]>(`/api/users/search/?q=${encodeURIComponent(q.trim())}`)
         .then(setResults)
         .catch(() => setResults([]));
     }, 250);
-    return () => clearTimeout(t);
+    return () => clearTimeout(timer);
   }, [q]);
 
   return (
     <div className="user-picker">
-      <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={placeholder || "Пошук користувачів…"} />
+      <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={placeholder || t("files.userPicker.search")} />
       {results.length > 0 && (
         <div className="picker-results">
           {results.map((u) => (

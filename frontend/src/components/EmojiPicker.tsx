@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useT } from "../i18n";
 import { EMOJI_CATEGORIES, recentEmoji, rememberEmoji, searchEmoji } from "../lib/emoji";
 
 /** Панель вибору емоджі: недавні, категорії, пошук українською або англійською. */
@@ -11,6 +12,7 @@ export default function EmojiPicker({
   onClose: () => void;
   className?: string;
 }) {
+  const t = useT();
   const [query, setQuery] = useState("");
   const [recent] = useState(recentEmoji);
   const [active, setActive] = useState(recent.length ? "recent" : EMOJI_CATEGORIES[0].id);
@@ -45,15 +47,15 @@ export default function EmojiPicker({
   };
 
   const sections = [
-    ...(recent.length ? [{ id: "recent", label: "Недавні", icon: "🕘", items: recent.map((e) => ({ e, k: "" })) }] : []),
+    ...(recent.length ? [{ id: "recent", label: "emoji.cat.recent" as const, icon: "🕘", items: recent.map((e) => ({ e, k: "" })) }] : []),
     ...EMOJI_CATEGORIES,
   ];
 
   return (
-    <div className={`emoji-picker ${className}`} ref={ref} role="dialog" aria-label="Вибір емоджі">
+    <div className={`emoji-picker ${className}`} ref={ref} role="dialog" aria-label={t("emoji.picker")}>
       <input
         className="emoji-search"
-        placeholder="Пошук: серце, сміх, like…"
+        placeholder={t("emoji.search")}
         value={query}
         autoFocus
         onChange={(e) => setQuery(e.target.value)}
@@ -69,12 +71,12 @@ export default function EmojiPicker({
               ))}
             </div>
           ) : (
-            <div className="muted small emoji-empty">Нічого не знайдено</div>
+            <div className="muted small emoji-empty">{t("emoji.notFound")}</div>
           )
         ) : (
           sections.map((cat) => (
             <div key={cat.id} data-cat={cat.id}>
-              <div className="emoji-cat-title">{cat.label}</div>
+              <div className="emoji-cat-title">{t(cat.label)}</div>
               <div className="emoji-grid">
                 {cat.items.map(({ e }) => (
                   <button key={cat.id + e} type="button" className="emoji-btn" onClick={() => pick(e)}>
@@ -93,8 +95,8 @@ export default function EmojiPicker({
             type="button"
             className={`emoji-tab ${active === cat.id && !query ? "active" : ""}`}
             onClick={() => jump(cat.id)}
-            title={cat.label}
-            aria-label={cat.label}
+            title={t(cat.label)}
+            aria-label={t(cat.label)}
           >
             {cat.icon}
           </button>

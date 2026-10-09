@@ -1,6 +1,7 @@
 import zoneinfo
 
 from django.contrib.auth import password_validation
+from django.utils.translation import gettext as _
 from rest_framework import serializers
 
 from .models import Invite, Preferences, User, UserSession
@@ -45,7 +46,7 @@ class PreferencesSerializer(serializers.ModelSerializer):
 
     def validate_timezone(self, value):
         if value not in zoneinfo.available_timezones():
-            raise serializers.ValidationError("Невідомий часовий пояс.")
+            raise serializers.ValidationError(_("Невідомий часовий пояс."))
         return value
 
 
@@ -89,15 +90,15 @@ class RegisterSerializer(serializers.Serializer):
         from .models import is_reserved_username
 
         if is_reserved_username(value) and not self.context.get("allow_reserved"):
-            raise serializers.ValidationError("Це ім'я зарезервоване.")
+            raise serializers.ValidationError(_("Це ім'я зарезервоване."))
         if User.objects.filter(username=value).exists():
-            raise serializers.ValidationError("Це ім'я вже зайняте.")
+            raise serializers.ValidationError(_("Це ім'я вже зайняте."))
         return value
 
     def validate_email(self, value):
         value = value.lower()
         if User.objects.filter(email=value).exists():
-            raise serializers.ValidationError("Цей email вже використовується.")
+            raise serializers.ValidationError(_("Цей email вже використовується."))
         return value
 
     def validate(self, attrs):

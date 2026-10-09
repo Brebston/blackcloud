@@ -1,4 +1,5 @@
 import { ReactNode, useEffect } from "react";
+import { useT } from "../i18n";
 import Icon from "./Icon";
 
 export default function Modal({
@@ -12,6 +13,7 @@ export default function Modal({
   children: ReactNode;
   wide?: boolean;
 }) {
+  const t = useT();
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
     window.addEventListener("keydown", onKey);
@@ -23,7 +25,7 @@ export default function Modal({
       <div className={`modal ${wide ? "modal-wide" : ""}`} role="dialog" aria-modal="true" aria-label={title}>
         <div className="modal-head">
           <h3>{title}</h3>
-          <button className="icon-btn" onClick={onClose} aria-label="Закрити">
+          <button className="icon-btn" onClick={onClose} aria-label={t("misc.close")}>
             <Icon name="x" />
           </button>
         </div>

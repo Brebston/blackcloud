@@ -1,3 +1,4 @@
+from django.utils.translation import gettext as _
 from rest_framework import serializers
 
 from .models import File, Folder, PublicLink, Share
@@ -85,7 +86,7 @@ class CreateShareSerializer(serializers.Serializer):
 
     def validate(self, attrs):
         if bool(attrs.get("file")) == bool(attrs.get("folder")):
-            raise serializers.ValidationError("Вкажіть або file, або folder.")
+            raise serializers.ValidationError(_("Вкажіть або file, або folder."))
         return attrs
 
 
@@ -123,6 +124,6 @@ class CreatePublicLinkSerializer(serializers.Serializer):
 
         if value and len(value) < settings.PUBLIC_LINK_MIN_PASSWORD:
             raise serializers.ValidationError(
-                f"Пароль посилання — щонайменше {settings.PUBLIC_LINK_MIN_PASSWORD} символів."
+                _("Пароль посилання — щонайменше %(n)s символів.") % {"n": settings.PUBLIC_LINK_MIN_PASSWORD}
             )
         return value

@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import type { FileItem } from "../api/types";
+import { useT } from "../i18n";
 import { formatBytes } from "../lib/format";
 import { downloadUrl, imageSrc, needsPreviewUrl, usePreviewUrl, viewKind } from "../lib/viewer";
 import Icon from "./Icon";
@@ -22,6 +23,7 @@ export default function FileViewer({
   onIndex: (i: number) => void;
   onClose: () => void;
 }) {
+  const t = useT();
   const navigate = useNavigate();
   const file = files[index];
   const kind = file ? viewKind(file, officeEnabled) : null;
@@ -46,7 +48,7 @@ export default function FileViewer({
   return (
     <div className="viewer" role="dialog" aria-modal="true" aria-label={file.name}>
       <header className="viewer-bar">
-        <button className="icon-btn" onClick={onClose} aria-label="Закрити" title="Закрити (Esc)">
+        <button className="icon-btn" onClick={onClose} aria-label={t("files.viewer.close")} title={t("files.viewer.closeEsc")}>
           <Icon name="x" />
         </button>
         <div className="viewer-title">
@@ -58,27 +60,27 @@ export default function FileViewer({
         <div className="viewer-actions">
           {kind === "office" && (
             <button className="btn btn-sm btn-primary" onClick={() => navigate(`/edit/${file.id}`)}>
-              <Icon name="edit" size={14} /> Відкрити в редакторі
+              <Icon name="edit" size={14} /> {t("files.viewer.openEditor")}
             </button>
           )}
           {kind === "pdf" && preview.url && (
             <a className="btn btn-sm" href={preview.url} target="_blank" rel="noopener noreferrer">
-              <Icon name="external" size={14} /> Нова вкладка
+              <Icon name="external" size={14} /> {t("files.viewer.newTab")}
             </a>
           )}
           <a className="btn btn-sm" href={downloadUrl(file)}>
-            <Icon name="download" size={14} /> Завантажити
+            <Icon name="download" size={14} /> {t("files.download")}
           </a>
         </div>
       </header>
 
       <div className="viewer-body">
         {index > 0 && (
-          <button className="viewer-nav prev" onClick={() => onIndex(index - 1)} aria-label="Попередній">
+          <button className="viewer-nav prev" onClick={() => onIndex(index - 1)} aria-label={t("files.viewer.prev")}>
             <Icon name="chevronLeft" size={28} />
           </button>
         )}
-        {preview.loading && <div className="viewer-empty muted">Відкриття…</div>}
+        {preview.loading && <div className="viewer-empty muted">{t("files.viewer.opening")}</div>}
         {preview.error && (
           <div className="viewer-empty">
             <Icon name="alert" size={40} />
@@ -103,11 +105,11 @@ export default function FileViewer({
         {(kind === "office" || kind === null) && (
           <div className="viewer-empty">
             <Icon name="file" size={48} />
-            <div>{kind === "office" ? "Документ відкривається в онлайн-редакторі" : "Попередній перегляд недоступний"}</div>
+            <div>{kind === "office" ? t("files.viewer.officeHint") : t("files.viewer.noPreview")}</div>
           </div>
         )}
         {index < files.length - 1 && (
-          <button className="viewer-nav next" onClick={() => onIndex(index + 1)} aria-label="Наступний">
+          <button className="viewer-nav next" onClick={() => onIndex(index + 1)} aria-label={t("files.viewer.next")}>
             <Icon name="chevronRight" size={28} />
           </button>
         )}

@@ -7,6 +7,7 @@
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.db import IntegrityError, transaction
+from django.utils.translation import gettext as _
 from rest_framework import serializers
 from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
 from rest_framework.response import Response
@@ -26,7 +27,7 @@ def _check_target(request, user):
     if me.is_superuser or user == me:
         return
     if user.is_staff or user.is_superuser:
-        raise PermissionDenied("Скриньками адміністраторів керує лише суперкористувач.")
+        raise PermissionDenied(_("Скриньками адміністраторів керує лише суперкористувач."))
 
 
 def _address_taken(local_part: str, domain: MailDomain, exclude_pk=None) -> bool:
@@ -56,7 +57,7 @@ def _domain(name: str | None) -> MailDomain:
     if name:
         domain = MailDomain.objects.filter(name=name.lower(), active=True).first()
         if domain is None:
-            raise ValidationError({"domain": ["Невідомий або вимкнений поштовий домен."]})
+            raise ValidationError({"domain": [_("Невідомий або вимкнений поштовий домен.")]})
         return domain
     return MailDomain.objects.get_or_create(name=settings.MAIL_DOMAIN.lower())[0]
 
@@ -92,14 +93,14 @@ class AdminMailboxesView(APIView):
         d = ser.validated_data
         user = User.objects.filter(username=d["username"].lower(), is_active=True).first()
         if user is None:
-            raise ValidationError({"username": ["Користувача не знайдено."]})
+            raise ValidationError({"username": [_("Користувача не знайдено.")]})
         _check_target(request, user)
         if Mailbox.objects.filter(user=user).count() >= MAX_MAILBOXES_PER_USER:
-            raise ValidationError({"detail": f"Максимум {MAX_MAILBOXES_PER_USER} скриньок на користувача."})
+            raise ValidationError({"detail": _("Максимум %(n)s скриньок на користувача.") % {"n": MAX_MAILBOXES_PER_USER}})
         domain = _domain(d.get("domain"))
         local_part = d["local_part"].lower()
         if _address_taken(local_part, domain):
-            raise ValidationError({"local_part": ["Ця адреса вже зайнята скринькою або псевдонімом."]})
+            raise ValidationError({"local_part": [_("Ця адреса вже зайнята скринькою або псевдонімом.")]})
         try:
             with transaction.atomic():
                 mb = Mailbox.objects.create(
@@ -110,7 +111,7 @@ class AdminMailboxesView(APIView):
                     quota_mb=d.get("quota_mb") or settings.MAIL_DEFAULT_QUOTA_MB,
                 )
         except IntegrityError as exc:
-            raise ValidationError({"local_part": ["Ця адреса вже зайнята."]}) from exc
+            raise ValidationError({"local_part": [_("Ця адреса вже зайнята.")]}) from exc
         audit(request, "admin.mailbox_created", target=mb.address, owner=user.username)
         return Response(_serialize(mb), status=201)
 
@@ -132,7 +133,7 @@ class AdminMailboxDetailView(APIView):
             if "local_part" in d and d["local_part"].lower() != mb.local_part:
                 new_local = d["local_part"].lower()
                 if _address_taken(new_local, mb.domain, exclude_pk=mb.pk):
-                    raise ValidationError({"local_part": ["Ця адреса вже зайнята скринькою або псевдонімом."]})
+                    raise ValidationError({"local_part": [_("Ця адреса вже зайнята скринькою або псевдонімом.")]})
                 # Листи лежать у каталозі maildir, який не змінюється — перейменування безпечне
                 mb.local_part = new_local
                 changes.append("address")
@@ -143,7 +144,7 @@ class AdminMailboxDetailView(APIView):
             try:
                 mb.save()
             except IntegrityError as exc:
-                raise ValidationError({"local_part": ["Ця адреса вже зайнята."]}) from exc
+                raise ValidationError({"local_part": [_("Ця адреса вже зайнята.")]}) from exc
             if "address" in changes and d.get("keep_old_alias", True):
                 # Листи на стару адресу й далі приходять у цю скриньку
                 Alias.objects.update_or_create(

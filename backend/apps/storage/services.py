@@ -11,6 +11,7 @@ from django.db import transaction
 from django.db.models import F
 from django.http import StreamingHttpResponse
 from django.utils import timezone
+from django.utils.translation import gettext as _
 from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
 
 from . import crypto
@@ -44,15 +45,15 @@ SAFE_INLINE_MIME = {
 def clean_name(name: str) -> str:
     """Нормалізує й перевіряє ім'я файлу/папки."""
     if not isinstance(name, str):
-        raise ValidationError({"name": ["Невірне ім'я."]})
+        raise ValidationError({"name": [_("Невірне ім'я.")]})
     name = unicodedata.normalize("NFC", name).strip()
     # Прибираємо керівні символи, у т.ч. bidi-override (підміна розширення)
     name = "".join(ch for ch in name if unicodedata.category(ch) not in ("Cc", "Cf"))
     # Роздільники шляху відхиляємо явно, а не вирізаємо мовчки (інакше "a/b" стало б "ab")
     if "/" in name or "\\" in name:
-        raise ValidationError({"name": ["Ім'я не може містити / або \\."]})
+        raise ValidationError({"name": [_("Ім'я не може містити / або \\.")]})
     if not name or name in FORBIDDEN_NAMES or len(name) > 255 or len(name.encode()) > 1024:
-        raise ValidationError({"name": ["Невірне ім'я (1–255 символів, без / і \\)."]})
+        raise ValidationError({"name": [_("Невірне ім'я (1–255 символів, без / і \\).")]})
     return name
 
 
@@ -76,7 +77,7 @@ def unique_name(owner, folder, name: str, **exclude) -> str:
         candidate = f"{stem} ({i}){ext}"
         if not _name_taken(owner, folder, candidate, **exclude):
             return candidate
-    raise ValidationError({"name": ["Забагато файлів з таким ім'ям."]})
+    raise ValidationError({"name": [_("Забагато файлів з таким ім'ям.")]})
 
 
 # ─────────────────────────── Дерево папок ───────────────────────────
@@ -87,7 +88,7 @@ def get_own_folder(user, folder_id) -> Folder | None:
         return None
     folder = Folder.objects.filter(pk=folder_id, owner=user, deleted_at__isnull=True).first()
     if folder is None or is_in_trash(folder):
-        raise NotFound("Папку не знайдено.")
+        raise NotFound(_("Папку не знайдено."))
     return folder
 
 
@@ -120,9 +121,9 @@ def assert_not_descendant(folder: Folder, new_parent: Folder | None) -> None:
     if new_parent is None:
         return
     if folder.pk in {f.pk for f in ancestors(new_parent)}:
-        raise ValidationError({"parent": ["Не можна перемістити папку саму в себе."]})
+        raise ValidationError({"parent": [_("Не можна перемістити папку саму в себе.")]})
     if len(ancestors(new_parent)) >= MAX_DEPTH:
-        raise ValidationError({"parent": ["Надто велика вкладеність папок."]})
+        raise ValidationError({"parent": [_("Надто велика вкладеність папок.")]})
 
 
 # ─────────────────────────── Права доступу ───────────────────────────
@@ -151,7 +152,7 @@ def can_read_file(user, f: File) -> bool:
 def get_readable_file(user, file_id) -> File:
     f = File.objects.select_related("folder").filter(pk=file_id).first()
     if f is None or not can_read_file(user, f):
-        raise NotFound("Файл не знайдено.")
+        raise NotFound(_("Файл не знайдено."))
     return f
 
 
@@ -161,7 +162,7 @@ def get_own_file(user, file_id, *, include_trashed=False) -> File:
         qs = qs.filter(deleted_at__isnull=True)
     f = qs.first()
     if f is None:
-        raise NotFound("Файл не знайдено.")
+        raise NotFound(_("Файл не знайдено."))
     return f
 
 
@@ -172,9 +173,9 @@ def get_own_file(user, file_id, *, include_trashed=False) -> File:
 def start_upload(user, *, name: str, size: int, folder: Folder | None) -> File:
     name = clean_name(name)
     if size < 0 or size > settings.MAX_FILE_SIZE:
-        raise ValidationError({"size": [f"Максимальний розмір файлу — {settings.MAX_FILE_SIZE // 1024**3} ГБ."]})
+        raise ValidationError({"size": [_("Максимальний розмір файлу — %(n)s ГБ.") % {"n": settings.MAX_FILE_SIZE // 1024**3}]})
     if not user.try_reserve_bytes(size):
-        raise PermissionDenied("Недостатньо місця у сховищі.")
+        raise PermissionDenied(_("Недостатньо місця у сховищі."))
     name = unique_name(user, folder, name)
     f = File(
         owner=user,
@@ -192,15 +193,15 @@ def start_upload(user, *, name: str, size: int, folder: Folder | None) -> File:
 
 def write_chunk(f: File, index: int, data: bytes) -> File:
     if f.status != File.Status.UPLOADING:
-        raise ValidationError({"detail": "Завантаження вже завершено або скасовано."})
+        raise ValidationError({"detail": _("Завантаження вже завершено або скасовано.")})
     if f.upload_expires_at and f.upload_expires_at < timezone.now():
-        raise ValidationError({"detail": "Сесія завантаження прострочена."})
+        raise ValidationError({"detail": _("Сесія завантаження прострочена.")})
     if index != f.chunks_received:
-        raise ValidationError({"detail": "Невірний порядок чанків.", "expected_index": f.chunks_received})
+        raise ValidationError({"detail": _("Невірний порядок чанків."), "expected_index": f.chunks_received})
     if index >= f.chunks_total:
-        raise ValidationError({"detail": "Зайвий чанк."})
+        raise ValidationError({"detail": _("Зайвий чанк.")})
     if len(data) != f.expected_chunk_len(index):
-        raise ValidationError({"detail": f"Очікувалось {f.expected_chunk_len(index)} байт, отримано {len(data)}."})
+        raise ValidationError({"detail": _("Очікувалось %(expected)s байт, отримано %(got)s.") % {"expected": f.expected_chunk_len(index), "got": len(data)}})
 
     data_key = crypto.unwrap_key(f.wrapped_key, f.key_version, f.id)
     get_store().put(f.chunk_key(index), crypto.encrypt_chunk(data_key, f.id, index, data))
@@ -214,21 +215,21 @@ def write_chunk(f: File, index: int, data: bytes) -> File:
     # Оптимістичне блокування: паралельний дубль того ж чанка не зарахується двічі
     updated = File.objects.filter(pk=f.pk, chunks_received=index, status=File.Status.UPLOADING).update(**updates)
     if updated != 1:
-        raise ValidationError({"detail": "Конфлікт завантаження, повторіть."})
+        raise ValidationError({"detail": _("Конфлікт завантаження, повторіть.")})
     f.refresh_from_db()
     return f
 
 
 def complete_upload(f: File) -> File:
     if f.status != File.Status.UPLOADING:
-        raise ValidationError({"detail": "Завантаження вже завершено."})
+        raise ValidationError({"detail": _("Завантаження вже завершено.")})
     if f.chunks_received != f.chunks_total:
-        raise ValidationError({"detail": "Отримано не всі чанки.", "expected_index": f.chunks_received})
+        raise ValidationError({"detail": _("Отримано не всі чанки."), "expected_index": f.chunks_received})
     updated = File.objects.filter(pk=f.pk, status=File.Status.UPLOADING).update(
         status=File.Status.SCANNING, upload_expires_at=None
     )
     if updated != 1:
-        raise ValidationError({"detail": "Конфлікт завантаження."})
+        raise ValidationError({"detail": _("Конфлікт завантаження.")})
     f.refresh_from_db()
     from .tasks import scan_file
 
@@ -264,7 +265,7 @@ def content_disposition(disposition: str, filename: str) -> str:
 def file_response(f: File, *, inline: bool = False, frame_ancestor: str | None = None) -> StreamingHttpResponse:
     """inline=True використовується лише на usercontent-піддомені (окремий origin)."""
     if not f.is_downloadable:
-        raise PermissionDenied("Файл недоступний для завантаження (статус: %s)." % f.get_status_display())
+        raise PermissionDenied(_("Файл недоступний для завантаження (статус: %(status)s).") % {"status": f.get_status_display()})
     show_inline = inline and f.mime_type in SAFE_INLINE_MIME
     content_type = f.mime_type if show_inline else "application/octet-stream"
     if content_type == "text/plain":
@@ -304,12 +305,12 @@ def replace_content(f: File, data: bytes) -> File:
     from .tasks import scan_file
 
     if len(data) > settings.MAX_FILE_SIZE:
-        raise ValidationError({"detail": "Файл завеликий."})
+        raise ValidationError({"detail": _("Файл завеликий.")})
     with transaction.atomic():
         f = File.objects.select_for_update().select_related("owner").get(pk=f.pk)
         delta = len(data) - f.size
         if delta > 0 and not f.owner.try_reserve_bytes(delta):
-            raise PermissionDenied("Недостатньо місця у сховищі для збереження.")
+            raise PermissionDenied(_("Недостатньо місця у сховищі для збереження."))
         if delta < 0:
             f.owner.release_bytes(-delta)
 

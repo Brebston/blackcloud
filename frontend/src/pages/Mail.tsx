@@ -52,10 +52,22 @@ interface Signature {
   is_default: boolean;
 }
 
+interface DraftAttachment {
+  index: number;
+  filename: string;
+  content_type?: string;
+  size: number;
+}
+
 interface ComposeInit {
   to?: string;
   cc?: string;
+  bcc?: string;
   subject?: string;
+  /** Збережена чернетка: її UID у теці «Чернетки», повний HTML і вкладення на сервері. */
+  draftUid?: number;
+  html?: string;
+  draftAttachments?: DraftAttachment[];
   /** Цитата або переслане повідомлення (HTML) — йде після підпису. */
   quoteHtml?: string;
   in_reply_to?: string;
@@ -67,6 +79,40 @@ interface ComposeInit {
 interface SendResult {
   message_id: string;
   confidential?: { id: string; expires_at: string; passcode: string | null };
+  scheduled?: { id: string; send_at: string };
+}
+
+interface ScheduledItem {
+  id: string;
+  send_at: string;
+  status: "pending" | "sending" | "failed";
+  to: string;
+  subject: string;
+  confidential: boolean;
+}
+
+const AUTOSAVE_MS = 2500;
+
+/** Пресети «надіслати пізніше» (місцевий час), як у Gmail. */
+function schedulePresets(): { key: TKey; date: Date }[] {
+  const at = (days: number, hour: number) => {
+    const d = new Date();
+    d.setDate(d.getDate() + days);
+    d.setHours(hour, 0, 0, 0);
+    return d;
+  };
+  const daysToMonday = ((8 - new Date().getDay()) % 7) || 7;
+  return [
+    { key: "compose.schedTomorrowMorning", date: at(1, 8) },
+    { key: "compose.schedTomorrowAfternoon", date: at(1, 13) },
+    { key: "compose.schedMonday", date: at(daysToMonday, 8) },
+  ];
+}
+
+/** Значення для <input type="datetime-local"> у місцевому часі. */
+function toLocalInput(d: Date): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
 interface ConfidentialItem {
@@ -110,6 +156,7 @@ export default function MailPage() {
   const [loading, setLoading] = useState(false);
   const [showSignatures, setShowSignatures] = useState(false);
   const [showConfidential, setShowConfidential] = useState(false);
+  const [showScheduled, setShowScheduled] = useState(false);
   const [passcodeInfo, setPasscodeInfo] = useState<SendResult["confidential"] | null>(null);
 
   // Усі запити веб-пошти явно вказують скриньку (у користувача їх може бути кілька)
@@ -175,7 +222,39 @@ export default function MailPage() {
     setMailbox(next);
   };
 
+  const isDraftsFolder = folders.find((f) => f.name === folder)?.special === "\\Drafts";
+
   const openMessage = async (m: MailSummary) => {
+    if (isDraftsFolder) {
+      // Чернетка відкривається в редакторі, а не в режимі читання
+      try {
+        const d = await get<{
+          uid: number;
+          to: string;
+          cc: string;
+          bcc: string;
+          subject: string;
+          html: string;
+          in_reply_to: string;
+          references: string;
+          attachments: DraftAttachment[];
+        }>(withBox(`/api/mail/drafts/${m.uid}/`));
+        setCompose({
+          draftUid: d.uid,
+          to: d.to,
+          cc: d.cc,
+          bcc: d.bcc,
+          subject: d.subject,
+          html: d.html,
+          in_reply_to: d.in_reply_to || undefined,
+          references: d.references || undefined,
+          draftAttachments: d.attachments,
+        });
+      } catch (e) {
+        toast(errorText(e), "error");
+      }
+      return;
+    }
     try {
       setRemoteImages(false);
       setOpen(await get<MailMessage>(withBox(`/api/mail/messages/${m.uid}/?folder=${encodeURIComponent(folder)}`)));
@@ -299,6 +378,9 @@ export default function MailPage() {
           </button>
           <button className="icon-btn" onClick={() => setShowSignatures(true)} aria-label={t("mail.signatures")} title={t("mail.signatures")}>
             <Icon name="signature" />
+          </button>
+          <button className="icon-btn" onClick={() => setShowScheduled(true)} aria-label={t("mail.scheduled")} title={t("mail.scheduled")}>
+            <Icon name="clock" />
           </button>
           <button className="icon-btn" onClick={() => setShowConfidential(true)} aria-label={t("mail.confidentialSent")} title={t("mail.confidentialSent")}>
             <Icon name="lock" />
@@ -479,15 +561,25 @@ export default function MailPage() {
         <ComposeDialog
           init={compose}
           mailbox={mailbox}
-          onClose={() => setCompose(null)}
+          onClose={(savedDraft) => {
+            setCompose(null);
+            if (savedDraft) toast(t("compose.draftSaved"), "info");
+            loadFolders();
+            if (isDraftsFolder) loadList();
+          }}
           onSent={(result) => {
             setCompose(null);
-            toast(t("mail.sent"), "success");
+            toast(
+              result.scheduled ? t("compose.scheduledToast", { date: formatDate(result.scheduled.send_at) }) : t("mail.sent"),
+              "success",
+            );
             if (result.confidential?.passcode) setPasscodeInfo(result.confidential);
             loadFolders();
+            if (isDraftsFolder) loadList();
           }}
         />
       )}
+      {showScheduled && mailbox && <ScheduledDialog withBox={withBox} onClose={() => setShowScheduled(false)} />}
       {showSignatures && <SignaturesDialog onClose={() => setShowSignatures(false)} />}
       {showConfidential && <ConfidentialDialog onClose={() => setShowConfidential(false)} />}
       {passcodeInfo && (
@@ -516,7 +608,8 @@ function ComposeDialog({
 }: {
   init: ComposeInit;
   mailbox: MailboxInfo;
-  onClose: () => void;
+  /** savedDraft — чернетку збережено на сервері (показати підказку). */
+  onClose: (savedDraft: boolean) => void;
   onSent: (result: SendResult) => void;
 }) {
   const t = useT();
@@ -524,11 +617,13 @@ function ComposeDialog({
   const [form, setForm] = useState({
     to: init.to || "",
     cc: init.cc || "",
-    bcc: "",
+    bcc: init.bcc || "",
     subject: init.subject || "",
   });
   const [files, setFiles] = useState<File[]>([]);
-  const [showCc, setShowCc] = useState(!!init.cc);
+  // Вкладення, що вже лежать у збереженій чернетці на сервері
+  const [kept, setKept] = useState<DraftAttachment[]>(init.draftAttachments || []);
+  const [showCc, setShowCc] = useState(!!(init.cc || init.bcc));
   const [signatures, setSignatures] = useState<Signature[]>([]);
   const [signatureId, setSignatureId] = useState("");
   const [confidential, setConfidential] = useState(false);
@@ -536,26 +631,114 @@ function ComposeDialog({
   const [confPasscode, setConfPasscode] = useState(false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [scheduleOpen, setScheduleOpen] = useState(false);
+  const [customWhen, setCustomWhen] = useState(() => toLocalInput(schedulePresets()[0].date));
+  const [saveState, setSaveState] = useState<"" | "saving" | "saved" | "error">(init.draftUid ? "saved" : "");
+  const [savedAt, setSavedAt] = useState<Date | null>(null);
 
-  // Підпис за замовчуванням вставляється одразу (як у Gmail); його можна змінити або прибрати
+  // Автозбереження: актуальні значення — у ref, щоб таймер бачив останній стан
+  const draftUid = useRef<number | undefined>(init.draftUid);
+  const latest = useRef({ form, files, kept });
+  latest.current = { form, files, kept };
+  const dirty = useRef(false);
+  const timer = useRef<number | undefined>(undefined);
+  const saving = useRef<Promise<void> | null>(null);
+  const closed = useRef(false);
+
+  // Підпис за замовчуванням вставляється одразу (як у Gmail); у збереженій чернетці він уже є
   useEffect(() => {
     get<Signature[]>("/api/mail/signatures/")
       .then((sigs) => {
         setSignatures(sigs);
         const def = sigs.find((s) => s.is_default);
-        if (def) {
+        if (def && !init.draftUid) {
           setSignatureId(def.id);
           editor.current?.setSignature(def.html);
+          dirty.current = false;
         }
       })
       .catch(() => {});
+    return () => window.clearTimeout(timer.current);
   }, []);
 
-  const attachSize = files.reduce((s, f) => s + f.size, 0);
+  const replyFields = (data: FormData) => {
+    if (init.in_reply_to) data.append("in_reply_to", init.in_reply_to);
+    if (init.references) data.append("references", init.references);
+  };
+
+  const saveDraft = async (): Promise<void> => {
+    window.clearTimeout(timer.current);
+    if (saving.current) {
+      await saving.current;
+      if (!dirty.current) return;
+    }
+    const ed = editor.current;
+    if (!ed || !dirty.current) return;
+    const { form: f, files: sentFiles, kept: keptNow } = latest.current;
+    const empty = !f.to.trim() && !f.cc.trim() && !f.bcc.trim() && !f.subject.trim() && ed.isEmpty() && !sentFiles.length && !keptNow.length;
+    if (empty && !draftUid.current) return;
+    dirty.current = false;
+    const data = new FormData();
+    Object.entries(f).forEach(([k, v]) => data.append(k, v));
+    data.append("mailbox", mailbox.id);
+    data.append("html", ed.html());
+    data.append("body", ed.text());
+    if (draftUid.current) data.append("draft_uid", String(draftUid.current));
+    keptNow.forEach((a) => data.append("keep_attachments", String(a.index)));
+    sentFiles.forEach((file) => data.append("attachments", file));
+    replyFields(data);
+    setSaveState("saving");
+    const run = (async () => {
+      try {
+        const r = await api<{ uid: number | null; attachments: DraftAttachment[] }>("/api/mail/drafts/", { method: "POST", body: data });
+        draftUid.current = r.uid ?? undefined;
+        // Надіслані файли тепер у чернетці на сервері; додані під час збереження лишаються локальними
+        setKept(r.attachments);
+        setFiles((cur) => cur.filter((x) => !sentFiles.includes(x)));
+        setSaveState("saved");
+        setSavedAt(new Date());
+      } catch {
+        dirty.current = true;
+        setSaveState("error");
+      }
+    })();
+    saving.current = run;
+    await run;
+    saving.current = null;
+  };
+
+  const touch = () => {
+    dirty.current = true;
+    window.clearTimeout(timer.current);
+    if (!closed.current) timer.current = window.setTimeout(() => saveDraft(), AUTOSAVE_MS);
+  };
+
+  const close = async () => {
+    closed.current = true;
+    window.clearTimeout(timer.current);
+    if (dirty.current) await saveDraft();
+    onClose(!!draftUid.current);
+  };
+
+  const discard = async () => {
+    if (!window.confirm(t("compose.confirmDiscard"))) return;
+    closed.current = true;
+    window.clearTimeout(timer.current);
+    if (saving.current) await saving.current;
+    if (draftUid.current) {
+      try {
+        await del(`/api/mail/drafts/${draftUid.current}/?mailbox=${encodeURIComponent(mailbox.id)}`);
+      } catch {
+        /* чернетку могли вже видалити */
+      }
+    }
+    onClose(false);
+  };
+
+  const attachSize = files.reduce((s, f) => s + f.size, 0) + kept.reduce((s, a) => s + a.size, 0);
   const emailRe = /[^@\s<>",]+@[^@\s<>",]+\.[^@\s<>",]+/;
 
-  const send = async (e: FormEvent) => {
-    e.preventDefault();
+  const submit = async (sendAt?: Date) => {
     setError("");
     const ed = editor.current;
     if (!ed) return;
@@ -565,44 +748,69 @@ function ComposeDialog({
       const bad = parts.find((p) => !emailRe.test(p));
       if (bad) return setError(t("compose.badAddress", { address: bad }));
     }
-    if (confidential && files.length) return setError(t("compose.confNoAttachments"));
+    if (confidential && (files.length || kept.length)) return setError(t("compose.confNoAttachments"));
     if (attachSize + ed.imageBytes() > MAX_TOTAL_BYTES) return setError(t("compose.tooBig"));
+    if (sendAt && sendAt.getTime() < Date.now() + 60_000) return setError(t("compose.schedPast"));
     if (ed.isEmpty() && !window.confirm(t("compose.confirmEmpty"))) return;
     if (!form.subject.trim() && !window.confirm(t("compose.confirmNoSubject"))) return;
+
+    // Не даємо автозбереженню створити нову чернетку після надсилання
+    closed.current = true;
+    window.clearTimeout(timer.current);
+    if (saving.current) await saving.current;
 
     const data = new FormData();
     Object.entries(form).forEach(([k, v]) => data.append(k, v));
     data.append("mailbox", mailbox.id);
     data.append("html", ed.html());
     data.append("body", ed.text());
+    if (sendAt) data.append("send_at", sendAt.toISOString());
     if (confidential) {
       data.append("confidential", "1");
       data.append("confidential_days", String(confDays));
       if (confPasscode) data.append("confidential_passcode", "1");
     }
-    if (init.in_reply_to) data.append("in_reply_to", init.in_reply_to);
-    if (init.references) data.append("references", init.references);
+    replyFields(data);
     if (init.in_reply_to_uid) data.append("in_reply_to_uid", String(init.in_reply_to_uid));
     if (init.in_reply_to_folder) data.append("in_reply_to_folder", init.in_reply_to_folder);
+    if (draftUid.current) data.append("draft_uid", String(draftUid.current));
+    kept.forEach((a) => data.append("keep_attachments", String(a.index)));
     files.forEach((f) => data.append("attachments", f));
     setBusy(true);
     try {
       onSent(await api<SendResult>("/api/mail/send/", { method: "POST", body: data }));
     } catch (err) {
+      closed.current = false;
       setError(errorText(err));
     } finally {
       setBusy(false);
     }
   };
 
-  const set = (k: keyof typeof form) => (e: { target: { value: string } }) => setForm({ ...form, [k]: e.target.value });
-  const initialHtml = `<div><br></div>${init.quoteHtml ? `<br>${init.quoteHtml}` : ""}`;
+  const set = (k: keyof typeof form) => (e: { target: { value: string } }) => {
+    setForm({ ...form, [k]: e.target.value });
+    touch();
+  };
+  const initialHtml = init.html ?? `<p></p>${init.quoteHtml ? `<p></p>${init.quoteHtml}` : ""}`;
 
   return (
-    <Modal title={t("compose.title")} onClose={onClose} wide>
-      <form className="stack compose" onSubmit={send}>
-        <div className="small muted">
-          {t("compose.from")}: {mailbox.display_name ? `${mailbox.display_name} <${mailbox.address}>` : mailbox.address}
+    <Modal title={init.draftUid ? t("compose.draftTitle") : t("compose.title")} onClose={close} wide>
+      <form
+        className="stack compose"
+        onSubmit={(e) => {
+          e.preventDefault();
+          submit();
+        }}
+      >
+        <div className="row-between small muted">
+          <span>
+            {t("compose.from")}: {mailbox.display_name ? `${mailbox.display_name} <${mailbox.address}>` : mailbox.address}
+          </span>
+          <span className={`draft-state ${saveState === "error" ? "text-danger" : ""}`} aria-live="polite">
+            {saveState === "saving" && t("compose.saving")}
+            {saveState === "saved" && (savedAt ? t("compose.savedAt", { time: formatDate(savedAt.toISOString()) }) : t("compose.saved"))}
+            {saveState === "error" && t("compose.saveFailed")}
+          </span>
         </div>
         <div className="row gap">
           <input className="grow" placeholder={t("compose.to")} value={form.to} onChange={set("to")} autoFocus={!init.to} />
@@ -619,7 +827,7 @@ function ComposeDialog({
           </>
         )}
         <input placeholder={t("mail.subject")} value={form.subject} onChange={set("subject")} maxLength={300} />
-        <RichEditor ref={editor} initialHtml={initialHtml} onError={setError} autoFocus={!!init.to} />
+        <RichEditor ref={editor} initialHtml={initialHtml} onError={setError} onChange={touch} autoFocus={!!init.to} />
         <div className="row gap wrap">
           <label className={`btn btn-sm ${confidential ? "disabled" : ""}`} title={confidential ? t("compose.confNoAttachments") : undefined}>
             <Icon name="paperclip" size={14} /> {t("compose.attach")}
@@ -629,15 +837,40 @@ function ComposeDialog({
               hidden
               disabled={confidential}
               onChange={(e) => {
-                if (e.target.files) setFiles([...files, ...Array.from(e.target.files as FileList)].slice(0, 20));
+                if (e.target.files) setFiles([...files, ...Array.from(e.target.files as FileList)].slice(0, 20 - kept.length));
                 e.target.value = "";
+                touch();
               }}
             />
           </label>
+          {kept.map((a) => (
+            <span key={`k${a.index}`} className="pill">
+              {a.filename} ({formatBytes(a.size)})
+              <button
+                type="button"
+                className="pill-x"
+                onClick={() => {
+                  setKept(kept.filter((x) => x.index !== a.index));
+                  touch();
+                }}
+                aria-label={t("common.remove")}
+              >
+                ×
+              </button>
+            </span>
+          ))}
           {files.map((f, i) => (
             <span key={i} className="pill">
               {f.name} ({formatBytes(f.size)})
-              <button type="button" className="pill-x" onClick={() => setFiles(files.filter((_, j) => j !== i))} aria-label={t("common.remove")}>
+              <button
+                type="button"
+                className="pill-x"
+                onClick={() => {
+                  setFiles(files.filter((_, j) => j !== i));
+                  touch();
+                }}
+                aria-label={t("common.remove")}
+              >
                 ×
               </button>
             </span>
@@ -692,16 +925,140 @@ function ComposeDialog({
             <div>{t("compose.confExplain")}</div>
           </div>
         )}
+        {scheduleOpen && (
+          <div className="banner banner-info stack small schedule-panel">
+            <strong>{t("compose.schedTitle")}</strong>
+            <div className="row gap wrap">
+              {schedulePresets().map((p) => (
+                <button key={p.key} type="button" className="btn btn-sm" disabled={busy} onClick={() => submit(p.date)}>
+                  {t(p.key)} · {formatDate(p.date.toISOString())}
+                </button>
+              ))}
+            </div>
+            <div className="row gap wrap">
+              <input
+                type="datetime-local"
+                value={customWhen}
+                min={toLocalInput(new Date())}
+                onChange={(e) => setCustomWhen(e.target.value)}
+                aria-label={t("compose.schedPick")}
+              />
+              <button
+                type="button"
+                className="btn btn-sm btn-primary"
+                disabled={busy || !customWhen}
+                onClick={() => submit(new Date(customWhen))}
+              >
+                <Icon name="clock" size={14} /> {t("compose.schedSet")}
+              </button>
+            </div>
+          </div>
+        )}
         {error && <div className="form-error">{error}</div>}
         <div className="modal-actions">
-          <button type="button" className="btn" onClick={onClose}>
-            {t("common.cancel")}
+          <button type="button" className="btn btn-danger" onClick={discard} title={t("compose.discard")}>
+            <Icon name="trash" size={16} />
+          </button>
+          <span className="grow" />
+          <button type="button" className="btn" onClick={close}>
+            {t("common.close")}
+          </button>
+          <button
+            type="button"
+            className={`btn ${scheduleOpen ? "btn-active" : ""}`}
+            aria-pressed={scheduleOpen}
+            onClick={() => setScheduleOpen(!scheduleOpen)}
+            title={t("compose.schedule")}
+          >
+            <Icon name="clock" size={16} /> {t("compose.schedule")}
           </button>
           <button className="btn btn-primary" disabled={busy}>
             <Icon name="send" size={16} /> {busy ? t("compose.sending") : t("compose.send")}
           </button>
         </div>
       </form>
+    </Modal>
+  );
+}
+
+function ScheduledDialog({ withBox, onClose }: { withBox: (path: string) => string; onClose: () => void }) {
+  const t = useT();
+  const toast = useToast();
+  const [items, setItems] = useState<ScheduledItem[] | null>(null);
+  const [error, setError] = useState("");
+
+  const load = () =>
+    get<ScheduledItem[]>(withBox("/api/mail/scheduled/"))
+      .then(setItems)
+      .catch((e) => setError(errorText(e)));
+  useEffect(() => {
+    load();
+  }, []);
+
+  const cancel = async (item: ScheduledItem) => {
+    if (!window.confirm(t("sched.confirmCancel"))) return;
+    try {
+      await post(`/api/mail/scheduled/${item.id}/cancel/`);
+      toast(t("sched.cancelled"), "success");
+      load();
+    } catch (err) {
+      setError(errorText(err));
+    }
+  };
+
+  const STATUS: Record<ScheduledItem["status"], TKey> = {
+    pending: "sched.status.pending",
+    sending: "sched.status.sending",
+    failed: "sched.status.failed",
+  };
+
+  return (
+    <Modal title={t("mail.scheduled")} onClose={onClose} wide>
+      <div className="stack">
+        <p className="small muted">{t("sched.hint")}</p>
+        {items === null && !error && <div className="empty-small">{t("common.loading")}</div>}
+        {items && items.length === 0 && <div className="empty-small">{t("sched.empty")}</div>}
+        {items && items.length > 0 && (
+          <div className="table-card">
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>{t("sched.when")}</th>
+                  <th>{t("mail.subject")}</th>
+                  <th>{t("mail.to")}</th>
+                  <th />
+                </tr>
+              </thead>
+              <tbody>
+                {items.map((m) => (
+                  <tr key={m.id}>
+                    <td className="small nowrap">
+                      {formatDate(m.send_at)}
+                      <div>
+                        <span className={`pill ${m.status === "failed" ? "pill-danger" : ""}`}>{t(STATUS[m.status])}</span>
+                      </div>
+                    </td>
+                    <td>
+                      <div className="truncate">
+                        {m.confidential && <Icon name="lock" size={12} />} {m.subject || t("mail.noSubject")}
+                      </div>
+                    </td>
+                    <td className="small">{m.to}</td>
+                    <td>
+                      {m.status !== "sending" && (
+                        <button className="btn btn-sm btn-danger" onClick={() => cancel(m)}>
+                          {t("sched.cancel")}
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+        {error && <div className="form-error">{error}</div>}
+      </div>
     </Modal>
   );
 }

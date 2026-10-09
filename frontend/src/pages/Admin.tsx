@@ -67,8 +67,8 @@ export default function AdminPage() {
   }, [q]);
 
   useEffect(() => {
-    const t = setTimeout(loadUsers, 250);
-    return () => clearTimeout(t);
+    const timer = setTimeout(loadUsers, 250);
+    return () => clearTimeout(timer);
   }, [loadUsers]);
 
   if (denied) {
@@ -88,24 +88,24 @@ export default function AdminPage() {
       {stats && (
         <div className="stats">
           <div className="card stat">
-            <div className="stat-label">Користувачі</div>
+            <div className="stat-label">{t("admin.stats.users")}</div>
             <div className="stat-value">{stats.active}</div>
-            <div className="small muted">усього {stats.total}</div>
+            <div className="small muted">{t("admin.stats.total", { n: stats.total })}</div>
           </div>
           <div className="card stat">
-            <div className="stat-label">З 2FA</div>
+            <div className="stat-label">{t("admin.stats.with2fa")}</div>
             <div className="stat-value">{stats.total ? Math.round((stats.with_2fa / stats.total) * 100) : 0}%</div>
-            <div className="small muted">{stats.with_2fa} користувачів</div>
+            <div className="small muted">{t("admin.stats.users2fa", { n: stats.with_2fa })}</div>
           </div>
           <div className="card stat">
-            <div className="stat-label">Використано</div>
+            <div className="stat-label">{t("admin.stats.used")}</div>
             <div className="stat-value">{formatBytes(stats.used || 0)}</div>
-            <div className="small muted">виділено {formatBytes(stats.allocated || 0)}</div>
+            <div className="small muted">{t("admin.stats.allocated", { size: formatBytes(stats.allocated || 0) })}</div>
           </div>
           <div className="card stat">
-            <div className="stat-label">Файли</div>
+            <div className="stat-label">{t("admin.stats.files")}</div>
             <div className="stat-value">{stats.files}</div>
-            <div className={`small ${stats.infected ? "text-danger" : "muted"}`}>заблоковано: {stats.infected}</div>
+            <div className={`small ${stats.infected ? "text-danger" : "muted"}`}>{t("admin.stats.blocked", { n: stats.infected })}</div>
           </div>
         </div>
       )}
@@ -136,20 +136,20 @@ export default function AdminPage() {
           <div className="toolbar">
             <div className="search">
               <Icon name="search" size={16} />
-              <input placeholder="Пошук користувачів…" value={q} onChange={(e) => setQ(e.target.value)} />
+              <input placeholder={t("admin.users.search")} value={q} onChange={(e) => setQ(e.target.value)} />
             </div>
             <button className="btn btn-primary" onClick={() => setCreating(true)}>
-              <Icon name="plus" size={16} /> Користувач
+              <Icon name="plus" size={16} /> {t("admin.users.add")}
             </button>
           </div>
           <div className="card table-card">
             <table className="table">
               <thead>
                 <tr>
-                  <th>Користувач</th>
-                  <th>Сховище</th>
-                  <th>2FA</th>
-                  <th>Останній вхід</th>
+                  <th>{t("admin.users.colUser")}</th>
+                  <th>{t("admin.users.colStorage")}</th>
+                  <th>{t("admin.users.col2fa")}</th>
+                  <th>{t("admin.users.colLastLogin")}</th>
                   <th />
                 </tr>
               </thead>
@@ -160,8 +160,8 @@ export default function AdminPage() {
                     <tr key={u.id} className={u.is_active ? "" : "inactive"}>
                       <td>
                         <div>
-                          <strong>{u.username}</strong> {u.is_staff && <span className="pill">адмін</span>}
-                          {!u.is_active && <span className="pill pill-danger">заблоковано</span>}
+                          <strong>{u.username}</strong> {u.is_staff && <span className="pill">{t("admin.users.pillAdmin")}</span>}
+                          {!u.is_active && <span className="pill pill-danger">{t("admin.users.pillBlocked")}</span>}
                         </div>
                         <div className="small muted">{u.email}</div>
                       </td>
@@ -173,11 +173,11 @@ export default function AdminPage() {
                           {formatBytes(u.used_bytes)} / {formatBytes(u.quota_bytes)}
                         </div>
                       </td>
-                      <td>{u.has_2fa ? <span className="pill pill-success">так</span> : <span className="pill pill-warning">ні</span>}</td>
+                      <td>{u.has_2fa ? <span className="pill pill-success">{t("common.yes")}</span> : <span className="pill pill-warning">{t("common.no")}</span>}</td>
                       <td className="small muted">{formatDate(u.last_login)}</td>
                       <td>
                         <button className="btn btn-sm" onClick={() => setEditing(u)}>
-                          Керувати
+                          {t("admin.users.manage")}
                         </button>
                       </td>
                     </tr>
@@ -203,7 +203,7 @@ export default function AdminPage() {
           onSaved={() => {
             setEditing(null);
             loadUsers();
-            toast("Збережено", "success");
+            toast(t("common.saved"), "success");
           }}
         />
       )}
@@ -222,13 +222,14 @@ export default function AdminPage() {
 
 function EditUserDialog({ user, isSelf, onClose, onSaved }: { user: AdminUser; isSelf: boolean; onClose: () => void; onSaved: () => void }) {
   const [quotaGb, setQuotaGb] = useState(String(Math.round((user.quota_bytes / 1024 ** 3) * 100) / 100));
+  const t = useT();
   const [active, setActive] = useState(user.is_active);
   const [error, setError] = useState("");
 
   const save = async (e: FormEvent) => {
     e.preventDefault();
     const q = Number(quotaGb);
-    if (!Number.isFinite(q) || q < 0 || q > 100000) return setError("Квота: число від 0 до 100000 ГБ.");
+    if (!Number.isFinite(q) || q < 0 || q > 100000) return setError(t("admin.edit.quotaInvalid"));
     try {
       await patch(`/api/admin/users/${user.id}/`, { quota_gb: q, is_active: active });
       onSaved();
@@ -238,7 +239,7 @@ function EditUserDialog({ user, isSelf, onClose, onSaved }: { user: AdminUser; i
   };
 
   const reset2fa = async () => {
-    if (!window.confirm(`Скинути 2FA для ${user.username}? Користувач зможе увійти лише з паролем.`)) return;
+    if (!window.confirm(t("admin.edit.reset2faConfirm", { name: user.username }))) return;
     try {
       await post(`/api/admin/users/${user.id}/reset_2fa/`);
       onSaved();
@@ -251,25 +252,25 @@ function EditUserDialog({ user, isSelf, onClose, onSaved }: { user: AdminUser; i
     <Modal title={user.username} onClose={onClose}>
       <form className="stack" onSubmit={save}>
         <p className="small muted">
-          Використано {formatBytes(user.used_bytes)}. Зареєстровано {formatDate(user.date_joined, false)}.
+          {t("admin.edit.summary", { used: formatBytes(user.used_bytes), date: formatDate(user.date_joined, false) })}
         </p>
         <label>
-          Квота, ГБ
+          {t("admin.edit.quotaGb")}
           <input type="number" min={0} step="0.5" value={quotaGb} onChange={(e) => setQuotaGb(e.target.value)} />
         </label>
         <label className="check">
           <input type="checkbox" checked={active} disabled={isSelf} onChange={(e) => setActive(e.target.checked)} />
-          Акаунт активний (вимкнення завершує всі сесії)
+          {t("admin.edit.active")}
         </label>
         {error && <div className="form-error">{error}</div>}
         <div className="modal-actions">
           {user.has_2fa && !isSelf && (
             <button type="button" className="btn btn-danger" onClick={reset2fa}>
-              Скинути 2FA
+              {t("admin.edit.reset2fa")}
             </button>
           )}
           <div className="spacer" />
-          <button className="btn btn-primary">Зберегти</button>
+          <button className="btn btn-primary">{t("common.save")}</button>
         </div>
       </form>
     </Modal>
@@ -277,13 +278,14 @@ function EditUserDialog({ user, isSelf, onClose, onSaved }: { user: AdminUser; i
 }
 
 function CreateUserDialog({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
+  const t = useT();
   const [form, setForm] = useState({ username: "", email: "", password: "", quota_gb: "10" });
   const [error, setError] = useState("");
   const submit = async (e: FormEvent) => {
     e.preventDefault();
-    if (!/^[a-z0-9][a-z0-9._-]{2,39}$/.test(form.username)) return setError("Невірне ім'я користувача.");
-    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(form.email)) return setError("Невірний email.");
-    if (form.password.length < 12) return setError("Пароль — мінімум 12 символів.");
+    if (!/^[a-z0-9][a-z0-9._-]{2,39}$/.test(form.username)) return setError(t("admin.create.badUsername"));
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(form.email)) return setError(t("admin.create.badEmail"));
+    if (form.password.length < 12) return setError(t("admin.create.shortPassword"));
     try {
       await post("/api/admin/users/", { ...form, quota_gb: Number(form.quota_gb) });
       onCreated();
@@ -292,18 +294,18 @@ function CreateUserDialog({ onClose, onCreated }: { onClose: () => void; onCreat
     }
   };
   return (
-    <Modal title="Новий користувач" onClose={onClose}>
+    <Modal title={t("admin.create.title")} onClose={onClose}>
       <form className="stack" onSubmit={submit}>
-        <input placeholder="Ім'я користувача" value={form.username} onChange={(e) => setForm({ ...form, username: e.target.value.toLowerCase() })} />
-        <input placeholder="Email" type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
-        <input placeholder="Тимчасовий пароль" type="password" autoComplete="new-password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} />
+        <input placeholder={t("admin.create.username")} value={form.username} onChange={(e) => setForm({ ...form, username: e.target.value.toLowerCase() })} />
+        <input placeholder={t("admin.create.email")} type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
+        <input placeholder={t("admin.create.tempPassword")} type="password" autoComplete="new-password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} />
         <label>
-          Квота, ГБ
+          {t("admin.edit.quotaGb")}
           <input type="number" min={0} value={form.quota_gb} onChange={(e) => setForm({ ...form, quota_gb: e.target.value })} />
         </label>
         {error && <div className="form-error">{error}</div>}
         <div className="modal-actions">
-          <button className="btn btn-primary">Створити</button>
+          <button className="btn btn-primary">{t("common.create")}</button>
         </div>
       </form>
     </Modal>
@@ -312,6 +314,7 @@ function CreateUserDialog({ onClose, onCreated }: { onClose: () => void; onCreat
 
 function InvitesTab() {
   const toast = useToast();
+  const t = useT();
   const [invites, setInvites] = useState<Invite[]>([]);
   const [form, setForm] = useState({ email: "", quota_gb: "", days: "7" });
   const [created, setCreated] = useState<string | null>(null);
@@ -326,7 +329,7 @@ function InvitesTab() {
     e.preventDefault();
     setError("");
     const days = Number(form.days);
-    if (!Number.isInteger(days) || days < 1 || days > 30) return setError("Термін: 1–30 днів.");
+    if (!Number.isInteger(days) || days < 1 || days > 30) return setError(t("admin.invites.badDays"));
     try {
       const r = await post<Invite>("/api/admin/invites/", {
         email: form.email,
@@ -345,27 +348,27 @@ function InvitesTab() {
     <div className="stack">
       <form className="card grid-4" onSubmit={create}>
         <label>
-          Email (необов'язково)
+          {t("admin.invites.emailOptional")}
           <input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
         </label>
         <label>
-          Квота, ГБ
-          <input type="number" min={0} placeholder="за замовч." value={form.quota_gb} onChange={(e) => setForm({ ...form, quota_gb: e.target.value })} />
+          {t("admin.edit.quotaGb")}
+          <input type="number" min={0} placeholder={t("admin.invites.quotaDefault")} value={form.quota_gb} onChange={(e) => setForm({ ...form, quota_gb: e.target.value })} />
         </label>
         <label>
-          Діє днів
+          {t("admin.invites.days")}
           <input type="number" min={1} max={30} value={form.days} onChange={(e) => setForm({ ...form, days: e.target.value })} />
         </label>
-        <button className="btn btn-primary">Створити запрошення</button>
+        <button className="btn btn-primary">{t("admin.invites.create")}</button>
       </form>
       {error && <div className="form-error">{error}</div>}
       {created && (
         <div className="secret-box">
-          <div className="small">Посилання-запрошення (показується один раз):</div>
+          <div className="small">{t("admin.invites.linkOnce")}</div>
           <div className="row-between">
             <code className="break">{created}</code>
-            <button className="btn btn-sm" onClick={() => navigator.clipboard.writeText(created).then(() => toast("Скопійовано", "success"))}>
-              Копіювати
+            <button className="btn btn-sm" onClick={() => navigator.clipboard.writeText(created).then(() => toast(t("admin.invites.copied"), "success"))}>
+              {t("admin.invites.copy")}
             </button>
           </div>
         </div>
@@ -375,15 +378,15 @@ function InvitesTab() {
           <tbody>
             {invites.map((i) => (
               <tr key={i.id}>
-                <td>{i.email || <span className="muted">будь-хто</span>}</td>
-                <td className="small muted">до {formatDate(i.expires_at)}</td>
+                <td>{i.email || <span className="muted">{t("admin.invites.anyone")}</span>}</td>
+                <td className="small muted">{t("admin.invites.until", { date: formatDate(i.expires_at) })}</td>
                 <td>
-                  {i.used_at ? <span className="pill">використано</span> : i.valid ? <span className="pill pill-success">активне</span> : <span className="pill">прострочене</span>}
+                  {i.used_at ? <span className="pill">{t("admin.invites.used")}</span> : i.valid ? <span className="pill pill-success">{t("admin.invites.active")}</span> : <span className="pill">{t("admin.invites.expired")}</span>}
                 </td>
                 <td>
                   {!i.used_at && (
                     <button className="link-btn danger" onClick={() => del(`/api/admin/invites/${i.id}/`).then(load)}>
-                      Видалити
+                      {t("common.delete")}
                     </button>
                   )}
                 </td>
@@ -397,19 +400,20 @@ function InvitesTab() {
 }
 
 function AuditTab() {
+  const t = useT();
   const [rows, setRows] = useState<{ id: number; created_at: string; action: string; user: string | null; ip_address: string | null; target: string }[]>([]);
   const [filter, setFilter] = useState("");
   useEffect(() => {
-    const t = setTimeout(() => {
+    const timer = setTimeout(() => {
       get<Paginated<(typeof rows)[number]>>(`/api/admin/audit/?page_size=200&action=${encodeURIComponent(filter)}`).then((r) => setRows(r.results));
     }, 250);
-    return () => clearTimeout(t);
+    return () => clearTimeout(timer);
   }, [filter]);
   return (
     <div className="stack">
       <div className="search">
         <Icon name="search" size={16} />
-        <input placeholder="Фільтр дії (напр. login.failed)" value={filter} onChange={(e) => setFilter(e.target.value)} />
+        <input placeholder={t("admin.audit.filter")} value={filter} onChange={(e) => setFilter(e.target.value)} />
       </div>
       <div className="card table-card">
         <table className="table">

@@ -1,6 +1,11 @@
 // Тонкий клієнт API: сесійна cookie (HttpOnly) + CSRF-токен у пам'яті.
 // Жодних токенів у localStorage — XSS не зможе їх викрасти.
 
+import { currentLang, tr } from "../i18n";
+
+// Увага: i18n імпортує hooks/useAuth, а той — цей модуль (циклічний імпорт).
+// Тому currentLang()/tr() викликаються лише всередині функцій, ніколи на верхньому рівні.
+
 let csrfToken: string | null = null;
 
 export class ApiError extends Error {
@@ -15,7 +20,7 @@ export class ApiError extends Error {
 
 export async function ensureCsrf(force = false): Promise<string> {
   if (csrfToken && !force) return csrfToken;
-  const r = await fetch("/api/auth/csrf/", { credentials: "same-origin" });
+  const r = await fetch("/api/auth/csrf/", { credentials: "same-origin", headers: { "Accept-Language": currentLang() } });
   const data = await r.json();
   csrfToken = data.csrfToken as string;
   return csrfToken;
@@ -46,7 +51,11 @@ export async function api<T = unknown>(
   options: { method?: string; body?: Body; headers?: Record<string, string>; signal?: AbortSignal } = {},
 ): Promise<T> {
   const method = (options.method || "GET").toUpperCase();
-  const headers: Record<string, string> = { Accept: "application/json", ...(options.headers || {}) };
+  const headers: Record<string, string> = {
+    Accept: "application/json",
+    "Accept-Language": currentLang(),
+    ...(options.headers || {}),
+  };
   let body: BodyInit | undefined;
 
   if (options.body instanceof FormData || options.body instanceof Blob || options.body instanceof ArrayBuffer) {
@@ -78,7 +87,7 @@ export async function api<T = unknown>(
     if (response.status === 401) {
       window.dispatchEvent(new CustomEvent("bc:unauthorized"));
     }
-    throw new ApiError(response.status, extractMessage(data, `Помилка ${response.status}`), data);
+    throw new ApiError(response.status, extractMessage(data, tr("misc.errorStatus", { status: response.status })), data);
   }
   return data as T;
 }
@@ -91,5 +100,5 @@ export const del = <T>(path: string, body?: Body) => api<T>(path, { method: "DEL
 export function errorText(e: unknown): string {
   if (e instanceof ApiError) return e.message;
   if (e instanceof Error) return e.message;
-  return "Невідома помилка";
+  return tr("misc.unknownError");
 }

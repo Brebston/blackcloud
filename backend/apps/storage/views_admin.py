@@ -11,6 +11,7 @@
 
 from django.conf import settings
 from django.db.models import Count
+from django.utils.translation import gettext as _, gettext_noop
 from rest_framework import status as http_status
 from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
 from rest_framework.response import Response
@@ -31,7 +32,7 @@ MAX_BULK_RESCAN = 500
 def _quarantined(pk) -> File:
     f = File.objects.select_related("owner").filter(pk=pk, status__in=QUARANTINE_STATUSES).first()
     if f is None:
-        raise NotFound("Файл не знайдено в карантині.")
+        raise NotFound(_("Файл не знайдено в карантині."))
     return f
 
 
@@ -41,7 +42,7 @@ def _check_owner(request, f: File):
     if request.user.is_superuser or owner == request.user:
         return
     if owner.is_staff or owner.is_superuser:
-        raise PermissionDenied("Файли адміністраторів може видаляти лише суперкористувач.")
+        raise PermissionDenied(_("Файли адміністраторів може видаляти лише суперкористувач."))
 
 
 def _serialize(f: File) -> dict:
@@ -81,7 +82,7 @@ class QuarantineRescanView(APIView):
 
         f = _quarantined(pk)
         if not settings.CLAMAV_ENABLED:
-            raise ValidationError({"detail": "Антивірус вимкнено в конфігурації — повторна перевірка неможлива."})
+            raise ValidationError({"detail": _("Антивірус вимкнено в конфігурації — повторна перевірка неможлива.")})
         updated = File.objects.filter(pk=f.pk, status=f.status).update(status=File.Status.SCANNING, scan_detail="")
         if updated:
             scan_file.delay(str(f.pk))
@@ -103,7 +104,14 @@ class QuarantinePurgeView(APIView):
         services.purge_file(f)
         audit(request, "admin.quarantine_purge", target=str(pk), owner=owner.username, signature=signature)
         if owner != request.user:
-            notify(owner, "security", "Файл з карантину видалено", f"Адміністратор остаточно видалив «{name}».", "/files")
+            notify(
+                owner,
+                "security",
+                gettext_noop("Файл з карантину видалено"),
+                gettext_noop("Адміністратор остаточно видалив «%(name)s»."),
+                "/files",
+                params={"name": name},
+            )
         return Response(status=http_status.HTTP_204_NO_CONTENT)
 
 
@@ -134,7 +142,7 @@ class AntivirusRescanFailedView(APIView):
 
         _require_password(request, request.data.get("password") or "")
         if not settings.CLAMAV_ENABLED:
-            raise ValidationError({"detail": "Антивірус вимкнено в конфігурації."})
+            raise ValidationError({"detail": _("Антивірус вимкнено в конфігурації.")})
         ids = list(File.objects.filter(status=File.Status.FAILED).values_list("pk", flat=True)[:MAX_BULK_RESCAN])
         File.objects.filter(pk__in=ids, status=File.Status.FAILED).update(status=File.Status.SCANNING, scan_detail="")
         for pk in ids:

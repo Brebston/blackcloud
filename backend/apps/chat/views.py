@@ -3,6 +3,7 @@ from django.db import IntegrityError, transaction
 from django.db.models import Prefetch
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
+from django.utils.translation import gettext as _
 from rest_framework import status
 from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
 from rest_framework.response import Response
@@ -61,7 +62,7 @@ def _reachable(me, users) -> bool:
 def _membership(user, pk) -> Participant:
     p = member_or_none(user, pk)
     if p is None:
-        raise NotFound("Розмову не знайдено.")
+        raise NotFound(_("Розмову не знайдено."))
     return p
 
 
@@ -77,7 +78,7 @@ class ConversationsView(APIView):
         users = list(User.objects.filter(username__in=names, is_active=True).select_related("preferences"))
         if not users or len(users) != len(names) or not _reachable(request.user, users):
             # Однакова відповідь для «не існує» і «приховав себе»
-            raise ValidationError({"usernames": ["Деяких користувачів не знайдено."]})
+            raise ValidationError({"usernames": [_("Деяких користувачів не знайдено.")]})
         title = ser.validated_data.get("title", "").strip()
 
         if len(users) == 1 and not title:
@@ -144,7 +145,7 @@ class MessagesView(APIView):
                 pk=ser.validated_data["file"], owner=request.user, deleted_at__isnull=True
             ).first()
             if file is None or not file.is_downloadable:
-                raise ValidationError({"file": ["Файл недоступний."]})
+                raise ValidationError({"file": [_("Файл недоступний.")]})
         with transaction.atomic():
             msg = Message.objects.create(
                 conversation=conv, sender=request.user, body=ser.validated_data.get("body", "").strip(), file=file
@@ -170,10 +171,10 @@ class MessageDetailView(APIView):
     def patch(self, request, pk):
         msg = self._own(request, pk)
         if (timezone.now() - msg.created_at).total_seconds() > EDIT_WINDOW_HOURS * 3600:
-            raise PermissionDenied("Час на редагування минув.")
+            raise PermissionDenied(_("Час на редагування минув."))
         body = (request.data.get("body") or "").strip()
         if not body or len(body) > 10000:
-            raise ValidationError({"body": ["1–10000 символів."]})
+            raise ValidationError({"body": [_("1–10000 символів.")]})
         msg.body = body
         msg.edited_at = timezone.now()
         msg.save(update_fields=["body", "edited_at"])
@@ -199,7 +200,7 @@ class ReactionView(APIView):
     def post(self, request, pk):
         emoji = request.data.get("emoji")
         if not is_single_emoji(emoji):
-            raise ValidationError({"emoji": ["Потрібен один емоджі."]})
+            raise ValidationError({"emoji": [_("Потрібен один емоджі.")]})
         msg = Message.objects.select_related("conversation").filter(pk=pk, deleted=False).first()
         if msg is None or member_or_none(request.user, msg.conversation_id) is None:
             raise NotFound()
@@ -209,10 +210,10 @@ class ReactionView(APIView):
                 existing.delete()
             else:
                 if Reaction.objects.filter(message=msg, user=request.user).count() >= MAX_USER_REACTIONS:
-                    raise ValidationError({"emoji": ["Забагато реакцій на одне повідомлення."]})
+                    raise ValidationError({"emoji": [_("Забагато реакцій на одне повідомлення.")]})
                 kinds = set(Reaction.objects.filter(message=msg).values_list("emoji", flat=True))
                 if emoji not in kinds and len(kinds) >= MAX_REACTION_KINDS:
-                    raise ValidationError({"emoji": ["Забагато різних реакцій."]})
+                    raise ValidationError({"emoji": [_("Забагато різних реакцій.")]})
                 try:
                     with transaction.atomic():
                         Reaction.objects.create(message=msg, user=request.user, emoji=emoji)
@@ -239,7 +240,7 @@ class LeaveView(APIView):
         me = _membership(request.user, pk)
         conv = me.conversation
         if not conv.is_group:
-            raise ValidationError({"detail": "З особистого діалогу не можна вийти."})
+            raise ValidationError({"detail": _("З особистого діалогу не можна вийти.")})
         me.delete()
         if not conv.participants.exists():
             conv.delete()
@@ -257,16 +258,16 @@ class MembersView(APIView):
         me = _membership(request.user, pk)
         conv = me.conversation
         if not conv.is_group or not me.is_admin:
-            raise PermissionDenied("Лише адміністратор групи може додавати учасників.")
+            raise PermissionDenied(_("Лише адміністратор групи може додавати учасників."))
         user = (
             User.objects.filter(username=(request.data.get("username") or "").lower(), is_active=True)
             .select_related("preferences")
             .first()
         )
         if user is None or not _reachable(request.user, [user]):
-            raise ValidationError({"username": ["Користувача не знайдено."]})
+            raise ValidationError({"username": [_("Користувача не знайдено.")]})
         if conv.participants.count() >= 200:
-            raise ValidationError({"detail": "Забагато учасників."})
+            raise ValidationError({"detail": _("Забагато учасників.")})
         Participant.objects.get_or_create(conversation=conv, user=user)
         audit(request, "chat.member_added", target=str(conv.pk), member=user.username)
         broadcast(conv, "conversation.updated", {"id": str(conv.pk)})

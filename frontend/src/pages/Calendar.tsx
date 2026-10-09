@@ -6,25 +6,36 @@ import Modal from "../components/Modal";
 import { useToast } from "../components/Toast";
 import UserPicker from "../components/UserPicker";
 import { useAuth } from "../hooks/useAuth";
+import { type Lang, type TKey, useI18n, useT } from "../i18n";
 
-const WEEKDAYS_MON = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Нд"];
-const WEEKDAYS_SUN = ["Нд", "Пн", "Вт", "Ср", "Чт", "Пт", "Сб"];
-const REPEAT = [
-  { value: "", label: "Не повторювати" },
-  { value: "FREQ=DAILY", label: "Щодня" },
-  { value: "FREQ=WEEKLY", label: "Щотижня" },
-  { value: "FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR", label: "Щобудня" },
-  { value: "FREQ=MONTHLY", label: "Щомісяця" },
-  { value: "FREQ=YEARLY", label: "Щороку" },
+const REPEAT: { value: string; label: TKey }[] = [
+  { value: "", label: "calendar.repeat.none" },
+  { value: "FREQ=DAILY", label: "calendar.repeat.daily" },
+  { value: "FREQ=WEEKLY", label: "calendar.repeat.weekly" },
+  { value: "FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR", label: "calendar.repeat.weekdays" },
+  { value: "FREQ=MONTHLY", label: "calendar.repeat.monthly" },
+  { value: "FREQ=YEARLY", label: "calendar.repeat.yearly" },
 ];
-const REMINDERS = [
-  { value: "", label: "Без нагадування" },
-  { value: "0", label: "У момент початку" },
-  { value: "10", label: "За 10 хвилин" },
-  { value: "30", label: "За 30 хвилин" },
-  { value: "60", label: "За годину" },
-  { value: "1440", label: "За день" },
+const REMINDERS: { value: string; label: TKey }[] = [
+  { value: "", label: "calendar.reminder.none" },
+  { value: "0", label: "calendar.reminder.atStart" },
+  { value: "10", label: "calendar.reminder.10m" },
+  { value: "30", label: "calendar.reminder.30m" },
+  { value: "60", label: "calendar.reminder.1h" },
+  { value: "1440", label: "calendar.reminder.1d" },
 ];
+
+const localeOf = (lang: Lang) => (lang === "en" ? "en-GB" : "uk-UA");
+
+/** Короткі назви днів тижня («Пн», «Mon») у порядку відображення сітки. */
+function weekdayNames(locale: string, mondayFirst: boolean): string[] {
+  const fmt = new Intl.DateTimeFormat(locale, { weekday: "short" });
+  // 2024-01-07 — неділя
+  return Array.from({ length: 7 }, (_, i) => {
+    const name = fmt.format(new Date(2024, 0, 7 + i + (mondayFirst ? 1 : 0)));
+    return name.charAt(0).toUpperCase() + name.slice(1);
+  });
+}
 
 function startOfGrid(month: Date, mondayFirst: boolean): Date {
   const first = new Date(month.getFullYear(), month.getMonth(), 1);
@@ -54,6 +65,8 @@ interface Draft {
 export default function CalendarPage() {
   const { user } = useAuth();
   const toast = useToast();
+  const { lang, t } = useI18n();
+  const locale = localeOf(lang);
   const mondayFirst = user?.preferences.week_starts_monday ?? true;
   const [month, setMonth] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1));
   const [calendars, setCalendars] = useState<CalendarT[]>([]);
@@ -130,27 +143,27 @@ export default function CalendarPage() {
     <div className="page calendar-page">
       <div className="page-head">
         <div className="row gap">
-          <button className="icon-btn" onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() - 1, 1))} aria-label="Попередній місяць">
+          <button className="icon-btn" onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() - 1, 1))} aria-label={t("calendar.prevMonth")}>
             <Icon name="chevronLeft" />
           </button>
-          <h2 className="month-title">{month.toLocaleDateString("uk-UA", { month: "long", year: "numeric" })}</h2>
-          <button className="icon-btn" onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() + 1, 1))} aria-label="Наступний місяць">
+          <h2 className="month-title">{month.toLocaleDateString(locale, { month: "long", year: "numeric" })}</h2>
+          <button className="icon-btn" onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() + 1, 1))} aria-label={t("calendar.nextMonth")}>
             <Icon name="chevronRight" />
           </button>
           <button className="btn btn-sm" onClick={() => setMonth(new Date(new Date().getFullYear(), new Date().getMonth(), 1))}>
-            Сьогодні
+            {t("calendar.today")}
           </button>
         </div>
         <button className="btn btn-primary" onClick={() => openNew(new Date())} disabled={!editable.length}>
-          <Icon name="plus" size={16} /> Подія
+          <Icon name="plus" size={16} /> {t("calendar.newEvent")}
         </button>
       </div>
 
       <div className="calendar-layout">
         <aside className="card cal-sidebar">
           <div className="row-between">
-            <strong>Календарі</strong>
-            <button className="icon-btn" onClick={() => setNewCal(true)} aria-label="Новий календар">
+            <strong>{t("calendar.calendars")}</strong>
+            <button className="icon-btn" onClick={() => setNewCal(true)} aria-label={t("calendar.newCalendar")}>
               <Icon name="plus" size={16} />
             </button>
           </div>
@@ -171,7 +184,7 @@ export default function CalendarPage() {
                 <span className="truncate">{c.name}</span>
               </label>
               {!c.is_owner && <span className="muted small">@{c.owner}</span>}
-              <button className="icon-btn" onClick={() => setManage(c)} aria-label="Налаштування календаря">
+              <button className="icon-btn" onClick={() => setManage(c)} aria-label={t("calendar.settings")}>
                 <Icon name="settings" size={14} />
               </button>
             </div>
@@ -179,7 +192,7 @@ export default function CalendarPage() {
         </aside>
 
         <div className="card month-grid">
-          {(mondayFirst ? WEEKDAYS_MON : WEEKDAYS_SUN).map((d) => (
+          {weekdayNames(locale, mondayFirst).map((d) => (
             <div key={d} className="weekday">
               {d}
             </div>
@@ -209,13 +222,13 @@ export default function CalendarPage() {
                   >
                     {!ev.all_day && (
                       <span className="event-time">
-                        {new Date(ev.occurrence_start || ev.start).toLocaleTimeString("uk-UA", { hour: "2-digit", minute: "2-digit" })}
+                        {new Date(ev.occurrence_start || ev.start).toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit" })}
                       </span>
                     )}
                     <span className="truncate">{ev.title}</span>
                   </button>
                 ))}
-                {dayEvents.length > 4 && <div className="more">ще {dayEvents.length - 4}</div>}
+                {dayEvents.length > 4 && <div className="more">{t("calendar.more", { n: dayEvents.length - 4 })}</div>}
               </div>
             );
           })}
@@ -267,6 +280,7 @@ function EventDialog({
   onClose: () => void;
   onSaved: () => void;
 }) {
+  const t = useT();
   const [d, setD] = useState<Draft>(draft);
   const [error, setError] = useState("");
   const readOnly = draft.id !== undefined && !calendars.some((c) => c.id === draft.calendar);
@@ -277,15 +291,15 @@ function EventDialog({
 
   const save = async (e: FormEvent) => {
     e.preventDefault();
-    if (!d.title.trim()) return setError("Вкажіть назву події.");
+    if (!d.title.trim()) return setError(t("calendar.errTitle"));
     const start = new Date(d.start);
     let end = new Date(d.end);
-    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return setError("Невірна дата.");
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return setError(t("calendar.errDate"));
     if (d.all_day) {
       start.setHours(0, 0, 0, 0);
       end = new Date(end.getFullYear(), end.getMonth(), end.getDate(), 23, 59, 59);
     }
-    if (end < start) return setError("Кінець не може бути раніше за початок.");
+    if (end < start) return setError(t("calendar.errEndBeforeStart"));
     const body = {
       calendar: d.calendar,
       title: d.title.trim(),
@@ -307,7 +321,7 @@ function EventDialog({
   };
 
   const remove = async () => {
-    if (!d.id || !window.confirm("Видалити подію (усі повторення)?")) return;
+    if (!d.id || !window.confirm(t("calendar.deleteEventConfirm"))) return;
     try {
       await del(`/api/calendars/events/${d.id}/`);
       onSaved();
@@ -317,41 +331,41 @@ function EventDialog({
   };
 
   return (
-    <Modal title={d.id ? "Подія" : "Нова подія"} onClose={onClose}>
+    <Modal title={d.id ? t("calendar.event") : t("calendar.newEventTitle")} onClose={onClose}>
       <form className="stack" onSubmit={save}>
-        <input autoFocus placeholder="Назва" value={d.title} onChange={(e) => set("title", e.target.value)} disabled={readOnly} maxLength={200} />
+        <input autoFocus placeholder={t("calendar.title")} value={d.title} onChange={(e) => set("title", e.target.value)} disabled={readOnly} maxLength={200} />
         <label className="check">
           <input type="checkbox" checked={d.all_day} onChange={(e) => set("all_day", e.target.checked)} disabled={readOnly} />
-          Увесь день
+          {t("calendar.allDay")}
         </label>
         <div className="grid-2">
           <label>
-            Початок
+            {t("calendar.start")}
             <input type="datetime-local" value={d.start} onChange={(e) => set("start", e.target.value)} disabled={readOnly} />
           </label>
           <label>
-            Кінець
+            {t("calendar.end")}
             <input type="datetime-local" value={d.end} onChange={(e) => set("end", e.target.value)} disabled={readOnly} />
           </label>
         </div>
         <div className="grid-2">
           <label>
-            Повторення
+            {t("calendar.repeat")}
             <select value={d.rrule} onChange={(e) => set("rrule", e.target.value)} disabled={readOnly}>
               {REPEAT.map((r) => (
                 <option key={r.value} value={r.value}>
-                  {r.label}
+                  {t(r.label)}
                 </option>
               ))}
               {d.rrule && !REPEAT.some((r) => r.value === d.rrule) && <option value={d.rrule}>{d.rrule}</option>}
             </select>
           </label>
           <label>
-            Нагадування
+            {t("calendar.reminder")}
             <select value={d.reminder} onChange={(e) => set("reminder", e.target.value)} disabled={readOnly}>
               {REMINDERS.map((r) => (
                 <option key={r.value} value={r.value}>
-                  {r.label}
+                  {t(r.label)}
                 </option>
               ))}
             </select>
@@ -359,7 +373,7 @@ function EventDialog({
         </div>
         {!readOnly && (
           <label>
-            Календар
+            {t("calendar.calendar")}
             <select value={d.calendar} onChange={(e) => set("calendar", e.target.value)}>
               {calendars.map((c) => (
                 <option key={c.id} value={c.id}>
@@ -369,21 +383,21 @@ function EventDialog({
             </select>
           </label>
         )}
-        <input placeholder="Місце" value={d.location} onChange={(e) => set("location", e.target.value)} disabled={readOnly} maxLength={300} />
-        <textarea placeholder="Опис" rows={3} value={d.description} onChange={(e) => set("description", e.target.value)} disabled={readOnly} />
+        <input placeholder={t("calendar.location")} value={d.location} onChange={(e) => set("location", e.target.value)} disabled={readOnly} maxLength={300} />
+        <textarea placeholder={t("calendar.description")} rows={3} value={d.description} onChange={(e) => set("description", e.target.value)} disabled={readOnly} />
         {error && <div className="form-error">{error}</div>}
         {!readOnly && (
           <div className="modal-actions">
             {d.id && (
               <button type="button" className="btn btn-danger" onClick={remove}>
-                Видалити
+                {t("common.delete")}
               </button>
             )}
             <div className="spacer" />
             <button type="button" className="btn" onClick={onClose}>
-              Скасувати
+              {t("common.cancel")}
             </button>
-            <button className="btn btn-primary">Зберегти</button>
+            <button className="btn btn-primary">{t("common.save")}</button>
           </div>
         )}
       </form>
@@ -392,12 +406,13 @@ function EventDialog({
 }
 
 function NewCalendarDialog({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
+  const t = useT();
   const [name, setName] = useState("");
   const [color, setColor] = useState("#1D9E75");
   const [error, setError] = useState("");
   const submit = async (e: FormEvent) => {
     e.preventDefault();
-    if (!name.trim()) return setError("Вкажіть назву.");
+    if (!name.trim()) return setError(t("calendar.errName"));
     try {
       await post("/api/calendars/", { name: name.trim(), color });
       onCreated();
@@ -406,15 +421,15 @@ function NewCalendarDialog({ onClose, onCreated }: { onClose: () => void; onCrea
     }
   };
   return (
-    <Modal title="Новий календар" onClose={onClose}>
+    <Modal title={t("calendar.newCalendar")} onClose={onClose}>
       <form className="stack" onSubmit={submit}>
-        <input autoFocus placeholder="Назва" value={name} onChange={(e) => setName(e.target.value)} maxLength={100} />
+        <input autoFocus placeholder={t("calendar.title")} value={name} onChange={(e) => setName(e.target.value)} maxLength={100} />
         <label className="row gap">
-          Колір <input type="color" value={color} onChange={(e) => setColor(e.target.value)} />
+          {t("calendar.color")} <input type="color" value={color} onChange={(e) => setColor(e.target.value)} />
         </label>
         {error && <div className="form-error">{error}</div>}
         <div className="modal-actions">
-          <button className="btn btn-primary">Створити</button>
+          <button className="btn btn-primary">{t("common.create")}</button>
         </div>
       </form>
     </Modal>
@@ -431,6 +446,7 @@ function ManageCalendarDialog({
   onChanged: () => void;
 }) {
   const toast = useToast();
+  const t = useT();
   const [feedUrl, setFeedUrl] = useState("");
   const [canEdit, setCanEdit] = useState(false);
   const [error, setError] = useState("");
@@ -440,7 +456,7 @@ function ManageCalendarDialog({
     form.append("file", file);
     try {
       const r = await api<{ imported: number }>(`/api/calendars/${calendar.id}/import/`, { method: "POST", body: form });
-      toast(`Імпортовано подій: ${r.imported}`, "success");
+      toast(t("calendar.imported", { n: r.imported }), "success");
       onChanged();
     } catch (e) {
       setError(errorText(e));
@@ -452,11 +468,11 @@ function ManageCalendarDialog({
       <div className="stack">
         <div className="row gap wrap">
           <a className="btn btn-sm" href={`/api/calendars/${calendar.id}/export/`}>
-            <Icon name="download" size={14} /> Експорт .ics
+            <Icon name="download" size={14} /> {t("calendar.exportIcs")}
           </a>
           {calendar.can_edit && (
             <label className="btn btn-sm">
-              <Icon name="upload" size={14} /> Імпорт .ics
+              <Icon name="upload" size={14} /> {t("calendar.importIcs")}
               <input type="file" accept=".ics,text/calendar" hidden onChange={(e) => e.target.files?.[0] && importIcs(e.target.files[0])} />
             </label>
           )}
@@ -464,16 +480,16 @@ function ManageCalendarDialog({
 
         {calendar.is_owner && (
           <>
-            <h4>Спільний доступ</h4>
+            <h4>{t("calendar.sharing")}</h4>
             <label className="check">
               <input type="checkbox" checked={canEdit} onChange={(e) => setCanEdit(e.target.checked)} />
-              Дозволити редагування
+              {t("calendar.allowEdit")}
             </label>
             <UserPicker
               onPick={async (u) => {
                 try {
                   await post(`/api/calendars/${calendar.id}/share/`, { username: u.username, can_edit: canEdit });
-                  toast(`Доступ надано: ${u.username}`, "success");
+                  toast(t("calendar.shared", { name: u.username }), "success");
                   onChanged();
                 } catch (e) {
                   setError(errorText(e));
@@ -484,26 +500,26 @@ function ManageCalendarDialog({
               {calendar.shared_with.map((s) => (
                 <li key={s.username} className="row-between">
                   <span>
-                    {s.username} <span className="muted small">{s.can_edit ? "редагування" : "перегляд"}</span>
+                    {s.username} <span className="muted small">{s.can_edit ? t("calendar.canEdit") : t("calendar.canView")}</span>
                   </span>
                   <button
                     className="link-btn danger"
                     onClick={() => post(`/api/calendars/${calendar.id}/unshare/`, { username: s.username }).then(onChanged)}
                   >
-                    Відкликати
+                    {t("calendar.revoke")}
                   </button>
                 </li>
               ))}
             </ul>
 
-            <h4>Підписка (ICS)</h4>
-            <p className="small muted">Приватне посилання лише для читання — для Apple Calendar, Thunderbird, Google Calendar.</p>
+            <h4>{t("calendar.feed")}</h4>
+            <p className="small muted">{t("calendar.feedHint")}</p>
             <div className="row gap wrap">
               <button
                 className="btn btn-sm"
                 onClick={async () => setFeedUrl((await post<{ url: string }>(`/api/calendars/${calendar.id}/feed/`)).url)}
               >
-                {calendar.has_feed ? "Перевипустити посилання" : "Створити посилання"}
+                {calendar.has_feed ? t("calendar.feedReissue") : t("calendar.feedCreate")}
               </button>
               {calendar.has_feed && (
                 <button
@@ -514,7 +530,7 @@ function ManageCalendarDialog({
                     onChanged();
                   }}
                 >
-                  Вимкнути
+                  {t("calendar.feedDisable")}
                 </button>
               )}
             </div>
@@ -526,7 +542,7 @@ function ManageCalendarDialog({
             <button
               className="btn btn-danger btn-sm"
               onClick={async () => {
-                if (!window.confirm(`Видалити календар «${calendar.name}» з усіма подіями?`)) return;
+                if (!window.confirm(t("calendar.deleteCalendarConfirm", { name: calendar.name }))) return;
                 try {
                   await del(`/api/calendars/${calendar.id}/`);
                   onChanged();
@@ -536,13 +552,13 @@ function ManageCalendarDialog({
                 }
               }}
             >
-              Видалити календар
+              {t("calendar.deleteCalendar")}
             </button>
           </>
         )}
         {!calendar.is_owner && (
           <button className="btn btn-sm" onClick={() => post(`/api/calendars/${calendar.id}/unshare/`).then(() => { onChanged(); onClose(); })}>
-            Відписатися
+            {t("calendar.unsubscribe")}
           </button>
         )}
         {error && <div className="form-error">{error}</div>}

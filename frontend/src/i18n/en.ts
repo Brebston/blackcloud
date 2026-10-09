@@ -1,4 +1,15 @@
 import type uk from "./uk";
+import * as files from "./parts/files";
+import * as calendar from "./parts/calendar";
+import * as chat from "./parts/chat";
+import * as emoji from "./parts/emoji";
+import * as security from "./parts/security";
+import * as auth from "./parts/auth";
+import * as publicShare from "./parts/publicShare";
+import * as office from "./parts/office";
+import * as admin from "./parts/admin";
+import * as misc from "./parts/misc";
+
 
 // Англійський переклад. Тип гарантує, що жоден ключ не пропущено.
 const en: Record<keyof typeof uk, string> = {
@@ -18,6 +29,50 @@ const en: Record<keyof typeof uk, string> = {
   "common.ok": "OK",
   "common.yes": "yes",
   "common.no": "no",
+  "common.close": "Close",
+  "editor.undo": "Undo",
+  "editor.redo": "Redo",
+  "editor.font": "Font",
+  "editor.color": "Text colour",
+  "editor.colorReset": "No colour",
+  "editor.alignLeft": "Align left",
+  "editor.alignCenter": "Align centre",
+  "editor.alignRight": "Align right",
+  "editor.table": "Table",
+  "editor.rowAbove": "+ row above",
+  "editor.rowBelow": "+ row below",
+  "editor.colLeft": "+ column left",
+  "editor.colRight": "+ column right",
+  "editor.deleteRow": "Delete row",
+  "editor.deleteCol": "Delete column",
+  "editor.deleteTable": "Delete table",
+  "mail.scheduled": "Scheduled emails",
+  "compose.draftTitle": "Draft",
+  "compose.saving": "Saving…",
+  "compose.saved": "Draft saved",
+  "compose.savedAt": "Draft saved at {time}",
+  "compose.saveFailed": "Couldn't save the draft",
+  "compose.draftSaved": "Draft saved to Drafts",
+  "compose.discard": "Discard draft",
+  "compose.confirmDiscard": "Discard this draft?",
+  "compose.schedule": "Later",
+  "compose.schedTitle": "Schedule send",
+  "compose.schedTomorrowMorning": "Tomorrow morning",
+  "compose.schedTomorrowAfternoon": "Tomorrow afternoon",
+  "compose.schedMonday": "Monday morning",
+  "compose.schedPick": "Send date and time",
+  "compose.schedSet": "Schedule",
+  "compose.schedPast": "Pick a time at least a minute from now.",
+  "compose.scheduledToast": "Email scheduled for {date}",
+  "sched.hint": "Emails are sent automatically at the set time. You can cancel them until then.",
+  "sched.empty": "No scheduled emails.",
+  "sched.when": "When",
+  "sched.cancel": "Cancel",
+  "sched.confirmCancel": "Cancel sending this email?",
+  "sched.cancelled": "Sending cancelled",
+  "sched.status.pending": "scheduled",
+  "sched.status.sending": "sending",
+  "sched.status.failed": "failed",
 
   "nav.files": "Files",
   "nav.shared": "Shared",
@@ -296,6 +351,16 @@ const en: Record<keyof typeof uk, string> = {
   "mb.confirmRename": "Rename {from} to {to}? Mail clients will need the new login.",
   "mb.confirmDisable": "Disable {address}? Sign-in and incoming mail will stop.",
   "mb.renameNote": "Renaming keeps all mail: the folder on the server does not change.",
+  ...files.en,
+  ...calendar.en,
+  ...chat.en,
+  ...emoji.en,
+  ...security.en,
+  ...auth.en,
+  ...publicShare.en,
+  ...office.en,
+  ...admin.en,
+  ...misc.en,
 };
 
 export default en;

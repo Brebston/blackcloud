@@ -3,6 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { errorText, get } from "../api/client";
 import type { FileItem } from "../api/types";
 import Icon from "../components/Icon";
+import { tr, useT } from "../i18n";
 
 declare global {
   interface Window {
@@ -21,7 +22,7 @@ function loadScript(src: string): Promise<void> {
     s.src = src; // https://office.<домен>/... — дозволено в CSP script-src лише цей піддомен
     s.async = true;
     s.onload = () => resolve();
-    s.onerror = () => reject(new Error("Сервер документів недоступний"));
+    s.onerror = () => reject(new Error(tr("office.serverUnavailable")));
     if (!existing) document.body.appendChild(s);
   });
 }
@@ -30,6 +31,7 @@ function loadScript(src: string): Promise<void> {
 export default function OfficeEditorPage() {
   const { id = "" } = useParams();
   const navigate = useNavigate();
+  const t = useT();
   const [file, setFile] = useState<FileItem | null>(null);
   const [error, setError] = useState("");
   const editor = useRef<{ destroyEditor: () => void } | null>(null);
@@ -68,12 +70,12 @@ export default function OfficeEditorPage() {
   return (
     <div className="office-page">
       <header className="viewer-bar office-bar">
-        <button className="icon-btn" onClick={back} aria-label="Назад до файлів" title="Назад до файлів">
+        <button className="icon-btn" onClick={back} aria-label={t("office.backToFiles")} title={t("office.backToFiles")}>
           <Icon name="chevronLeft" />
         </button>
         <div className="viewer-title">
-          <span className="truncate">{file?.name || "Документ"}</span>
-          <span className="muted small">Зміни зберігаються автоматично як нова версія файлу</span>
+          <span className="truncate">{file?.name || t("office.document")}</span>
+          <span className="muted small">{t("office.autosaveHint")}</span>
         </div>
       </header>
       {error ? (
@@ -81,7 +83,7 @@ export default function OfficeEditorPage() {
           <Icon name="alert" size={40} />
           <div>{error}</div>
           <button className="btn" onClick={back}>
-            Повернутися до файлів
+            {t("office.returnToFiles")}
           </button>
         </div>
       ) : (

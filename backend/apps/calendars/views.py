@@ -6,6 +6,8 @@ from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
+from django.utils.translation import gettext as _
+from django.utils.translation import gettext_noop
 from rest_framework import viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
@@ -35,7 +37,7 @@ def visible_calendars(user):
 def editable_calendar(user, calendar_id) -> Calendar:
     cal = Calendar.objects.filter(pk=calendar_id).filter(Q(owner=user) | Q(shares__user=user, shares__can_edit=True)).first()
     if cal is None:
-        raise PermissionDenied("Немає прав на редагування цього календаря.")
+        raise PermissionDenied(_("Немає прав на редагування цього календаря."))
     return cal
 
 
@@ -48,13 +50,13 @@ class CalendarViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         if Calendar.objects.filter(owner=self.request.user).count() >= 50:
-            raise ValidationError({"detail": "Забагато календарів."})
+            raise ValidationError({"detail": _("Забагато календарів.")})
         serializer.save(owner=self.request.user)
 
     def _own(self):
         cal = self.get_object()
         if cal.owner_id != self.request.user.pk:
-            raise PermissionDenied("Лише власник може це зробити.")
+            raise PermissionDenied(_("Лише власник може це зробити."))
         return cal
 
     def perform_update(self, serializer):
@@ -64,7 +66,7 @@ class CalendarViewSet(viewsets.ModelViewSet):
     def perform_destroy(self, instance):
         self._own()
         if Calendar.objects.filter(owner=self.request.user).count() <= 1:
-            raise ValidationError({"detail": "Не можна видалити останній календар."})
+            raise ValidationError({"detail": _("Не можна видалити останній календар.")})
         audit(self.request, "calendar.deleted", target=str(instance.pk))
         instance.delete()
 
@@ -75,11 +77,18 @@ class CalendarViewSet(viewsets.ModelViewSet):
         ser.is_valid(raise_exception=True)
         user = User.objects.filter(username=ser.validated_data["username"].lower(), is_active=True).first()
         if user is None or user == request.user:
-            raise ValidationError({"username": ["Користувача не знайдено."]})
+            raise ValidationError({"username": [_("Користувача не знайдено.")]})
         CalendarShare.objects.update_or_create(
             calendar=cal, user=user, defaults={"can_edit": ser.validated_data["can_edit"]}
         )
-        notify(user, "calendar", f"{request.user.username} поділився календарем", cal.name, "/calendar")
+        notify(
+            user,
+            "calendar",
+            gettext_noop("%(user)s поділився календарем"),
+            "%(calendar)s",
+            "/calendar",
+            params={"user": request.user.username, "calendar": cal.name},
+        )
         audit(request, "calendar.shared", target=str(cal.pk), recipient=user.username)
         return Response(CalendarSerializer(cal, context={"request": request}).data)
 
@@ -121,11 +130,11 @@ class CalendarViewSet(viewsets.ModelViewSet):
         cal = editable_calendar(request.user, pk)
         upload = request.FILES.get("file")
         if upload is None or upload.size > MAX_ICS_UPLOAD:
-            raise ValidationError({"file": ["Потрібен .ics файл до 5 МБ."]})
+            raise ValidationError({"file": [_("Потрібен .ics файл до 5 МБ.")]})
         try:
             count = ics.import_ics(cal, upload.read(), request.user)
         except Exception:
-            raise ValidationError({"file": ["Не вдалося прочитати ICS."]})
+            raise ValidationError({"file": [_("Не вдалося прочитати ICS.")]})
         audit(request, "calendar.imported", target=str(cal.pk), count=count)
         return Response({"imported": count})
 
@@ -141,7 +150,7 @@ class EventViewSet(viewsets.ModelViewSet):
         start = parse_datetime(request.query_params.get("start") or "")
         end = parse_datetime(request.query_params.get("end") or "")
         if not start or not end or end <= start or end - start > MAX_RANGE:
-            raise ValidationError({"detail": "Вкажіть start і end (ISO 8601), діапазон до 400 днів."})
+            raise ValidationError({"detail": _("Вкажіть start і end (ISO 8601), діапазон до 400 днів.")})
         if timezone.is_naive(start):
             start = timezone.make_aware(start)
         if timezone.is_naive(end):

@@ -6,8 +6,9 @@ from django.conf import settings
 from django.core.validators import RegexValidator
 from django.db import models
 from django.db.models import F, Q
+from django.utils.translation import gettext_lazy
 
-COLOR_VALIDATOR = RegexValidator(r"^#[0-9A-Fa-f]{6}$", "Колір у форматі #RRGGBB")
+COLOR_VALIDATOR = RegexValidator(r"^#[0-9A-Fa-f]{6}$", gettext_lazy("Колір у форматі #RRGGBB"))
 
 
 class Calendar(models.Model):

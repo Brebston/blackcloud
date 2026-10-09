@@ -17,6 +17,7 @@ from html import escape
 from django.conf import settings
 from django.contrib.auth.hashers import make_password
 from django.utils import timezone
+from django.utils.translation import gettext as _
 from rest_framework.exceptions import ValidationError
 
 from apps.core.crypto import encrypt_str
@@ -37,9 +38,9 @@ def create(*, sender, from_address: str, recipients: list[str], subject: str, ht
     except (TypeError, ValueError):
         days = 0
     if days not in ALLOWED_DAYS:
-        raise ValidationError({"confidential_days": [f"Допустимі терміни: {', '.join(map(str, ALLOWED_DAYS))} днів."]})
+        raise ValidationError({"confidential_days": [_("Допустимі терміни: %(days)s днів.") % {"days": ", ".join(map(str, ALLOWED_DAYS))}]})
     if len(html.encode()) > MAX_HTML_BYTES:
-        raise ValidationError({"html": ["Конфіденційний лист завеликий (максимум 5 МБ разом із зображеннями)."]})
+        raise ValidationError({"html": [_("Конфіденційний лист завеликий (максимум 5 МБ разом із зображеннями).")]})
     token = secrets.token_urlsafe(32)
     passcode = f"{secrets.randbelow(10**6):06d}" if with_passcode else ""
     msg = ConfidentialMessage.objects.create(
@@ -56,25 +57,56 @@ def create(*, sender, from_address: str, recipients: list[str], subject: str, ht
 
 
 def notice(msg: ConfidentialMessage, token: str, sender_name: str) -> tuple[str, str]:
-    """Текст і HTML листа-повідомлення, який реально надсилається отримувачам."""
+    """Текст і HTML листа-повідомлення, який реально надсилається отримувачам.
+
+    Мова зовнішнього отримувача невідома, тому повідомлення двомовне: спершу українською, потім англійською."""
     url = f"https://{settings.DOMAIN}/c#{token}"
     expires = timezone.localtime(msg.expires_at).strftime("%d.%m.%Y %H:%M")
-    passcode_line = "Для відкриття потрібен код доступу — його повідомить відправник." if msg.passcode_hash else ""
-    text = (
+    passcode_uk = "Для відкриття потрібен код доступу — його повідомить відправник." if msg.passcode_hash else ""
+    passcode_en = "A passcode is required to open it; the sender will share it with you." if msg.passcode_hash else ""
+    text_uk = (
         f"{sender_name} надсилає вам конфіденційний лист.\n\n"
         f"Відкрити: {url}\n"
         f"Доступний до: {expires}\n"
-        f"{passcode_line}\n\n"
+        f"{passcode_uk}\n\n"
         "Вміст не зберігається у вашій поштовій скриньці; відправник може відкликати доступ."
     ).strip()
+    text_en = (
+        f"{sender_name} has sent you a confidential message.\n\n"
+        f"Open: {url}\n"
+        f"Available until: {expires}\n"
+        f"{passcode_en}\n\n"
+        "The content is not stored in your mailbox; the sender can revoke access at any time."
+    ).strip()
+    text = f"{text_uk}\n\n{'-' * 40}\n\n{text_en}"
+
+    def html_block(intro: str, open_label: str, until_label: str, passcode_line: str, footer: str) -> str:
+        return (
+            f"<p><strong>{escape(sender_name)}</strong> {intro}</p>"
+            f"<p><a href='{escape(url)}'>{open_label}</a></p>"
+            f"<p style='color:#666'>{until_label}: {escape(expires)}"
+            + (f"<br>{escape(passcode_line)}" if passcode_line else "")
+            + f"</p><p style='color:#666;font-size:12px'>{footer}</p>"
+        )
+
     html = (
         "<div style='font-family:system-ui,sans-serif;font-size:14px'>"
-        f"<p><strong>{escape(sender_name)}</strong> надсилає вам конфіденційний лист.</p>"
-        f"<p><a href='{escape(url)}'>Відкрити лист</a></p>"
-        f"<p style='color:#666'>Доступний до: {escape(expires)}"
-        + (f"<br>{escape(passcode_line)}" if passcode_line else "")
-        + "</p><p style='color:#666;font-size:12px'>Вміст не зберігається у вашій поштовій скриньці; "
-        "відправник може відкликати доступ.</p></div>"
+        + html_block(
+            "надсилає вам конфіденційний лист.",
+            "Відкрити лист",
+            "Доступний до",
+            passcode_uk,
+            "Вміст не зберігається у вашій поштовій скриньці; відправник може відкликати доступ.",
+        )
+        + "<hr style='border:none;border-top:1px solid #ddd;margin:16px 0'>"
+        + html_block(
+            "has sent you a confidential message.",
+            "Open message",
+            "Available until",
+            passcode_en,
+            "The content is not stored in your mailbox; the sender can revoke access at any time.",
+        )
+        + "</div>"
     )
     return text, html
 

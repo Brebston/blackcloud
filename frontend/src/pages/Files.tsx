@@ -9,6 +9,8 @@ import ShareDialog from "../components/ShareDialog";
 import { useToast } from "../components/Toast";
 import { useAuth } from "../hooks/useAuth";
 import { useEvents } from "../hooks/useEvents";
+import { useT } from "../i18n";
+import type { TFunc } from "../i18n";
 import { fileIcon, formatBytes, formatDate } from "../lib/format";
 import { uploadFile, UploadProgress } from "../lib/upload";
 import { downloadUrl, thumbnailUrl, viewKind } from "../lib/viewer";
@@ -32,20 +34,20 @@ function FileThumb({ f, size = "sm" }: { f: FileItem; size?: "sm" | "lg" }) {
 }
 
 // Підпис у панелі завантажень відображає актуальний статус файлу зі списку
-function doneLabel(status?: string): string {
+function doneLabel(t: TFunc, status?: string): string {
   switch (status) {
     case "scanning":
-      return "перевірка антивірусом…";
+      return t("files.upload.scanning");
     case "clean":
-      return "готово";
+      return t("files.upload.clean");
     case "infected":
-      return "заблоковано: вірус";
+      return t("files.upload.infected");
     case "unscanned":
-      return "не перевірено (завеликий)";
+      return t("files.upload.unscanned");
     case "failed":
-      return "помилка перевірки";
+      return t("files.upload.failed");
     default:
-      return "завантажено";
+      return t("files.upload.done");
   }
 }
 
@@ -61,6 +63,7 @@ export default function FilesPage() {
   const [params, setParams] = useSearchParams();
   const folderId = params.get("folder") || "root";
   const toast = useToast();
+  const t = useT();
   const { user, refresh: refreshUser } = useAuth();
   const navigate = useNavigate();
   const officeEnabled = !!user?.features?.office;
@@ -98,12 +101,12 @@ export default function FilesPage() {
       setSearchResults(null);
       return;
     }
-    const t = setTimeout(() => {
+    const timer = setTimeout(() => {
       get<{ folders: Folder[]; files: FileItem[] }>(`/api/files/search/?q=${encodeURIComponent(query.trim())}`)
         .then(setSearchResults)
         .catch(() => setSearchResults(null));
     }, 300);
-    return () => clearTimeout(t);
+    return () => clearTimeout(timer);
   }, [query]);
 
   const openFolder = (id: string | null) => {
@@ -138,10 +141,10 @@ export default function FilesPage() {
   };
 
   const remove = async (type: "file" | "folder", id: string, name: string) => {
-    if (!window.confirm(`Перемістити «${name}» у кошик?`)) return;
+    if (!window.confirm(t("files.confirmTrash", { name }))) return;
     try {
       await del(type === "file" ? `/api/files/items/${id}/` : `/api/files/folders/${id}/`);
-      toast("Переміщено в кошик", "success");
+      toast(t("files.movedToTrash"), "success");
       load();
     } catch (e) {
       toast(errorText(e), "error");
@@ -174,22 +177,22 @@ export default function FilesPage() {
   const fileActions = (f: FileItem) => (
     <div className="row-actions">
       {f.downloadable && (
-        <a className="icon-btn" title="Завантажити" href={downloadUrl(f)}>
+        <a className="icon-btn" title={t("files.download")} href={downloadUrl(f)}>
           <Icon name="download" size={16} />
         </a>
       )}
       {writable && (
         <>
-          <button className="icon-btn" title="Поділитися" onClick={() => setDialog({ kind: "share", type: "file", id: f.id, name: f.name, downloadable: f.downloadable })}>
+          <button className="icon-btn" title={t("files.share")} onClick={() => setDialog({ kind: "share", type: "file", id: f.id, name: f.name, downloadable: f.downloadable })}>
             <Icon name="share" size={16} />
           </button>
-          <button className="icon-btn" title="Перейменувати" onClick={() => setDialog({ kind: "rename", type: "file", id: f.id, name: f.name })}>
+          <button className="icon-btn" title={t("files.rename")} onClick={() => setDialog({ kind: "rename", type: "file", id: f.id, name: f.name })}>
             <Icon name="edit" size={16} />
           </button>
-          <button className="icon-btn" title="Перемістити" onClick={() => setDialog({ kind: "move", type: "file", id: f.id, name: f.name })}>
+          <button className="icon-btn" title={t("files.move")} onClick={() => setDialog({ kind: "move", type: "file", id: f.id, name: f.name })}>
             <Icon name="move" size={16} />
           </button>
-          <button className="icon-btn danger" title="У кошик" onClick={() => remove("file", f.id, f.name)}>
+          <button className="icon-btn danger" title={t("files.toTrash")} onClick={() => remove("file", f.id, f.name)}>
             <Icon name="trash" size={16} />
           </button>
         </>
@@ -199,10 +202,10 @@ export default function FilesPage() {
 
   const statusPills = (f: FileItem) => (
     <>
-      {f.status === "scanning" && <span className="pill">перевірка</span>}
-      {f.status === "infected" && <span className="pill pill-danger">вірус</span>}
-      {f.status === "unscanned" && <span className="pill pill-warning">не перевірено</span>}
-      {f.status === "failed" && <span className="pill pill-danger">помилка</span>}
+      {f.status === "scanning" && <span className="pill">{t("files.pill.scanning")}</span>}
+      {f.status === "infected" && <span className="pill pill-danger">{t("files.pill.infected")}</span>}
+      {f.status === "unscanned" && <span className="pill pill-warning">{t("files.pill.unscanned")}</span>}
+      {f.status === "failed" && <span className="pill pill-danger">{t("files.pill.failed")}</span>}
     </>
   );
 
@@ -220,7 +223,7 @@ export default function FilesPage() {
       <div className="page-head">
         <div className="breadcrumbs">
           <button className="crumb" onClick={() => openFolder(null)}>
-            {data && !data.writable ? `Спільне від ${data.owner}` : "Мої файли"}
+            {data && !data.writable ? t("files.sharedFrom", { owner: data.owner }) : t("files.myFiles")}
           </button>
           {data?.breadcrumbs.map((b) => (
             <span key={b.id}>
@@ -230,28 +233,28 @@ export default function FilesPage() {
               </button>
             </span>
           ))}
-          {data && !data.writable && <span className="pill">лише читання</span>}
+          {data && !data.writable && <span className="pill">{t("files.readOnly")}</span>}
         </div>
         <div className="toolbar">
           <div className="search">
             <Icon name="search" size={16} />
-            <input placeholder="Пошук файлів…" value={query} onChange={(e) => setQuery(e.target.value)} />
+            <input placeholder={t("files.search")} value={query} onChange={(e) => setQuery(e.target.value)} />
           </div>
-          <div className="segmented" role="group" aria-label="Вигляд">
-            <button className={viewMode === "list" ? "active" : ""} onClick={() => switchView("list")} aria-label="Список" title="Список">
+          <div className="segmented" role="group" aria-label={t("files.view")}>
+            <button className={viewMode === "list" ? "active" : ""} onClick={() => switchView("list")} aria-label={t("files.viewList")} title={t("files.viewList")}>
               <Icon name="list" size={16} />
             </button>
-            <button className={viewMode === "grid" ? "active" : ""} onClick={() => switchView("grid")} aria-label="Сітка" title="Сітка">
+            <button className={viewMode === "grid" ? "active" : ""} onClick={() => switchView("grid")} aria-label={t("files.viewGrid")} title={t("files.viewGrid")}>
               <Icon name="grid" size={16} />
             </button>
           </div>
           {data?.writable && (
             <>
               <button className="btn" onClick={() => setDialog({ kind: "newFolder" })}>
-                <Icon name="plus" size={16} /> Папка
+                <Icon name="plus" size={16} /> {t("files.folder")}
               </button>
               <button className="btn btn-primary" onClick={() => inputRef.current?.click()}>
-                <Icon name="upload" size={16} /> Завантажити
+                <Icon name="upload" size={16} /> {t("files.upload")}
               </button>
               <input
                 ref={inputRef}
@@ -273,16 +276,16 @@ export default function FilesPage() {
       {(activeUploads.length > 0 || finishedUploads.length > 0) && (
         <div className="uploads card">
           <div className="row-between">
-            <strong>Завантаження</strong>
+            <strong>{t("files.uploads")}</strong>
             <div>
               {activeUploads.length > 0 && (
                 <button className="link-btn danger" onClick={() => abortRef.current?.abort()}>
-                  Скасувати
+                  {t("common.cancel")}
                 </button>
               )}
               {activeUploads.length === 0 && (
                 <button className="link-btn" onClick={() => setUploads({})}>
-                  Очистити
+                  {t("files.clear")}
                 </button>
               )}
             </div>
@@ -295,9 +298,9 @@ export default function FilesPage() {
               </div>
               <span className="small muted">
                 {u.state === "uploading" && `${formatBytes(u.loaded)} / ${formatBytes(u.total)}`}
-                {u.state === "done" && doneLabel(data?.files.find((f) => f.id === u.id)?.status)}
-                {u.state === "error" && (u.error || "помилка")}
-                {u.state === "cancelled" && "скасовано"}
+                {u.state === "done" && doneLabel(t, data?.files.find((f) => f.id === u.id)?.status)}
+                {u.state === "error" && (u.error || t("files.upload.error"))}
+                {u.state === "cancelled" && t("files.upload.cancelled")}
               </span>
             </div>
           ))}
@@ -311,7 +314,7 @@ export default function FilesPage() {
               <div className="grid-preview">
                 <Icon name="chevronLeft" size={40} />
               </div>
-              <div className="grid-name muted">Назад</div>
+              <div className="grid-name muted">{t("files.back")}</div>
             </button>
           )}
           {listFolders.map((f) => (
@@ -342,7 +345,7 @@ export default function FilesPage() {
           {data && listFolders.length === 0 && listFiles.length === 0 && (
             <div className="empty grid-empty">
               <Icon name={searchResults ? "search" : "upload"} size={32} />
-              <div>{searchResults ? "Нічого не знайдено" : data.writable ? "Перетягніть файли сюди або натисніть «Завантажити»" : "Папка порожня"}</div>
+              <div>{searchResults ? t("files.nothingFound") : data.writable ? t("files.dropHint") : t("files.emptyFolder")}</div>
             </div>
           )}
         </div>
@@ -351,17 +354,17 @@ export default function FilesPage() {
         <table className="table files-table">
           <thead>
             <tr>
-              <th>Назва</th>
-              <th className="col-size">Розмір</th>
-              <th className="col-date">Змінено</th>
-              <th className="col-actions" aria-label="Дії" />
+              <th>{t("files.colName")}</th>
+              <th className="col-size">{t("files.colSize")}</th>
+              <th className="col-date">{t("files.colModified")}</th>
+              <th className="col-actions" aria-label={t("files.colActions")} />
             </tr>
           </thead>
           <tbody>
             {data?.folder && !searchResults && (
               <tr className="clickable" onClick={() => openFolder(data.breadcrumbs.length > 1 ? data.breadcrumbs[data.breadcrumbs.length - 2].id : null)}>
                 <td colSpan={4} className="muted">
-                  <Icon name="chevronLeft" size={16} /> Назад
+                  <Icon name="chevronLeft" size={16} /> {t("files.back")}
                 </td>
               </tr>
             )}
@@ -378,16 +381,16 @@ export default function FilesPage() {
                 <td className="col-actions">
                   {writable && (
                     <div className="row-actions">
-                      <button className="icon-btn" title="Поділитися" onClick={() => setDialog({ kind: "share", type: "folder", id: f.id, name: f.name })}>
+                      <button className="icon-btn" title={t("files.share")} onClick={() => setDialog({ kind: "share", type: "folder", id: f.id, name: f.name })}>
                         <Icon name="share" size={16} />
                       </button>
-                      <button className="icon-btn" title="Перейменувати" onClick={() => setDialog({ kind: "rename", type: "folder", id: f.id, name: f.name })}>
+                      <button className="icon-btn" title={t("files.rename")} onClick={() => setDialog({ kind: "rename", type: "folder", id: f.id, name: f.name })}>
                         <Icon name="edit" size={16} />
                       </button>
-                      <button className="icon-btn" title="Перемістити" onClick={() => setDialog({ kind: "move", type: "folder", id: f.id, name: f.name })}>
+                      <button className="icon-btn" title={t("files.move")} onClick={() => setDialog({ kind: "move", type: "folder", id: f.id, name: f.name })}>
                         <Icon name="move" size={16} />
                       </button>
-                      <button className="icon-btn danger" title="У кошик" onClick={() => remove("folder", f.id, f.name)}>
+                      <button className="icon-btn danger" title={t("files.toTrash")} onClick={() => remove("folder", f.id, f.name)}>
                         <Icon name="trash" size={16} />
                       </button>
                     </div>
@@ -419,7 +422,7 @@ export default function FilesPage() {
                 <td colSpan={4}>
                   <div className="empty">
                     <Icon name={searchResults ? "search" : "upload"} size={32} />
-                    <div>{searchResults ? "Нічого не знайдено" : data.writable ? "Перетягніть файли сюди або натисніть «Завантажити»" : "Папка порожня"}</div>
+                    <div>{searchResults ? t("files.nothingFound") : data.writable ? t("files.dropHint") : t("files.emptyFolder")}</div>
                   </div>
                 </td>
               </tr>
@@ -431,7 +434,7 @@ export default function FilesPage() {
 
       {dialog?.kind === "newFolder" && (
         <NameDialog
-          title="Нова папка"
+          title={t("files.newFolder")}
           initial=""
           onClose={() => setDialog(null)}
           onSubmit={async (name) => {
@@ -442,7 +445,7 @@ export default function FilesPage() {
       )}
       {dialog?.kind === "rename" && (
         <NameDialog
-          title="Перейменувати"
+          title={t("files.rename")}
           initial={dialog.name}
           onClose={() => setDialog(null)}
           onSubmit={async (name) => {
@@ -475,7 +478,7 @@ export default function FilesPage() {
       {dragging && (
         <div className="drop-overlay">
           <Icon name="upload" size={40} />
-          Відпустіть, щоб завантажити
+          {t("files.dropToUpload")}
         </div>
       )}
     </div>
@@ -493,14 +496,15 @@ function NameDialog({
   onClose: () => void;
   onSubmit: (name: string) => Promise<void>;
 }) {
+  const t = useT();
   const [name, setName] = useState(initial);
   const [error, setError] = useState("");
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     const clean = name.trim();
-    if (!clean) return setError("Введіть назву.");
-    if (/[/\\]/.test(clean)) return setError("Назва не може містити / або \\.");
-    if (clean.length > 255) return setError("Максимум 255 символів.");
+    if (!clean) return setError(t("files.nameRequired"));
+    if (/[/\\]/.test(clean)) return setError(t("files.nameSlash"));
+    if (clean.length > 255) return setError(t("files.nameTooLong"));
     try {
       await onSubmit(clean);
       onClose();
@@ -515,9 +519,9 @@ function NameDialog({
         {error && <div className="form-error">{error}</div>}
         <div className="modal-actions">
           <button type="button" className="btn" onClick={onClose}>
-            Скасувати
+            {t("common.cancel")}
           </button>
-          <button className="btn btn-primary">Зберегти</button>
+          <button className="btn btn-primary">{t("common.save")}</button>
         </div>
       </form>
     </Modal>
@@ -533,6 +537,7 @@ function MoveDialog({
   onClose: () => void;
   onMoved: () => void;
 }) {
+  const t = useT();
   const [current, setCurrent] = useState<string>("root");
   const [data, setData] = useState<BrowseResult | null>(null);
   const [error, setError] = useState("");
@@ -553,10 +558,10 @@ function MoveDialog({
   };
 
   return (
-    <Modal title={`Перемістити «${item.name}»`} onClose={onClose}>
+    <Modal title={t("files.moveTitle", { name: item.name })} onClose={onClose}>
       <div className="breadcrumbs small">
         <button className="crumb" onClick={() => setCurrent("root")}>
-          Мої файли
+          {t("files.myFiles")}
         </button>
         {data?.breadcrumbs.map((b) => (
           <span key={b.id}>
@@ -575,15 +580,15 @@ function MoveDialog({
               <Icon name="folder" size={16} /> {f.name}
             </button>
           ))}
-        {data && data.folders.length === 0 && <div className="muted small">Немає вкладених папок</div>}
+        {data && data.folders.length === 0 && <div className="muted small">{t("files.noSubfolders")}</div>}
       </div>
       {error && <div className="form-error">{error}</div>}
       <div className="modal-actions">
         <button className="btn" onClick={onClose}>
-          Скасувати
+          {t("common.cancel")}
         </button>
         <button className="btn btn-primary" onClick={move}>
-          Перемістити сюди
+          {t("files.moveHere")}
         </button>
       </div>
     </Modal>
@@ -591,14 +596,15 @@ function MoveDialog({
 }
 
 function InfoDialog({ file, onClose }: { file: FileItem; onClose: () => void }) {
+  const t = useT();
   return (
     <Modal title={file.name} onClose={onClose}>
       <dl className="info-list">
-        <dt>Розмір</dt>
+        <dt>{t("files.info.size")}</dt>
         <dd>{formatBytes(file.size)}</dd>
-        <dt>Тип</dt>
+        <dt>{t("files.info.type")}</dt>
         <dd>{file.mime_type}</dd>
-        <dt>Статус</dt>
+        <dt>{t("files.info.status")}</dt>
         <dd>
           {file.status_display}
           {file.scan_detail && <div className="small muted">{file.scan_detail}</div>}
@@ -607,22 +613,22 @@ function InfoDialog({ file, onClose }: { file: FileItem; onClose: () => void }) 
         <dd>
           <code className="break small">{file.sha256 || "—"}</code>
         </dd>
-        <dt>Власник</dt>
+        <dt>{t("files.info.owner")}</dt>
         <dd>{file.owner}</dd>
-        <dt>Створено</dt>
+        <dt>{t("files.info.created")}</dt>
         <dd>{formatDate(file.created_at)}</dd>
       </dl>
       <div className="modal-actions">
         {file.downloadable ? (
           <a className="btn btn-primary" href={`/api/files/items/${file.id}/download/`}>
-            <Icon name="download" size={16} /> Завантажити
+            <Icon name="download" size={16} /> {t("files.download")}
           </a>
         ) : (
-          <span className="muted small">Файл недоступний для завантаження.</span>
+          <span className="muted small">{t("files.notDownloadable")}</span>
         )}
       </div>
       <p className="small muted">
-        Файли зберігаються зашифрованими (AES-256-GCM) і перевіряються антивірусом. <Link to="/trash">Кошик</Link>
+        {t("files.encryptedNote")} <Link to="/trash">{t("nav.trash")}</Link>
       </p>
     </Modal>
   );

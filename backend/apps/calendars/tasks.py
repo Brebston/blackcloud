@@ -3,6 +3,7 @@ from datetime import timedelta
 from celery import shared_task
 from django.db.models import Q
 from django.utils import timezone
+from django.utils.translation import gettext_noop
 
 from apps.core.realtime import notify
 
@@ -30,4 +31,11 @@ def send_due_reminders():
             when = timezone.localtime(occ_start).strftime("%d.%m %H:%M")
             recipients = {ev.calendar.owner} | {s.user for s in ev.calendar.shares.select_related("user")}
             for user in recipients:
-                notify(user, "reminder", f"Нагадування: {ev.title}", f"Початок о {when}", "/calendar")
+                notify(
+                    user,
+                    "reminder",
+                    gettext_noop("Нагадування: %(title)s"),
+                    gettext_noop("Початок о %(when)s"),
+                    "/calendar",
+                    params={"title": ev.title, "when": when},
+                )
