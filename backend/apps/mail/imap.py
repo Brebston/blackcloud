@@ -388,7 +388,20 @@ def _parse_recipients(value: str, field: str) -> list[str]:
     return result
 
 
-def send_message(user, mailbox, data: dict, attachments: list) -> str:
+def _truthy(value) -> bool:
+    return str(value).lower() in ("1", "true", "on", "yes")
+
+
+def build_message(user, mailbox, data: dict, attachments: list) -> tuple[EmailMessage, list[str], dict]:
+    """Збирає MIME-лист. Повертає (лист, усі адреси отримувачів, додаткові дані для відповіді).
+
+    * html — вміст із редактора; санітизується на сервері (білий список тегів),
+      вбудовані зображення стають cid:-частинами multipart/related;
+    * body — текстова версія (якщо html немає, лист лише текстовий);
+    * confidential — вміст лишається на сервері, отримувачі одержують посилання."""
+    from . import confidential as conf
+    from .sanitize import extract_data_images, html_to_text, sanitize_outgoing_html
+
     to = _parse_recipients(data.get("to", ""), "to")
     cc = _parse_recipients(data.get("cc", ""), "cc")
     bcc = _parse_recipients(data.get("bcc", ""), "bcc")
@@ -397,9 +410,17 @@ def send_message(user, mailbox, data: dict, attachments: list) -> str:
     if len(to) + len(cc) + len(bcc) > MAX_RECIPIENTS:
         raise ValidationError({"to": [f"Максимум {MAX_RECIPIENTS} отримувачів."]})
     subject = (data.get("subject") or "").replace("\r", " ").replace("\n", " ")[:300]
+    sender_name = mailbox.display_name or user.display_name or user.username
+
+    raw_html = data.get("html") or ""
+    if len(raw_html) > 20 * 1024 * 1024:
+        raise ValidationError({"html": ["Лист завеликий."]})
+    html = sanitize_outgoing_html(raw_html) if raw_html.strip() else ""
+    text = data.get("body") or (html_to_text(html) if html else "")
+    extra: dict = {}
 
     msg = EmailMessage()
-    msg["From"] = Address(display_name=user.display_name or user.username, addr_spec=mailbox.address)
+    msg["From"] = Address(display_name=sender_name, addr_spec=mailbox.address)
     if to:
         msg["To"] = ", ".join(to)
     if cc:
@@ -412,8 +433,42 @@ def send_message(user, mailbox, data: dict, attachments: list) -> str:
         if value and not any(c in value for c in "\r\n") and len(value) < 2000:
             msg["In-Reply-To" if header == "in_reply_to" else "References"] = value
     msg["User-Agent"] = "BlackCloud Webmail"
-    msg.set_content(data.get("body") or "")
-    total = 0
+
+    if _truthy(data.get("confidential")):
+        if attachments:
+            raise ValidationError({"attachments": ["У конфіденційному режимі вкладення не підтримуються."]})
+        content = html or f"<pre>{escape_html(text)}</pre>"
+        record, token, passcode = conf.create(
+            sender=user,
+            from_address=mailbox.address,
+            recipients=[a for _, a in getaddresses(to + cc + bcc)],
+            subject=subject,
+            html=content,
+            days=data.get("confidential_days"),
+            with_passcode=_truthy(data.get("confidential_passcode")),
+        )
+        notice_text, notice_html = conf.notice(record, token, sender_name)
+        msg.set_content(notice_text)
+        msg.add_alternative(notice_html, subtype="html")
+        extra["confidential"] = {"id": str(record.pk), "expires_at": record.expires_at.isoformat(), "passcode": passcode}
+    elif html:
+        try:
+            html_cid, images = extract_data_images(html, mailbox.domain.name)
+        except ValueError as exc:
+            raise ValidationError({"html": ["Невірне або завелике вбудоване зображення."]}) from exc
+        total_images = sum(len(i["data"]) for i in images)
+        if total_images > settings.MAIL_MAX_ATTACHMENTS_BYTES:
+            raise ValidationError({"html": ["Зображення в листі завеликі (максимум 15 МБ разом)."]})
+        extra["inline_bytes"] = total_images
+        msg.set_content(text or " ")
+        msg.add_alternative(html_cid, subtype="html")
+        html_part = msg.get_payload()[1]
+        for img in images:
+            html_part.add_related(img["data"], maintype=img["maintype"], subtype=img["subtype"], cid=f"<{img['cid']}>")
+    else:
+        msg.set_content(text)
+
+    total = extra.get("inline_bytes", 0)
     for upload in attachments:
         total += upload.size
         if total > settings.MAIL_MAX_ATTACHMENTS_BYTES:
@@ -421,12 +476,25 @@ def send_message(user, mailbox, data: dict, attachments: list) -> str:
         content = upload.read()
         maintype, _, subtype = (upload.content_type or "application/octet-stream").partition("/")
         msg.add_attachment(content, maintype=maintype or "application", subtype=subtype or "octet-stream", filename=upload.name)
+    return msg, [a for _, a in getaddresses(to + cc + bcc)], extra
 
-    recipients = [a for _, a in getaddresses(to + cc + bcc)]
+
+def escape_html(value: str) -> str:
+    from html import escape
+
+    return escape(value)
+
+
+def send_message(user, mailbox, data: dict, attachments: list) -> dict:
+    msg, recipients, extra = build_message(user, mailbox, data, attachments)
     try:
         with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT, timeout=30) as smtp:
             smtp.send_message(msg, from_addr=mailbox.address, to_addrs=recipients)
     except (OSError, smtplib.SMTPException) as exc:
+        if "confidential" in extra:
+            from .models import ConfidentialMessage
+
+            ConfidentialMessage.objects.filter(pk=extra["confidential"]["id"]).delete()
         raise MailUnavailable(f"Не вдалося надіслати: {exc.__class__.__name__}") from exc
 
     # Копія в «Надіслані» (Bcc не зберігаємо в заголовках листа)
@@ -439,4 +507,4 @@ def send_message(user, mailbox, data: dict, attachments: list) -> str:
                 conn.uid("STORE", _check_uid(data["in_reply_to_uid"]), "+FLAGS", "(\\Answered)")
     except Exception:
         pass
-    return str(msg["Message-ID"])
+    return {"message_id": str(msg["Message-ID"]), **{k: v for k, v in extra.items() if k == "confidential"}}

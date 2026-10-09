@@ -3,6 +3,7 @@ import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { ensureCsrf, errorText, post } from "../api/client";
 import Icon from "../components/Icon";
 import { useAuth } from "../hooks/useAuth";
+import { LanguageSwitcher, useT } from "../i18n";
 
 const SPA_ROOTS = ["files", "shared", "trash", "calendar", "mail", "chat", "settings", "admin", "edit"];
 
@@ -17,6 +18,7 @@ export default function LoginPage() {
   const [params] = useSearchParams();
   const navigate = useNavigate();
   const { refresh } = useAuth();
+  const t = useT();
   const [step, setStep] = useState<"password" | "2fa">("password");
   const [login, setLogin] = useState("");
   const [password, setPassword] = useState("");
@@ -37,7 +39,7 @@ export default function LoginPage() {
     e.preventDefault();
     setError("");
     if (!login.trim() || !password) {
-      setError("Введіть логін і пароль.");
+      setError(t("login.enterBoth"));
       return;
     }
     setBusy(true);
@@ -62,12 +64,12 @@ export default function LoginPage() {
     setError("");
     const clean = code.trim();
     if (!useBackup && !/^\d{6}$/.test(clean.replace(/\s/g, ""))) {
-      setError("Код складається з 6 цифр.");
+      setError(t("login.code6"));
       return;
     }
     // Нові коди: xxxx-xxxx-xxxx-xxxx (16 символів); старі, видані раніше: xxxxx-xxxxx
     if (useBackup && ![10, 16].includes(clean.replace(/[-\s]/g, "").length)) {
-      setError("Резервний код має формат xxxx-xxxx-xxxx-xxxx.");
+      setError(t("login.backupFormat"));
       return;
     }
     setBusy(true);
@@ -91,6 +93,9 @@ export default function LoginPage() {
   return (
     <div className="auth-page">
       <div className="auth-card">
+        <div className="auth-lang">
+          <LanguageSwitcher />
+        </div>
         <div className="auth-brand">
           <Icon name="cloud" size={32} />
           <h1>BlackCloud</h1>
@@ -98,11 +103,11 @@ export default function LoginPage() {
         {step === "password" ? (
           <form onSubmit={submitPassword} noValidate>
             <label>
-              Логін або email
+              {t("login.login")}
               <input autoFocus autoComplete="username" value={login} onChange={(e) => setLogin(e.target.value)} />
             </label>
             <label>
-              Пароль
+              {t("login.password")}
               <input
                 type="password"
                 autoComplete="current-password"
@@ -112,22 +117,20 @@ export default function LoginPage() {
             </label>
             {error && <div className="form-error">{error}</div>}
             <button className="btn btn-primary btn-block" disabled={busy}>
-              {busy ? "Вхід…" : "Увійти"}
+              {busy ? t("login.signingIn") : t("login.signIn")}
             </button>
             <div className="auth-foot">
-              Немає акаунта? <Link to="/register">Реєстрація за запрошенням</Link>
+              {t("login.noAccount")} <Link to="/register">{t("login.register")}</Link>
             </div>
           </form>
         ) : (
           <form onSubmit={submitCode} noValidate>
             <div className="auth-hint">
               <Icon name="shield" />
-              {useBackup
-                ? "Введіть один із резервних кодів. Кожен код працює лише один раз."
-                : "Введіть 6-значний код із застосунку автентифікації."}
+              {useBackup ? t("login.backupHint") : t("login.totpHint")}
             </div>
             <label>
-              {useBackup ? "Резервний код" : "Код підтвердження"}
+              {useBackup ? t("login.backupCode") : t("login.code")}
               <input
                 autoFocus
                 inputMode={useBackup ? "text" : "numeric"}
@@ -140,7 +143,7 @@ export default function LoginPage() {
             </label>
             {error && <div className="form-error">{error}</div>}
             <button className="btn btn-primary btn-block" disabled={busy}>
-              {busy ? "Перевірка…" : "Підтвердити"}
+              {busy ? t("login.checking") : t("login.confirm")}
             </button>
             <div className="auth-foot">
               <button
@@ -152,7 +155,7 @@ export default function LoginPage() {
                   setError("");
                 }}
               >
-                {useBackup ? "Використати код із застосунку" : "Немає доступу до телефону? Резервний код"}
+                {useBackup ? t("login.useApp") : t("login.useBackup")}
               </button>
             </div>
           </form>

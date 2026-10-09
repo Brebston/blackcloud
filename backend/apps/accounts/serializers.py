@@ -27,7 +27,8 @@ class UserSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
     def get_mailbox(self, obj):
-        mb = getattr(obj, "mailbox", None)
+        """Основна (перша створена) активна скринька."""
+        mb = obj.mailboxes.select_related("domain").filter(active=True).order_by("created_at").first()
         return mb.address if mb else None
 
 

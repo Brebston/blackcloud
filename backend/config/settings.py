@@ -155,6 +155,10 @@ CELERY_BEAT_SCHEDULE = {
     "event-reminders": {"task": "apps.calendars.tasks.send_due_reminders", "schedule": timedelta(minutes=1)},
     "cleanup-sessions": {"task": "apps.accounts.tasks.cleanup_sessions", "schedule": timedelta(hours=12)},
     "purge-old-audit": {"task": "apps.core.tasks.purge_old_audit", "schedule": timedelta(days=1)},
+    "purge-expired-confidential": {
+        "task": "apps.mail.tasks.purge_expired_confidential",
+        "schedule": timedelta(hours=1),
+    },
 }
 
 # ─── Автентифікація ─────────────────────────────────────────────

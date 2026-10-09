@@ -71,7 +71,7 @@ def test_rrule_rejects_dangerous():
 
 @pytest.mark.django_db
 def test_mailbox_and_calendar_autocreated(alice):
-    assert alice.mailbox.address == f"alice@{__import__('django.conf').conf.settings.MAIL_DOMAIN}"
+    assert alice.mailboxes.get().address == f"alice@{__import__('django.conf').conf.settings.MAIL_DOMAIN}"
     assert alice.calendars.count() == 1
 
 

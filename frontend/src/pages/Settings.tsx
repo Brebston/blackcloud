@@ -5,32 +5,42 @@ import type { Preferences } from "../api/types";
 import Icon from "../components/Icon";
 import { useToast } from "../components/Toast";
 import { useAuth } from "../hooks/useAuth";
+import { LANGS, useI18n, useT } from "../i18n";
+import type { TKey } from "../i18n";
+import { ACCENTS, THEMES, applyAppearance } from "../lib/appearance";
+import type { Accent, Theme } from "../lib/appearance";
 import { formatBytes, formatDate } from "../lib/format";
 
-const TABS = [
-  { id: "profile", label: "Профіль", icon: "user" },
-  { id: "security", label: "Безпека", icon: "shield" },
-  { id: "sessions", label: "Пристрої", icon: "lock" },
-  { id: "mail", label: "Поштові клієнти", icon: "mail" },
-  { id: "activity", label: "Журнал", icon: "eye" },
+const TABS: { id: string; label: TKey; icon: string }[] = [
+  { id: "profile", label: "settings.tab.profile", icon: "user" },
+  { id: "security", label: "settings.tab.security", icon: "shield" },
+  { id: "sessions", label: "settings.tab.sessions", icon: "lock" },
+  { id: "mail", label: "settings.tab.mail", icon: "mail" },
+  { id: "activity", label: "settings.tab.activity", icon: "eye" },
 ];
 
 export default function SettingsPage() {
   const [params, setParams] = useSearchParams();
   const tab = params.get("tab") || "profile";
+  const t = useT();
   return (
     <div className="page">
       <div className="page-head">
-        <h2>Налаштування</h2>
+        <h2>{t("nav.settings")}</h2>
       </div>
       <div className="tabs">
-        {TABS.map((t) => (
-          <button key={t.id} className={`tab ${tab === t.id ? "active" : ""}`} onClick={() => setParams({ tab: t.id })}>
-            <Icon name={t.icon} size={16} /> {t.label}
+        {TABS.map((tb) => (
+          <button key={tb.id} className={`tab ${tab === tb.id ? "active" : ""}`} onClick={() => setParams({ tab: tb.id })}>
+            <Icon name={tb.icon} size={16} /> {t(tb.label)}
           </button>
         ))}
       </div>
-      {tab === "profile" && <ProfileTab />}
+      {tab === "profile" && (
+        <>
+          <AppearanceCard />
+          <ProfileTab />
+        </>
+      )}
       {tab === "security" && <SecurityTab />}
       {tab === "sessions" && <SessionsTab />}
       {tab === "mail" && <MailClientTab />}
@@ -39,8 +49,84 @@ export default function SettingsPage() {
   );
 }
 
+function AppearanceCard() {
+  const { user, updatePreferences } = useAuth();
+  const { lang, setLang, t } = useI18n();
+  const toast = useToast();
+  if (!user) return null;
+  const prefs = user.preferences;
+
+  // Застосовується одразу; сервер зберігає вибір для інших пристроїв
+  const save = (changes: { theme?: Theme; accent?: Accent }) => {
+    applyAppearance(changes.theme, changes.accent);
+    updatePreferences(changes).catch((err) => toast(errorText(err), "error"));
+  };
+  const THEME_LABELS: Record<Theme, TKey> = { system: "appearance.system", light: "appearance.light", dark: "appearance.dark" };
+
+  return (
+    <div className="card stack appearance-card">
+      <h3>{t("appearance.title")}</h3>
+      <div className="appearance-row">
+        <span className="appearance-label">{t("appearance.theme")}</span>
+        <div className="segmented" role="radiogroup" aria-label={t("appearance.theme")}>
+          {THEMES.map((th) => (
+            <button
+              key={th}
+              type="button"
+              role="radio"
+              aria-checked={prefs.theme === th}
+              className={prefs.theme === th ? "active" : ""}
+              onClick={() => save({ theme: th })}
+            >
+              <Icon name={th === "light" ? "sun" : th === "dark" ? "moon" : "settings"} size={14} /> {t(THEME_LABELS[th])}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="appearance-row">
+        <span className="appearance-label">{t("appearance.accent")}</span>
+        <div className="swatches" role="radiogroup" aria-label={t("appearance.accent")}>
+          {ACCENTS.map((a) => (
+            <button
+              key={a.id}
+              type="button"
+              role="radio"
+              aria-checked={prefs.accent === a.id}
+              aria-label={t(`accent.${a.id}` as TKey)}
+              title={t(`accent.${a.id}` as TKey)}
+              className={`swatch swatch-${a.id} ${prefs.accent === a.id ? "active" : ""}`}
+              onClick={() => save({ accent: a.id })}
+            >
+              {prefs.accent === a.id && <Icon name="check" size={14} />}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="appearance-row">
+        <span className="appearance-label">{t("common.language")}</span>
+        <div className="segmented" role="radiogroup" aria-label={t("common.language")}>
+          {LANGS.map((l) => (
+            <button
+              key={l.id}
+              type="button"
+              role="radio"
+              aria-checked={lang === l.id}
+              className={lang === l.id ? "active" : ""}
+              onClick={() => setLang(l.id).catch((err) => toast(errorText(err), "error"))}
+            >
+              {l.label}
+            </button>
+          ))}
+        </div>
+      </div>
+      <p className="small muted">{t("appearance.hint")}</p>
+    </div>
+  );
+}
+
 function ProfileTab() {
   const { user, refresh } = useAuth();
+  const t = useT();
   const toast = useToast();
   const [displayName, setDisplayName] = useState(user?.display_name || "");
   const [prefs, setPrefs] = useState<Preferences | null>(user?.preferences || null);
@@ -54,9 +140,13 @@ function ProfileTab() {
     e.preventDefault();
     try {
       await patch("/api/account/profile/", { display_name: displayName.trim().slice(0, 100) });
-      if (prefs) await patch("/api/account/preferences/", prefs);
+      if (prefs) {
+        // Тема, акцент і мова зберігаються окремо (одразу при виборі) — тут їх не перезаписуємо
+        const { theme: _theme, accent: _accent, language: _language, ...rest } = prefs;
+        await patch("/api/account/preferences/", rest);
+      }
       await refresh();
-      toast("Збережено", "success");
+      toast(t("common.saved"), "success");
     } catch (err) {
       toast(errorText(err), "error");
     }
@@ -64,14 +154,20 @@ function ProfileTab() {
 
   if (!user || !prefs) return null;
   const set = <K extends keyof Preferences>(k: K, v: Preferences[K]) => setPrefs({ ...prefs, [k]: v });
-  const TYPE_LABELS: Record<string, string> = { image: "Зображення", video: "Відео", audio: "Аудіо", application: "Документи й архіви", text: "Текст" };
+  const TYPE_LABELS: Record<string, string> = {
+    image: t("profile.type.image"),
+    video: t("profile.type.video"),
+    audio: t("profile.type.audio"),
+    application: t("profile.type.application"),
+    text: t("profile.type.text"),
+  };
 
   return (
     <div className="settings-grid">
       <form className="card stack" onSubmit={save}>
-        <h3>Профіль</h3>
+        <h3>{t("profile.title")}</h3>
         <label>
-          Ім'я користувача
+          {t("profile.username")}
           <input value={user.username} disabled />
         </label>
         <label>
@@ -79,56 +175,41 @@ function ProfileTab() {
           <input value={user.email} disabled />
         </label>
         <label>
-          Відображуване ім'я
+          {t("profile.displayName")}
           <input value={displayName} onChange={(e) => setDisplayName(e.target.value)} maxLength={100} />
         </label>
-        <h3>Вподобання</h3>
+        <h3>{t("profile.preferences")}</h3>
         <div className="grid-2">
           <label>
-            Тема
-            <select value={prefs.theme} onChange={(e) => set("theme", e.target.value as Preferences["theme"])}>
-              <option value="system">Системна</option>
-              <option value="dark">Темна</option>
-              <option value="light">Світла</option>
-            </select>
-          </label>
-          <label>
-            Мова
-            <select value={prefs.language} onChange={(e) => set("language", e.target.value as Preferences["language"])}>
-              <option value="uk">Українська</option>
-              <option value="en">English</option>
-            </select>
-          </label>
-          <label>
-            Часовий пояс
+            {t("profile.timezone")}
             <input value={prefs.timezone} onChange={(e) => set("timezone", e.target.value)} />
           </label>
           <label>
-            Перший день тижня
+            {t("profile.weekStart")}
             <select value={prefs.week_starts_monday ? "1" : "0"} onChange={(e) => set("week_starts_monday", e.target.value === "1")}>
-              <option value="1">Понеділок</option>
-              <option value="0">Неділя</option>
+              <option value="1">{t("profile.monday")}</option>
+              <option value="0">{t("profile.sunday")}</option>
             </select>
           </label>
         </div>
         <label className="check">
           <input type="checkbox" checked={prefs.discoverable} onChange={(e) => set("discoverable", e.target.checked)} />
-          Інші користувачі можуть знайти мене в пошуку
+          {t("profile.discoverable")}
         </label>
         <label className="check">
           <input type="checkbox" checked={prefs.mail_load_remote_images} onChange={(e) => set("mail_load_remote_images", e.target.checked)} />
-          Завжди завантажувати віддалені зображення в листах (менш приватно)
+          {t("profile.remoteImages")}
         </label>
         <div>
-          <button className="btn btn-primary">Зберегти</button>
+          <button className="btn btn-primary">{t("common.save")}</button>
         </div>
       </form>
 
       {usage && (
         <div className="card stack">
-          <h3>Сховище</h3>
+          <h3>{t("profile.storage")}</h3>
           <div className="big-number">
-            {formatBytes(usage.used_bytes)} <span className="muted">з {formatBytes(usage.quota_bytes)}</span>
+            {formatBytes(usage.used_bytes)} <span className="muted">{t("profile.of", { total: formatBytes(usage.quota_bytes) })}</span>
           </div>
           <ul className="plain-list">
             {Object.entries(usage.by_type).map(([k, v]) => (
@@ -138,11 +219,11 @@ function ProfileTab() {
               </li>
             ))}
             <li className="row-between">
-              <span>Кошик</span>
+              <span>{t("nav.trash")}</span>
               <span className="muted">{formatBytes(usage.trash_bytes)}</span>
             </li>
           </ul>
-          <p className="small muted">Квоту встановлює адміністратор.</p>
+          <p className="small muted">{t("profile.quotaHint")}</p>
         </div>
       )}
     </div>
@@ -412,7 +493,10 @@ function SessionsTab() {
 
 function MailClientTab() {
   const toast = useToast();
+  const [boxes, setBoxes] = useState<{ id: string; address: string }[]>([]);
+  const [boxId, setBoxId] = useState("");
   const [mb, setMb] = useState<{
+    id: string;
     address: string;
     quota_mb: number;
     client_password_set_at: string | null;
@@ -423,16 +507,20 @@ function MailClientTab() {
   const [password, setPassword] = useState("");
   const [generated, setGenerated] = useState<string | null>(null);
 
-  const load = () => get<NonNullable<typeof mb>>("/api/mail/mailbox/").then(setMb).catch((e) => setError(errorText(e)));
+  const load = (id = boxId) =>
+    get<NonNullable<typeof mb>>(`/api/mail/mailbox/${id ? `?mailbox=${encodeURIComponent(id)}` : ""}`)
+      .then(setMb)
+      .catch((e) => setError(errorText(e)));
   useEffect(() => {
     load();
+    get<{ id: string; address: string }[]>("/api/mail/mailboxes/").then(setBoxes).catch(() => {});
   }, []);
 
   const generate = async (revoke = false) => {
     setError("");
     if (!password) return setError("Підтвердіть пароль акаунта.");
     try {
-      const r = await post<{ password?: string }>("/api/mail/mailbox/client-password/", { password, revoke });
+      const r = await post<{ password?: string }>("/api/mail/mailbox/client-password/", { password, revoke, mailbox: mb?.id });
       setGenerated(r.password || null);
       setPassword("");
       if (revoke) toast("Доступ поштових клієнтів вимкнено", "info");
@@ -449,6 +537,25 @@ function MailClientTab() {
     <div className="settings-grid">
       <div className="card stack">
         <h3>Підключення поштового клієнта</h3>
+        {boxes.length > 1 && (
+          <label>
+            Скринька
+            <select
+              value={mb.id}
+              onChange={(e) => {
+                setBoxId(e.target.value);
+                setGenerated(null);
+                load(e.target.value);
+              }}
+            >
+              {boxes.map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.address}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
         <dl className="info-list">
           <dt>Адреса</dt>
           <dd>{mb.address}</dd>
