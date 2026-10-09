@@ -6,6 +6,7 @@ from django.db import transaction
 from django.db.models import Count, F, Q, Sum
 from django.http import HttpResponse
 from django.utils import timezone
+from django.utils.translation import gettext as _, gettext_noop
 from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
 from rest_framework.parsers import BaseParser
 from rest_framework.permissions import AllowAny
@@ -52,12 +53,12 @@ class OctetStreamParser(BaseParser):
         except ValueError:
             length = 0
         if length > limit:
-            raise ValidationError({"detail": "Чанк завеликий."})
+            raise ValidationError({"detail": _("Чанк завеликий.")})
         if stream is None:
             return b""
         data = stream.read(limit + 1)
         if len(data) > limit:
-            raise ValidationError({"detail": "Чанк завеликий."})
+            raise ValidationError({"detail": _("Чанк завеликий.")})
         return data
 
 
@@ -77,15 +78,15 @@ class BrowseView(APIView):
         else:
             folder = Folder.objects.select_related("parent").filter(pk=folder_id, deleted_at__isnull=True).first()
             if folder is None:
-                raise NotFound("Папку не знайдено.")
+                raise NotFound(_("Папку не знайдено."))
             if folder.owner_id == user.pk:
                 if services.is_in_trash(folder):
-                    raise NotFound("Папку не знайдено.")
+                    raise NotFound(_("Папку не знайдено."))
                 owner = user
             else:
                 share = services.shared_folder_root(user, folder)
                 if share is None:
-                    raise NotFound("Папку не знайдено.")
+                    raise NotFound(_("Папку не знайдено."))
                 owner = folder.owner
                 writable = False
 
@@ -156,7 +157,7 @@ class FolderCreateView(APIView):
         ser.is_valid(raise_exception=True)
         parent = services.get_own_folder(request.user, ser.validated_data.get("parent"))
         if parent is not None and len(services.ancestors(parent)) >= services.MAX_DEPTH:
-            raise ValidationError({"parent": ["Надто велика вкладеність папок."]})
+            raise ValidationError({"parent": [_("Надто велика вкладеність папок.")]})
         name = services.clean_name(ser.validated_data["name"])
         with transaction.atomic():
             name = services.unique_name(request.user, parent, name)
@@ -247,7 +248,7 @@ class FileDownloadView(APIView):
     def get(self, request, pk):
         f = services.get_readable_file(request.user, pk)
         if f.deleted_at is not None:
-            raise NotFound("Файл у кошику.")
+            raise NotFound(_("Файл у кошику."))
         if f.owner_id != request.user.pk:
             audit(request, "file.shared_download", target=str(f.pk))
         return services.file_response(f)
@@ -259,11 +260,11 @@ class PreviewTicketView(APIView):
     def get(self, request, pk):
         f = services.get_readable_file(request.user, pk)
         if f.deleted_at is not None:
-            raise NotFound("Файл у кошику.")
+            raise NotFound(_("Файл у кошику."))
         if not f.is_downloadable:
-            raise PermissionDenied("Файл недоступний для перегляду.")
+            raise PermissionDenied(_("Файл недоступний для перегляду."))
         if f.mime_type not in services.SAFE_INLINE_MIME:
-            raise ValidationError({"detail": "Цей тип файлу не переглядається в браузері."})
+            raise ValidationError({"detail": _("Цей тип файлу не переглядається в браузері.")})
         ticket = issue_ticket(
             "preview",
             {"f": str(f.pk), "u": str(request.user.pk), "v": f.content_version},
@@ -287,7 +288,7 @@ class PreviewServeView(APIView):
             raise NotFound()
         data = peek_ticket("preview", ticket)
         if data is None:
-            raise NotFound("Посилання для перегляду прострочене. Відкрийте файл знову.")
+            raise NotFound(_("Посилання для перегляду прострочене. Відкрийте файл знову."))
         user = User.objects.filter(pk=data["u"], is_active=True).first()
         if user is None:
             raise NotFound()
@@ -325,7 +326,7 @@ class UploadDetailView(APIView):
     def delete(self, request, pk):
         f = services.get_own_file(request.user, pk)
         if f.status != File.Status.UPLOADING:
-            raise ValidationError({"detail": "Завантаження вже завершено."})
+            raise ValidationError({"detail": _("Завантаження вже завершено.")})
         services.purge_file(f)
         return Response(status=204)
 
@@ -382,7 +383,7 @@ class TrashActionView(APIView):
             if folder is None:
                 raise NotFound()
             return kind, folder
-        raise ValidationError({"type": ["file або folder"]})
+        raise ValidationError({"type": [_("file або folder")]})
 
     def post(self, request, op):
         if op == "empty":
@@ -438,18 +439,18 @@ class SharesView(APIView):
         d = ser.validated_data
         recipient = User.objects.filter(username=d["username"].lower(), is_active=True).first()
         if recipient is None or recipient == request.user:
-            raise ValidationError({"username": ["Користувача не знайдено."]})
+            raise ValidationError({"username": [_("Користувача не знайдено.")]})
         target = {}
         if d.get("file"):
             f = services.get_own_file(request.user, d["file"])
             if f.status == File.Status.INFECTED:
-                raise ValidationError({"file": ["Заражений файл не можна поширювати."]})
+                raise ValidationError({"file": [_("Заражений файл не можна поширювати.")]})
             target["file"] = f
             name = f.name
         else:
             folder = services.get_own_folder(request.user, d["folder"])
             if folder is None:
-                raise ValidationError({"folder": ["Не можна поширити кореневу папку."]})
+                raise ValidationError({"folder": [_("Не можна поширити кореневу папку.")]})
             target["folder"] = folder
             name = folder.name
         share, created = Share.objects.get_or_create(owner=request.user, recipient=recipient, **target)
@@ -458,9 +459,10 @@ class SharesView(APIView):
             notify(
                 recipient,
                 "share",
-                f"{request.user.display_name or request.user.username} поділився з вами",
-                name,
+                gettext_noop("%(user)s поділився з вами"),
+                gettext_noop("%(name)s"),
                 "/shared",
+                params={"user": request.user.display_name or request.user.username, "name": name},
             )
         return Response(ShareSerializer(share).data, status=201 if created else 200)
 
@@ -510,7 +512,7 @@ class PublicLinksView(APIView):
         d = ser.validated_data
         f = services.get_own_file(request.user, d["file"])
         if not f.is_downloadable:
-            raise ValidationError({"file": ["Файл ще не перевірено або заблоковано."]})
+            raise ValidationError({"file": [_("Файл ще не перевірено або заблоковано.")]})
         token = PublicLink.new_token()
         link = PublicLink.objects.create(
             owner=request.user,
@@ -541,10 +543,10 @@ class PublicLinkDetailView(APIView):
 
 def _get_active_link(token) -> PublicLink:
     if not isinstance(token, str) or not token or len(token) > 100:
-        raise NotFound("Посилання недійсне або прострочене.")
+        raise NotFound(_("Посилання недійсне або прострочене."))
     link = PublicLink.objects.select_related("file", "owner").filter(token_hash=PublicLink.hash_token(token)).first()
     if link is None or not link.is_active or link.file.deleted_at is not None or not link.file.is_downloadable:
-        raise NotFound("Посилання недійсне або прострочене.")
+        raise NotFound(_("Посилання недійсне або прострочене."))
     return link
 
 
@@ -571,11 +573,16 @@ def _link_register_failure(request, link) -> None:
         notify(
             link.owner,
             "security",
-            "Хтось підбирає пароль до вашого посилання",
-            f"Посилання на «{link.file.name}» тимчасово заблоковано на годину. Можливо, варто його відкликати.",
+            gettext_noop("Хтось підбирає пароль до вашого посилання"),
+            gettext_noop("Посилання на «%(name)s» тимчасово заблоковано на годину. Можливо, варто його відкликати."),
             "/files",
+            params={"name": link.file.name},
         )
-        alert_staff("Підбір пароля публічного посилання", f"Власник: {link.owner.username}")
+        alert_staff(
+            gettext_noop("Підбір пароля публічного посилання"),
+            gettext_noop("Власник: %(username)s"),
+            params={"username": link.owner.username},
+        )
 
 
 class PublicView(APIView):
@@ -608,11 +615,11 @@ class PublicLinkAuthorizeView(PublicView):
         link = _get_active_link(request.data.get("token"))
         if link.password_hash:
             if _link_locked(link):
-                return Response({"detail": "Забагато невдалих спроб. Спробуйте через годину."}, status=429)
+                return Response({"detail": _("Забагато невдалих спроб. Спробуйте через годину.")}, status=429)
             if not check_password(request.data.get("password") or "", link.password_hash):
                 audit(request, "public_link.bad_password", user=link.owner, target=str(link.pk))
                 _link_register_failure(request, link)
-                return Response({"detail": "Невірний пароль."}, status=403)
+                return Response({"detail": _("Невірний пароль.")}, status=403)
         ticket = issue_ticket("public-dl", {"link": str(link.pk)}, settings.DOWNLOAD_TICKET_TTL)
         return Response({"download_url": f"/api/public/dl/{ticket}/"})
 
@@ -621,15 +628,15 @@ class PublicLinkDownloadView(PublicView):
     def get(self, request, ticket):
         data = consume_ticket("public-dl", ticket)
         if data is None:
-            raise PermissionDenied("Посилання для завантаження прострочене. Оновіть сторінку.")
+            raise PermissionDenied(_("Посилання для завантаження прострочене. Оновіть сторінку."))
         link = PublicLink.objects.select_related("file", "owner").filter(pk=data["link"]).first()
         if link is None or not link.is_active or link.file.deleted_at is not None or not link.file.is_downloadable:
-            raise NotFound("Посилання недійсне або прострочене.")
+            raise NotFound(_("Посилання недійсне або прострочене."))
         # Атомарний лічильник з перевіркою ліміту
         q = PublicLink.objects.filter(pk=link.pk)
         if link.max_downloads is not None:
             q = q.filter(download_count__lt=link.max_downloads)
         if q.update(download_count=F("download_count") + 1) != 1:
-            raise NotFound("Ліміт завантажень вичерпано.")
+            raise NotFound(_("Ліміт завантажень вичерпано."))
         audit(request, "public_link.download", user=link.owner, target=str(link.pk))
         return services.file_response(link.file)

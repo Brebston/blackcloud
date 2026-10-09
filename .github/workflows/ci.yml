@@ -1,5 +1,5 @@
 # CI: лише ті перевірки, що реально налаштовані в репозиторії.
-#   backend  — Django system check, перевірка відсутніх міграцій, pytest (backend/pytest.ini)
+#   backend  — Django system check, перевірка відсутніх міграцій, переклади (scripts/i18n.py), pytest
 #   frontend — npm run typecheck і npm run build (frontend/package.json)
 #   compose  — валідність docker-compose.yml (+ dev-оверлей) і синтаксис shell-скриптів
 # Лінтерів (ruff/eslint) у репозиторії не налаштовано, тому тут їх немає.
@@ -52,6 +52,9 @@ jobs:
 
       - name: Немає незгенерованих міграцій
         run: python manage.py makemigrations --check --dry-run
+
+      - name: Переклади (усі рядки перекладено, django.mo актуальний)
+        run: python scripts/i18n.py check
 
       - name: Тести
         run: python -m pytest -p no:cacheprovider

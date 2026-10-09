@@ -1,4 +1,5 @@
 from django.conf import settings
+from django.utils.translation import gettext_lazy
 from rest_framework.permissions import BasePermission
 
 
@@ -20,7 +21,7 @@ def staff_mfa_ok(request) -> bool:
 
 
 class IsStaffWith2FA(BasePermission):
-    message = "Потрібні права адміністратора та вхід з 2FA."
+    message = gettext_lazy("Потрібні права адміністратора та вхід з 2FA.")
 
     def has_permission(self, request, view):
         return staff_mfa_ok(request)

@@ -1,3 +1,6 @@
+from django.utils.translation import gettext_noop
+
+
 class NoCacheApiMiddleware:
     """Відповіді API не кешуються браузером і проксі."""
 
@@ -21,15 +24,22 @@ class MaxBodySizeMiddleware:
     def __call__(self, request):
         from django.conf import settings
         from django.http import JsonResponse
+        from django.utils import translation
+        from django.utils.translation import gettext as _
+
+        def reject(detail, status):
+            # Працює до LocaleMiddleware, тому мову з Accept-Language визначаємо тут
+            with translation.override(translation.get_language_from_request(request)):
+                return JsonResponse({"detail": _(detail)}, status=status)
 
         if request.META.get("CONTENT_LENGTH") in (None, "") and "chunked" in request.META.get(
             "HTTP_TRANSFER_ENCODING", ""
         ).lower():
-            return JsonResponse({"detail": "Потрібен заголовок Content-Length."}, status=411)
+            return reject(gettext_noop("Потрібен заголовок Content-Length."), 411)
         try:
             length = int(request.META.get("CONTENT_LENGTH") or 0)
         except ValueError:
-            return JsonResponse({"detail": "Невірний Content-Length."}, status=400)
+            return reject(gettext_noop("Невірний Content-Length."), 400)
         if length > settings.MAX_REQUEST_BODY:
-            return JsonResponse({"detail": "Запит завеликий."}, status=413)
+            return reject(gettext_noop("Запит завеликий."), 413)
         return self.get_response(request)

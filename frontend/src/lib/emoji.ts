@@ -1,9 +1,12 @@
 // Набір емоджі для вибору в чаті. Без зовнішніх бібліотек і CDN (CSP їх забороняє).
 // Формат: "емоджі ключові слова" — слова українською та англійською для пошуку.
 
+import type { TKey } from "../i18n";
+
 export interface EmojiCategory {
   id: string;
-  label: string;
+  /** Ключ перекладу назви категорії */
+  label: TKey;
   icon: string;
   items: { e: string; k: string }[];
 }
@@ -23,7 +26,7 @@ export const QUICK_REACTIONS = ["👍", "❤️", "😂", "😮", "😢", "🙏"
 export const EMOJI_CATEGORIES: EmojiCategory[] = [
   {
     id: "smileys",
-    label: "Смайли",
+    label: "emoji.cat.smileys",
     icon: "😀",
     items: parse(`
 😀 усмішка радість smile grin happy
@@ -137,7 +140,7 @@ export const EMOJI_CATEGORIES: EmojiCategory[] = [
   },
   {
     id: "gestures",
-    label: "Жести",
+    label: "emoji.cat.gestures",
     icon: "👍",
     items: parse(`
 👍 лайк так добре like thumbs up yes ok
@@ -185,7 +188,7 @@ export const EMOJI_CATEGORIES: EmojiCategory[] = [
   },
   {
     id: "hearts",
-    label: "Серця",
+    label: "emoji.cat.hearts",
     icon: "❤️",
     items: parse(`
 ❤️ серце любов heart love red
@@ -223,7 +226,7 @@ export const EMOJI_CATEGORIES: EmojiCategory[] = [
   },
   {
     id: "animals",
-    label: "Природа",
+    label: "emoji.cat.animals",
     icon: "🐱",
     items: parse(`
 🐶 собака dog
@@ -281,7 +284,7 @@ export const EMOJI_CATEGORIES: EmojiCategory[] = [
   },
   {
     id: "food",
-    label: "Їжа",
+    label: "emoji.cat.food",
     icon: "🍕",
     items: parse(`
 🍏 яблуко apple
@@ -338,7 +341,7 @@ export const EMOJI_CATEGORIES: EmojiCategory[] = [
   },
   {
     id: "activity",
-    label: "Дозвілля",
+    label: "emoji.cat.activity",
     icon: "⚽",
     items: parse(`
 ⚽ футбол soccer
@@ -377,7 +380,7 @@ export const EMOJI_CATEGORIES: EmojiCategory[] = [
   },
   {
     id: "travel",
-    label: "Подорожі",
+    label: "emoji.cat.travel",
     icon: "✈️",
     items: parse(`
 🚗 авто car
@@ -417,7 +420,7 @@ export const EMOJI_CATEGORIES: EmojiCategory[] = [
   },
   {
     id: "objects",
-    label: "Предмети",
+    label: "emoji.cat.objects",
     icon: "💡",
     items: parse(`
 💡 ідея idea bulb
@@ -464,7 +467,7 @@ export const EMOJI_CATEGORIES: EmojiCategory[] = [
   },
   {
     id: "symbols",
-    label: "Символи",
+    label: "emoji.cat.symbols",
     icon: "✅",
     items: parse(`
 ✅ так готово done check yes
@@ -509,7 +512,7 @@ export const EMOJI_CATEGORIES: EmojiCategory[] = [
   },
   {
     id: "flags",
-    label: "Прапори",
+    label: "emoji.cat.flags",
     icon: "🏳️",
     items: parse(`
 🇺🇦 україна ukraine

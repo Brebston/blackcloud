@@ -171,7 +171,7 @@ function ProfileTab() {
           <input value={user.username} disabled />
         </label>
         <label>
-          Email
+          {t("auth.email")}
           <input value={user.email} disabled />
         </label>
         <label>
@@ -232,6 +232,7 @@ function ProfileTab() {
 
 function SecurityTab() {
   const { user, refresh } = useAuth();
+  const t = useT();
   const toast = useToast();
   const [info, setInfo] = useState<{ has_2fa: boolean; backup_codes_remaining: number; password_changed_at: string | null } | null>(null);
   const [pw, setPw] = useState({ current: "", next: "", next2: "" });
@@ -250,12 +251,12 @@ function SecurityTab() {
   const changePassword = async (e: FormEvent) => {
     e.preventDefault();
     setPwError("");
-    if (pw.next.length < 12) return setPwError("Новий пароль — мінімум 12 символів.");
-    if (pw.next !== pw.next2) return setPwError("Паролі не збігаються.");
+    if (pw.next.length < 12) return setPwError(t("security.pwTooShort"));
+    if (pw.next !== pw.next2) return setPwError(t("security.pwMismatch"));
     try {
       await post("/api/account/password/", { current_password: pw.current, new_password: pw.next });
       setPw({ current: "", next: "", next2: "" });
-      toast("Пароль змінено. Інші сесії завершено.", "success");
+      toast(t("security.pwChanged"), "success");
       load();
     } catch (err) {
       setPwError(errorText(err));
@@ -264,7 +265,7 @@ function SecurityTab() {
 
   const startSetup = async () => {
     setError("");
-    if (!confirmPw) return setError("Підтвердіть пароль.");
+    if (!confirmPw) return setError(t("security.confirmPassword"));
     try {
       setSetup(await post("/api/account/security/totp/setup/", { password: confirmPw }));
       setConfirmPw("");
@@ -275,7 +276,7 @@ function SecurityTab() {
 
   const confirmSetup = async () => {
     setError("");
-    if (!/^\d{6}$/.test(code.trim())) return setError("Введіть 6-значний код.");
+    if (!/^\d{6}$/.test(code.trim())) return setError(t("security.enterCode6"));
     try {
       const r = await post<{ backup_codes: string[] }>("/api/account/security/totp/confirm/", { code: code.trim() });
       setCodes(r.backup_codes);
@@ -290,14 +291,14 @@ function SecurityTab() {
 
   const disable = async () => {
     setError("");
-    if (!confirmPw || !code) return setError("Потрібні пароль і код 2FA.");
+    if (!confirmPw || !code) return setError(t("security.needPwAndCode"));
     try {
       await post("/api/account/security/2fa/disable/", { password: confirmPw, code: code.trim() });
       setConfirmPw("");
       setCode("");
       await refresh();
       load();
-      toast("2FA вимкнено", "info");
+      toast(t("security.2faDisabled"), "info");
     } catch (err) {
       setError(errorText(err));
     }
@@ -305,7 +306,7 @@ function SecurityTab() {
 
   const regenerate = async () => {
     setError("");
-    if (!confirmPw) return setError("Підтвердіть пароль.");
+    if (!confirmPw) return setError(t("security.confirmPassword"));
     try {
       const r = await post<{ backup_codes: string[] }>("/api/account/security/backup-codes/", { password: confirmPw });
       setCodes(r.backup_codes);
@@ -322,76 +323,76 @@ function SecurityTab() {
     <div className="settings-grid">
       <div className="card stack">
         <h3>
-          <Icon name="shield" /> Двофакторна автентифікація
+          <Icon name="shield" /> {t("security.2faTitle")}
         </h3>
         {info.has_2fa ? (
           <p>
-            <span className="pill pill-success">Увімкнено</span> Залишилось резервних кодів: <strong>{info.backup_codes_remaining}</strong>
+            <span className="pill pill-success">{t("security.enabled")}</span> {t("security.backupLeft")} <strong>{info.backup_codes_remaining}</strong>
           </p>
         ) : (
           <p className="muted">
-            Додайте другий фактор: застосунок-автентифікатор (Aegis, Google Authenticator, 1Password, Bitwarden тощо).
+            {t("security.2faHint")}
           </p>
         )}
 
         {codes && (
           <div className="secret-box">
-            <strong>Резервні коди — збережіть їх зараз, вони більше не показуватимуться:</strong>
+            <strong>{t("security.backupSaveNow")}</strong>
             <div className="codes">
               {codes.map((c) => (
                 <code key={c}>{c}</code>
               ))}
             </div>
-            <button className="btn btn-sm" onClick={() => navigator.clipboard.writeText(codes.join("\n")).then(() => toast("Скопійовано", "success"))}>
-              Копіювати
+            <button className="btn btn-sm" onClick={() => navigator.clipboard.writeText(codes.join("\n")).then(() => toast(t("security.copied"), "success"))}>
+              {t("security.copy")}
             </button>
           </div>
         )}
 
         {setup ? (
           <div className="stack">
-            <p>1. Відскануйте QR-код у застосунку-автентифікаторі:</p>
-            <img className="qr" src={setup.qr_svg} alt="QR-код для 2FA" />
+            <p>{t("security.scanQr")}</p>
+            <img className="qr" src={setup.qr_svg} alt={t("security.qrAlt")} />
             <details>
-              <summary className="small">Не вдається відсканувати? Введіть ключ вручну</summary>
+              <summary className="small">{t("security.cantScan")}</summary>
               <code className="break">{setup.secret}</code>
             </details>
-            <p>2. Введіть код із застосунку:</p>
+            <p>{t("security.enterAppCode")}</p>
             <input inputMode="numeric" maxLength={6} className="code-input" value={code} onChange={(e) => setCode(e.target.value)} autoFocus />
             <div className="row gap">
               <button className="btn btn-primary" onClick={confirmSetup}>
-                Увімкнути 2FA
+                {t("security.enable2fa")}
               </button>
               <button className="btn" onClick={() => setSetup(null)}>
-                Скасувати
+                {t("common.cancel")}
               </button>
             </div>
           </div>
         ) : (
           <div className="stack">
             <label>
-              Поточний пароль
+              {t("security.currentPassword")}
               <input type="password" autoComplete="current-password" value={confirmPw} onChange={(e) => setConfirmPw(e.target.value)} />
             </label>
             {info.has_2fa && (
               <label>
-                Код 2FA (для вимкнення)
+                {t("security.codeToDisable")}
                 <input inputMode="numeric" value={code} onChange={(e) => setCode(e.target.value)} />
               </label>
             )}
             <div className="row gap wrap">
               {!info.has_2fa && (
                 <button className="btn btn-primary" onClick={startSetup}>
-                  Налаштувати 2FA
+                  {t("security.setup2fa")}
                 </button>
               )}
               {info.has_2fa && (
                 <>
                   <button className="btn" onClick={regenerate}>
-                    Нові резервні коди
+                    {t("security.newBackupCodes")}
                   </button>
                   <button className="btn btn-danger" onClick={disable}>
-                    Вимкнути 2FA
+                    {t("security.disable2fa")}
                   </button>
                 </>
               )}
@@ -403,24 +404,24 @@ function SecurityTab() {
 
       <form className="card stack" onSubmit={changePassword}>
         <h3>
-          <Icon name="lock" /> Пароль
+          <Icon name="lock" /> {t("security.password")}
         </h3>
-        <p className="small muted">Змінено: {formatDate(info.password_changed_at)}</p>
+        <p className="small muted">{t("security.changedAt", { date: formatDate(info.password_changed_at) })}</p>
         <label>
-          Поточний пароль
+          {t("security.currentPassword")}
           <input type="password" autoComplete="current-password" value={pw.current} onChange={(e) => setPw({ ...pw, current: e.target.value })} />
         </label>
         <label>
-          Новий пароль (мінімум 12 символів)
+          {t("security.newPassword")}
           <input type="password" autoComplete="new-password" value={pw.next} onChange={(e) => setPw({ ...pw, next: e.target.value })} />
         </label>
         <label>
-          Повторіть новий пароль
+          {t("security.repeatPassword")}
           <input type="password" autoComplete="new-password" value={pw.next2} onChange={(e) => setPw({ ...pw, next2: e.target.value })} />
         </label>
         {pwError && <div className="form-error">{pwError}</div>}
         <div>
-          <button className="btn btn-primary">Змінити пароль</button>
+          <button className="btn btn-primary">{t("security.changePassword")}</button>
         </div>
       </form>
     </div>
@@ -437,6 +438,7 @@ interface SessionInfo {
 }
 
 function SessionsTab() {
+  const t = useT();
   const toast = useToast();
   const [sessions, setSessions] = useState<SessionInfo[]>([]);
   const load = () => get<SessionInfo[]>("/api/account/sessions/").then(setSessions);
@@ -447,24 +449,24 @@ function SessionsTab() {
   return (
     <div className="card stack">
       <div className="row-between">
-        <h3>Активні сесії</h3>
+        <h3>{t("security.sessionsTitle")}</h3>
         <button
           className="btn btn-sm"
           onClick={async () => {
             const r = await post<{ revoked: number }>("/api/account/sessions/revoke_others/");
-            toast(`Завершено сесій: ${r.revoked}`, "success");
+            toast(t("security.sessionsRevoked", { n: r.revoked }), "success");
             load();
           }}
         >
-          Вийти на всіх інших пристроях
+          {t("security.signOutOthers")}
         </button>
       </div>
       <table className="table">
         <thead>
           <tr>
-            <th>Пристрій</th>
-            <th>IP</th>
-            <th>Активність</th>
+            <th>{t("security.device")}</th>
+            <th>{t("security.ip")}</th>
+            <th>{t("security.activity")}</th>
             <th />
           </tr>
         </thead>
@@ -472,14 +474,14 @@ function SessionsTab() {
           {sessions.map((s) => (
             <tr key={s.id}>
               <td className="small">
-                {s.user_agent.slice(0, 90) || "Невідомо"} {s.current && <span className="pill pill-success">ця сесія</span>}
+                {s.user_agent.slice(0, 90) || t("security.unknown")} {s.current && <span className="pill pill-success">{t("security.thisSession")}</span>}
               </td>
               <td className="small">{s.ip_address}</td>
               <td className="small muted">{formatDate(s.last_seen)}</td>
               <td>
                 {!s.current && (
                   <button className="link-btn danger" onClick={() => del(`/api/account/sessions/${s.id}/`).then(load)}>
-                    Завершити
+                    {t("security.endSession")}
                   </button>
                 )}
               </td>
@@ -492,6 +494,7 @@ function SessionsTab() {
 }
 
 function MailClientTab() {
+  const t = useT();
   const toast = useToast();
   const [boxes, setBoxes] = useState<{ id: string; address: string }[]>([]);
   const [boxId, setBoxId] = useState("");
@@ -518,12 +521,12 @@ function MailClientTab() {
 
   const generate = async (revoke = false) => {
     setError("");
-    if (!password) return setError("Підтвердіть пароль акаунта.");
+    if (!password) return setError(t("security.confirmAccountPassword"));
     try {
       const r = await post<{ password?: string }>("/api/mail/mailbox/client-password/", { password, revoke, mailbox: mb?.id });
       setGenerated(r.password || null);
       setPassword("");
-      if (revoke) toast("Доступ поштових клієнтів вимкнено", "info");
+      if (revoke) toast(t("security.clientAccessOff"), "info");
       load();
     } catch (err) {
       setError(errorText(err));
@@ -536,10 +539,10 @@ function MailClientTab() {
   return (
     <div className="settings-grid">
       <div className="card stack">
-        <h3>Підключення поштового клієнта</h3>
+        <h3>{t("security.mailClientTitle")}</h3>
         {boxes.length > 1 && (
           <label>
-            Скринька
+            {t("security.mailbox")}
             <select
               value={mb.id}
               onChange={(e) => {
@@ -557,7 +560,7 @@ function MailClientTab() {
           </label>
         )}
         <dl className="info-list">
-          <dt>Адреса</dt>
+          <dt>{t("security.address")}</dt>
           <dd>{mb.address}</dd>
           <dt>IMAP</dt>
           <dd>
@@ -565,38 +568,40 @@ function MailClientTab() {
           </dd>
           <dt>SMTP</dt>
           <dd>
-            {mb.smtp.host}:{mb.smtp.port} ({mb.smtp.security}) або 587 (STARTTLS)
+            {t("security.smtpOr", { host: mb.smtp.host, port: mb.smtp.port, security: mb.smtp.security })}
           </dd>
-          <dt>Логін</dt>
+          <dt>{t("security.login")}</dt>
           <dd>{mb.address}</dd>
-          <dt>Квота</dt>
-          <dd>{mb.quota_mb} МБ</dd>
+          <dt>{t("security.quota")}</dt>
+          <dd>{t("security.quotaMb", { n: mb.quota_mb })}</dd>
         </dl>
       </div>
       <div className="card stack">
-        <h3>Пароль застосунку</h3>
+        <h3>{t("security.appPassword")}</h3>
         <p className="small muted">
-          Поштові клієнти (Thunderbird, Apple Mail, телефон) не підтримують 2FA, тому для них використовується окремий
-          згенерований пароль. Пароль акаунта для пошти не підходить. Статус:{" "}
-          {mb.client_password_set_at ? `створено ${formatDate(mb.client_password_set_at)}` : "не створено"}.
+          {t("security.appPasswordHint", {
+            status: mb.client_password_set_at
+              ? t("security.appPwCreated", { date: formatDate(mb.client_password_set_at) })
+              : t("security.appPwNotCreated"),
+          })}
         </p>
         {generated && (
           <div className="secret-box">
-            <div className="small">Скопіюйте зараз — пароль більше не буде показано:</div>
+            <div className="small">{t("security.copyNow")}</div>
             <code className="big-code">{generated}</code>
           </div>
         )}
         <label>
-          Пароль акаунта для підтвердження
+          {t("security.accountPwConfirm")}
           <input type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} />
         </label>
         <div className="row gap wrap">
           <button className="btn btn-primary" onClick={() => generate(false)}>
-            {mb.client_password_set_at ? "Згенерувати новий" : "Згенерувати"}
+            {mb.client_password_set_at ? t("security.generateNew") : t("security.generate")}
           </button>
           {mb.client_password_set_at && (
             <button className="btn btn-danger" onClick={() => generate(true)}>
-              Відкликати
+              {t("security.revoke")}
             </button>
           )}
         </div>
@@ -606,43 +611,44 @@ function MailClientTab() {
   );
 }
 
-const ACTION_LABELS: Record<string, string> = {
-  "login.success": "Вхід",
-  "login.failed": "Невдала спроба входу",
-  "login.password_ok": "Пароль підтверджено (очікується 2FA)",
-  "login.2fa_failed": "Невірний код 2FA",
-  "login.locked": "Вхід заблоковано",
-  logout: "Вихід",
-  "password.changed": "Пароль змінено",
-  "2fa.enabled": "2FA увімкнено",
-  "2fa.disabled": "2FA вимкнено",
-  "2fa.setup_started": "Початок налаштування 2FA",
-  "2fa.backup_codes_regenerated": "Нові резервні коди",
-  "session.revoked": "Сесію завершено",
-  "session.revoked_others": "Завершено інші сесії",
-  "file.uploaded": "Файл завантажено",
-  "file.trashed": "Файл у кошику",
-  "share.created": "Спільний доступ",
-  "public_link.created": "Публічне посилання",
-  "public_link.download": "Завантаження за посиланням",
-  "mail.sent": "Лист надіслано",
-  "mail.client_password_set": "Пароль поштового клієнта",
+const ACTION_LABELS: Record<string, TKey> = {
+  "login.success": "security.action.loginSuccess",
+  "login.failed": "security.action.loginFailed",
+  "login.password_ok": "security.action.loginPasswordOk",
+  "login.2fa_failed": "security.action.login2faFailed",
+  "login.locked": "security.action.loginLocked",
+  logout: "security.action.logout",
+  "password.changed": "security.action.passwordChanged",
+  "2fa.enabled": "security.action.2faEnabled",
+  "2fa.disabled": "security.action.2faDisabled",
+  "2fa.setup_started": "security.action.2faSetupStarted",
+  "2fa.backup_codes_regenerated": "security.action.backupCodesRegenerated",
+  "session.revoked": "security.action.sessionRevoked",
+  "session.revoked_others": "security.action.sessionRevokedOthers",
+  "file.uploaded": "security.action.fileUploaded",
+  "file.trashed": "security.action.fileTrashed",
+  "share.created": "security.action.shareCreated",
+  "public_link.created": "security.action.publicLinkCreated",
+  "public_link.download": "security.action.publicLinkDownload",
+  "mail.sent": "security.action.mailSent",
+  "mail.client_password_set": "security.action.mailClientPasswordSet",
 };
 
 function ActivityTab() {
+  const t = useT();
   const [events, setEvents] = useState<{ action: string; created_at: string; ip_address: string | null; user_agent: string }[]>([]);
   useEffect(() => {
     get<typeof events>("/api/account/audit/").then(setEvents);
   }, []);
   return (
     <div className="card">
-      <h3>Останні події безпеки</h3>
+      <h3>{t("security.activityTitle")}</h3>
       <table className="table">
         <tbody>
           {events.map((e, i) => (
             <tr key={i}>
               <td className={e.action.includes("failed") || e.action.includes("locked") ? "text-danger" : ""}>
-                {ACTION_LABELS[e.action] || e.action}
+                {ACTION_LABELS[e.action] ? t(ACTION_LABELS[e.action]) : e.action}
               </td>
               <td className="small">{e.ip_address}</td>
               <td className="small muted">{formatDate(e.created_at)}</td>

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { get } from "../api/client";
 import type { FileItem } from "../api/types";
+import { tr } from "../i18n";
 
 export type ViewKind = "image" | "pdf" | "video" | "audio" | "text" | "office";
 
@@ -46,7 +47,7 @@ export function usePreviewUrl(f: FileItem | undefined, kind: ViewKind | null) {
     setState(null);
     get<{ url: string }>(`/api/files/items/${id}/preview/`)
       .then((r) => !cancelled && setState({ id, url: r.url, error: "" }))
-      .catch(() => !cancelled && setState({ id, url: "", error: "Не вдалося відкрити перегляд" }));
+      .catch(() => !cancelled && setState({ id, url: "", error: tr("files.viewer.previewFailed") }));
     return () => {
       cancelled = true;
     };

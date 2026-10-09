@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import Icon from "../components/Icon";
+import { useT } from "../i18n";
 import { formatBytes, formatDate } from "../lib/format";
 
 interface Info {
@@ -27,6 +28,7 @@ export default function PublicSharePage() {
   const params = useParams();
   const location = useLocation();
   const navigate = useNavigate();
+  const t = useT();
   const token = params.token || decodeURIComponent(location.hash.replace(/^#/, ""));
   const [info, setInfo] = useState<Info | null>(null);
   const [error, setError] = useState("");
@@ -40,13 +42,13 @@ export default function PublicSharePage() {
 
   useEffect(() => {
     if (!token) {
-      setError("Посилання недійсне");
+      setError(t("publicShare.invalidLink"));
       return;
     }
     postPublic("info", { token })
       .then(async (r) => {
         const d = await r.json();
-        if (!r.ok) throw new Error(d.detail || "Посилання недійсне");
+        if (!r.ok) throw new Error(d.detail || t("publicShare.invalidLink"));
         setInfo(d);
       })
       .catch((e) => setError(e.message));
@@ -56,14 +58,14 @@ export default function PublicSharePage() {
     e?.preventDefault();
     setError("");
     if (info?.requires_password && !password) {
-      setError("Введіть пароль.");
+      setError(t("publicShare.enterPassword"));
       return;
     }
     setBusy(true);
     try {
       const r = await postPublic("authorize", { token, password });
       const d = await r.json();
-      if (!r.ok) throw new Error(d.detail || "Помилка");
+      if (!r.ok) throw new Error(d.detail || t("publicShare.error"));
       window.location.assign(d.download_url);
     } catch (err) {
       setError((err as Error).message);
@@ -79,7 +81,7 @@ export default function PublicSharePage() {
           <Icon name="cloud" size={32} />
           <h1>BlackCloud</h1>
         </div>
-        {!info && !error && <p className="muted">Завантаження…</p>}
+        {!info && !error && <p className="muted">{t("publicShare.loading")}</p>}
         {info && (
           <form onSubmit={download} className="stack">
             <div className="public-file">
@@ -87,18 +89,18 @@ export default function PublicSharePage() {
               <div>
                 <div className="public-name">{info.name}</div>
                 <div className="muted small">
-                  {formatBytes(info.size)} · доступно до {formatDate(info.expires_at)}
+                  {formatBytes(info.size)} · {t("publicShare.availableUntil", { date: formatDate(info.expires_at) })}
                 </div>
               </div>
             </div>
             {info.requires_password && (
               <label>
-                Пароль
+                {t("publicShare.password")}
                 <input type="password" autoFocus value={password} onChange={(e) => setPassword(e.target.value)} />
               </label>
             )}
             <button className="btn btn-primary btn-block" disabled={busy}>
-              <Icon name="download" size={16} /> Завантажити
+              <Icon name="download" size={16} /> {t("publicShare.download")}
             </button>
           </form>
         )}

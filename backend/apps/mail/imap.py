@@ -11,6 +11,7 @@ import imaplib
 import re
 import smtplib
 from contextlib import contextmanager
+from datetime import timedelta
 from email.headerregistry import Address
 from email.message import EmailMessage
 from email.policy import default as default_policy
@@ -18,6 +19,8 @@ from email.utils import formataddr, getaddresses, make_msgid, parsedate_to_datet
 
 from django.conf import settings
 from django.utils import timezone
+from django.utils.translation import gettext as _
+from django.utils.translation import gettext_lazy
 from rest_framework.exceptions import APIException, NotFound, ValidationError
 
 from .sanitize import sanitize_html
@@ -29,7 +32,7 @@ SPECIAL_USE = ("\\Sent", "\\Drafts", "\\Trash", "\\Junk", "\\Archive")
 
 class MailUnavailable(APIException):
     status_code = 503
-    default_detail = "Поштовий сервер тимчасово недоступний."
+    default_detail = gettext_lazy("Поштовий сервер тимчасово недоступний.")
 
 
 # ─────────────────────── Modified UTF-7 (RFC 3501) ───────────────────────
@@ -69,14 +72,14 @@ def decode_folder(name: str) -> str:
 def quote(name: str) -> str:
     encoded = encode_folder(name)
     if any(c in encoded for c in "\r\n\0"):
-        raise ValidationError({"folder": ["Невірна назва теки."]})
+        raise ValidationError({"folder": [_("Невірна назва теки.")]})
     return '"' + encoded.replace("\\", "\\\\").replace('"', '\\"') + '"'
 
 
 def _check_uid(uid) -> str:
     uid = str(uid)
     if not uid.isdigit() or len(uid) > 10:
-        raise ValidationError({"uid": ["Невірний UID."]})
+        raise ValidationError({"uid": [_("Невірний UID.")]})
     return uid
 
 
@@ -86,7 +89,7 @@ def _check_uid(uid) -> str:
 @contextmanager
 def imap_session(address: str):
     if not settings.DOVECOT_MASTER_PASSWORD:
-        raise MailUnavailable("Веб-пошту не налаштовано (немає master-пароля Dovecot).")
+        raise MailUnavailable(_("Веб-пошту не налаштовано (немає master-пароля Dovecot)."))
     try:
         conn = imaplib.IMAP4(settings.IMAP_HOST, settings.IMAP_PORT, timeout=IMAP_TIMEOUT)
         conn.login(f"{address}*{settings.DOVECOT_MASTER_USER}", settings.DOVECOT_MASTER_PASSWORD)
@@ -104,7 +107,7 @@ def imap_session(address: str):
 def _select(conn, folder: str, readonly: bool = True) -> int:
     typ, data = conn.select(quote(folder), readonly=readonly)
     if typ != "OK":
-        raise NotFound("Теку не знайдено.")
+        raise NotFound(_("Теку не знайдено."))
     try:
         return int(data[0])
     except (TypeError, ValueError):
@@ -189,7 +192,7 @@ def _parse_fetch(data) -> list[dict]:
                 "uid": int(uid.group(1)) if uid else None,
                 "from": _decode_header(msg["From"]),
                 "to": _decode_header(msg["To"]),
-                "subject": _decode_header(msg["Subject"]) or "(без теми)",
+                "subject": _decode_header(msg["Subject"]) or _("(без теми)"),
                 "date": date,
                 "size": int(size.group(1)) if size else 0,
                 "seen": "\\Seen" in flag_list,
@@ -248,7 +251,7 @@ def _fetch_raw(conn, uid: str) -> bytes:
     for part in data or []:
         if isinstance(part, tuple):
             return part[1]
-    raise NotFound("Лист не знайдено.")
+    raise NotFound(_("Лист не знайдено."))
 
 
 def _inline_images(msg) -> dict[str, str]:
@@ -332,7 +335,7 @@ def get_attachment(address: str, folder: str, uid, index: int) -> tuple[str, str
     for i, part in enumerate(msg.walk()):
         if i == index and not part.is_multipart():
             return part.get_filename() or f"attachment-{index}", part.get_content_type(), part.get_payload(decode=True) or b""
-    raise NotFound("Вкладення не знайдено.")
+    raise NotFound(_("Вкладення не знайдено."))
 
 
 # ─────────────────────── Дії ───────────────────────
@@ -341,7 +344,7 @@ def get_attachment(address: str, folder: str, uid, index: int) -> tuple[str, str
 def set_flag(address: str, folder: str, uid, flag: str, value: bool):
     uid = _check_uid(uid)
     if flag not in ("\\Seen", "\\Flagged"):
-        raise ValidationError({"flag": ["Невідомий прапорець."]})
+        raise ValidationError({"flag": [_("Невідомий прапорець.")]})
     with imap_session(address) as conn:
         _select(conn, folder, readonly=False)
         conn.uid("STORE", uid, "+FLAGS" if value else "-FLAGS", f"({flag})")
@@ -351,9 +354,9 @@ def move_message(address: str, folder: str, uid, target: str):
     uid = _check_uid(uid)
     with imap_session(address) as conn:
         _select(conn, folder, readonly=False)
-        typ, _ = conn.uid("MOVE", uid, quote(target))
+        typ, _data = conn.uid("MOVE", uid, quote(target))
         if typ != "OK":
-            raise ValidationError({"target": ["Не вдалося перемістити лист."]})
+            raise ValidationError({"target": [_("Не вдалося перемістити лист.")]})
 
 
 def delete_message(address: str, folder: str, uid):
@@ -377,13 +380,13 @@ def _parse_recipients(value: str, field: str) -> list[str]:
     if not value:
         return []
     if any(c in value for c in "\r\n"):
-        raise ValidationError({field: ["Недопустимі символи."]})
+        raise ValidationError({field: [_("Недопустимі символи.")]})
     pairs = getaddresses([value])
     result = []
     for name, addr in pairs:
         addr = addr.strip()
         if not re.fullmatch(r"[^@\s<>\"]+@[^@\s<>\"]+\.[^@\s<>\"]+", addr):
-            raise ValidationError({field: [f"Невірна адреса: {addr or name}"]})
+            raise ValidationError({field: [_("Невірна адреса: %(address)s") % {"address": addr or name}]})
         result.append(formataddr((name, addr)) if name else addr)
     return result
 
@@ -392,7 +395,7 @@ def _truthy(value) -> bool:
     return str(value).lower() in ("1", "true", "on", "yes")
 
 
-def build_message(user, mailbox, data: dict, attachments: list) -> tuple[EmailMessage, list[str], dict]:
+def build_message(user, mailbox, data: dict, attachments: list, *, draft: bool = False) -> tuple[EmailMessage, list[str], dict]:
     """Збирає MIME-лист. Повертає (лист, усі адреси отримувачів, додаткові дані для відповіді).
 
     * html — вміст із редактора; санітизується на сервері (білий список тегів),
@@ -405,16 +408,16 @@ def build_message(user, mailbox, data: dict, attachments: list) -> tuple[EmailMe
     to = _parse_recipients(data.get("to", ""), "to")
     cc = _parse_recipients(data.get("cc", ""), "cc")
     bcc = _parse_recipients(data.get("bcc", ""), "bcc")
-    if not to and not cc and not bcc:
-        raise ValidationError({"to": ["Вкажіть хоча б одного отримувача."]})
+    if not to and not cc and not bcc and not draft:
+        raise ValidationError({"to": [_("Вкажіть хоча б одного отримувача.")]})
     if len(to) + len(cc) + len(bcc) > MAX_RECIPIENTS:
-        raise ValidationError({"to": [f"Максимум {MAX_RECIPIENTS} отримувачів."]})
+        raise ValidationError({"to": [_("Максимум %(n)s отримувачів.") % {"n": MAX_RECIPIENTS}]})
     subject = (data.get("subject") or "").replace("\r", " ").replace("\n", " ")[:300]
     sender_name = mailbox.display_name or user.display_name or user.username
 
     raw_html = data.get("html") or ""
     if len(raw_html) > 20 * 1024 * 1024:
-        raise ValidationError({"html": ["Лист завеликий."]})
+        raise ValidationError({"html": [_("Лист завеликий.")]})
     html = sanitize_outgoing_html(raw_html) if raw_html.strip() else ""
     text = data.get("body") or (html_to_text(html) if html else "")
     extra: dict = {}
@@ -425,6 +428,9 @@ def build_message(user, mailbox, data: dict, attachments: list) -> tuple[EmailMe
         msg["To"] = ", ".join(to)
     if cc:
         msg["Cc"] = ", ".join(cc)
+    if draft and bcc:
+        # Лише в чернетці (вона лежить у власній скриньці); у надісланому листі Bcc немає
+        msg["Bcc"] = ", ".join(bcc)
     msg["Subject"] = subject
     msg["Date"] = timezone.now()
     msg["Message-ID"] = make_msgid(domain=mailbox.domain.name)
@@ -434,14 +440,14 @@ def build_message(user, mailbox, data: dict, attachments: list) -> tuple[EmailMe
             msg["In-Reply-To" if header == "in_reply_to" else "References"] = value
     msg["User-Agent"] = "BlackCloud Webmail"
 
-    if _truthy(data.get("confidential")):
+    if _truthy(data.get("confidential")) and not draft:
         if attachments:
-            raise ValidationError({"attachments": ["У конфіденційному режимі вкладення не підтримуються."]})
+            raise ValidationError({"attachments": [_("У конфіденційному режимі вкладення не підтримуються.")]})
         content = html or f"<pre>{escape_html(text)}</pre>"
         record, token, passcode = conf.create(
             sender=user,
             from_address=mailbox.address,
-            recipients=[a for _, a in getaddresses(to + cc + bcc)],
+            recipients=[a for _name, a in getaddresses(to + cc + bcc)],
             subject=subject,
             html=content,
             days=data.get("confidential_days"),
@@ -455,10 +461,10 @@ def build_message(user, mailbox, data: dict, attachments: list) -> tuple[EmailMe
         try:
             html_cid, images = extract_data_images(html, mailbox.domain.name)
         except ValueError as exc:
-            raise ValidationError({"html": ["Невірне або завелике вбудоване зображення."]}) from exc
+            raise ValidationError({"html": [_("Невірне або завелике вбудоване зображення.")]}) from exc
         total_images = sum(len(i["data"]) for i in images)
         if total_images > settings.MAIL_MAX_ATTACHMENTS_BYTES:
-            raise ValidationError({"html": ["Зображення в листі завеликі (максимум 15 МБ разом)."]})
+            raise ValidationError({"html": [_("Зображення в листі завеликі (максимум 15 МБ разом).")]})
         extra["inline_bytes"] = total_images
         msg.set_content(text or " ")
         msg.add_alternative(html_cid, subtype="html")
@@ -472,11 +478,11 @@ def build_message(user, mailbox, data: dict, attachments: list) -> tuple[EmailMe
     for upload in attachments:
         total += upload.size
         if total > settings.MAIL_MAX_ATTACHMENTS_BYTES:
-            raise ValidationError({"attachments": ["Вкладення завеликі (максимум 15 МБ разом)."]})
+            raise ValidationError({"attachments": [_("Вкладення завеликі (максимум 15 МБ разом).")]})
         content = upload.read()
-        maintype, _, subtype = (upload.content_type or "application/octet-stream").partition("/")
+        maintype, _sep, subtype = (upload.content_type or "application/octet-stream").partition("/")
         msg.add_attachment(content, maintype=maintype or "application", subtype=subtype or "octet-stream", filename=upload.name)
-    return msg, [a for _, a in getaddresses(to + cc + bcc)], extra
+    return msg, [a for _name, a in getaddresses(to + cc + bcc)], extra
 
 
 def escape_html(value: str) -> str:
@@ -485,26 +491,247 @@ def escape_html(value: str) -> str:
     return escape(value)
 
 
-def send_message(user, mailbox, data: dict, attachments: list) -> dict:
-    msg, recipients, extra = build_message(user, mailbox, data, attachments)
+def _deliver(mailbox, raw: bytes, recipients: list[str], reply_uid=None, reply_folder=None) -> None:
+    """SMTP через внутрішній Postfix + копія в «Надіслані» + позначка «Відповіли» на оригіналі."""
     try:
         with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT, timeout=30) as smtp:
-            smtp.send_message(msg, from_addr=mailbox.address, to_addrs=recipients)
+            smtp.sendmail(mailbox.address, recipients, raw)
     except (OSError, smtplib.SMTPException) as exc:
-        if "confidential" in extra:
-            from .models import ConfidentialMessage
-
-            ConfidentialMessage.objects.filter(pk=extra["confidential"]["id"]).delete()
-        raise MailUnavailable(f"Не вдалося надіслати: {exc.__class__.__name__}") from exc
+        raise MailUnavailable(_("Не вдалося надіслати: %(error)s") % {"error": exc.__class__.__name__}) from exc
 
     # Копія в «Надіслані» (Bcc не зберігаємо в заголовках листа)
     try:
         with imap_session(mailbox.address) as conn:
             sent = _special_folder(conn, "\\Sent", "Sent")
-            conn.append(quote(sent), "(\\Seen)", imaplib.Time2Internaldate(timezone.now()), msg.as_bytes())
-            if data.get("in_reply_to_uid") and data.get("in_reply_to_folder"):
-                _select(conn, data["in_reply_to_folder"], readonly=False)
-                conn.uid("STORE", _check_uid(data["in_reply_to_uid"]), "+FLAGS", "(\\Answered)")
+            conn.append(quote(sent), "(\\Seen)", imaplib.Time2Internaldate(timezone.now()), raw)
+            if reply_uid and reply_folder:
+                _select(conn, reply_folder, readonly=False)
+                conn.uid("STORE", _check_uid(reply_uid), "+FLAGS", "(\\Answered)")
     except Exception:
         pass
+
+
+def _forget_confidential(extra: dict) -> None:
+    if "confidential" in extra:
+        from .models import ConfidentialMessage
+
+        ConfidentialMessage.objects.filter(pk=extra["confidential"]["id"]).delete()
+
+
+def send_message(user, mailbox, data: dict, attachments: list) -> dict:
+    msg, recipients, extra = build_message(user, mailbox, data, attachments)
+    try:
+        _deliver(mailbox, msg.as_bytes(), recipients, data.get("in_reply_to_uid"), data.get("in_reply_to_folder"))
+    except MailUnavailable:
+        _forget_confidential(extra)
+        raise
     return {"message_id": str(msg["Message-ID"]), **{k: v for k, v in extra.items() if k == "confidential"}}
+
+
+# ─────────────────────── Відкладене надсилання ───────────────────────
+
+MAX_SCHEDULED_PER_USER = 100
+SCHEDULE_MIN_DELAY = timedelta(minutes=1)
+SCHEDULE_MAX_DELAY = timedelta(days=365)
+
+
+def parse_send_at(value) -> "datetime":
+    """ISO-дата з часовим поясом; щонайменше за хвилину від зараз і не далі ніж за рік."""
+    from django.utils.dateparse import parse_datetime
+
+    when = parse_datetime(str(value or "").strip())
+    if when is None or timezone.is_naive(when):
+        raise ValidationError({"send_at": [_("Невірний час надсилання.")]})
+    now = timezone.now()
+    if when < now + SCHEDULE_MIN_DELAY - timedelta(seconds=30):
+        raise ValidationError({"send_at": [_("Час надсилання має бути в майбутньому.")]})
+    if when > now + SCHEDULE_MAX_DELAY:
+        raise ValidationError({"send_at": [_("Запланувати можна щонайбільше на рік уперед.")]})
+    return when
+
+
+def schedule_message(user, mailbox, data: dict, attachments: list, send_at) -> dict:
+    """Збирає лист зараз (перевірки, санітизація, вкладення) і зберігає зашифрованим до send_at."""
+    import json
+
+    from apps.core.crypto import encrypt_str
+
+    from .models import ConfidentialMessage, ScheduledMessage
+
+    pending = ScheduledMessage.objects.filter(user=user, status=ScheduledMessage.Status.PENDING).count()
+    if pending >= MAX_SCHEDULED_PER_USER:
+        raise ValidationError({"send_at": [_("Забагато запланованих листів (максимум %(n)s).") % {"n": MAX_SCHEDULED_PER_USER}]})
+    msg, recipients, extra = build_message(user, mailbox, data, attachments)
+    conf = extra.get("confidential")
+    if conf:
+        # Термін доступу рахується від моменту фактичного надсилання
+        record = ConfidentialMessage.objects.get(pk=conf["id"])
+        record.expires_at += send_at - timezone.now()
+        record.save(update_fields=["expires_at"])
+        conf["expires_at"] = record.expires_at.isoformat()
+    meta = {
+        "to": str(msg["To"] or msg["Cc"] or ""),
+        "subject": str(msg["Subject"] or ""),
+        "recipients": recipients,
+        "reply_uid": data.get("in_reply_to_uid") or None,
+        "reply_folder": data.get("in_reply_to_folder") or None,
+        "confidential_id": conf["id"] if conf else None,
+    }
+    item = ScheduledMessage.objects.create(
+        user=user,
+        mailbox=mailbox,
+        send_at=send_at,
+        payload_encrypted=encrypt_str(base64.b64encode(msg.as_bytes()).decode()),
+        meta_encrypted=encrypt_str(json.dumps(meta)),
+    )
+    result = {"message_id": str(msg["Message-ID"]), "scheduled": {"id": str(item.pk), "send_at": send_at.isoformat()}}
+    if conf:
+        result["confidential"] = conf
+    return result
+
+
+def scheduled_meta(item) -> dict:
+    import json
+
+    from apps.core.crypto import decrypt_str
+
+    try:
+        return json.loads(decrypt_str(item.meta_encrypted)) if item.meta_encrypted else {}
+    except Exception:
+        return {}
+
+
+def deliver_scheduled(item) -> None:
+    """Надсилає запланований лист (виклик із Celery). Дата листа — момент фактичного надсилання."""
+    from email.utils import format_datetime
+
+    from apps.core.crypto import decrypt_str
+
+    if not item.mailbox.active:
+        raise MailUnavailable(_("Скриньку вимкнено."))
+    meta = scheduled_meta(item)
+    msg = email.message_from_bytes(base64.b64decode(decrypt_str(item.payload_encrypted)), policy=default_policy)
+    del msg["Date"]
+    msg["Date"] = format_datetime(timezone.now())
+    _deliver(item.mailbox, msg.as_bytes(), meta.get("recipients") or [], meta.get("reply_uid"), meta.get("reply_folder"))
+
+
+def cancel_scheduled(item) -> None:
+    from .models import ConfidentialMessage, ScheduledMessage
+
+    meta = scheduled_meta(item)
+    if meta.get("confidential_id"):
+        ConfidentialMessage.objects.filter(pk=meta["confidential_id"]).delete()
+    item.status = ScheduledMessage.Status.CANCELLED
+    item.payload_encrypted = ""
+    item.save(update_fields=["status", "payload_encrypted"])
+
+
+# ─────────────────────── Чернетки ───────────────────────
+
+APPENDUID_RE = re.compile(rb"APPENDUID \d+ (\d+)")
+
+
+class MemoryUpload:
+    """Вкладення, взяте з чернетки (той самий інтерфейс, що й у завантаженого файлу)."""
+
+    def __init__(self, name: str, content_type: str, data: bytes):
+        self.name, self.content_type, self.data, self.size = name, content_type, data, len(data)
+
+    def read(self) -> bytes:
+        return self.data
+
+
+def _drafts(conn) -> str:
+    return _special_folder(conn, "\\Drafts", "Drafts")
+
+
+def _expunge(conn, uid: str) -> None:
+    conn.uid("STORE", uid, "+FLAGS", "(\\Deleted)")
+    conn.uid("EXPUNGE", uid)
+
+
+def _fetch_draft(conn, uid) -> "EmailMessage":
+    folder = _drafts(conn)
+    _select(conn, folder)
+    raw = _fetch_raw(conn, _check_uid(uid))
+    return email.message_from_bytes(raw, policy=default_policy)
+
+
+def draft_attachments(mailbox, uid, keep) -> list[MemoryUpload]:
+    """Вкладення попередньої версії чернетки, які користувач залишив (за індексами частин)."""
+    wanted = set()
+    for value in keep or []:
+        try:
+            wanted.add(int(value))
+        except (TypeError, ValueError):
+            continue
+    if not uid or not wanted:
+        return []
+    with imap_session(mailbox.address) as conn:
+        msg = _fetch_draft(conn, uid)
+    result = []
+    for index, part in enumerate(msg.walk()):
+        if index in wanted and not part.is_multipart():
+            data = part.get_payload(decode=True) or b""
+            result.append(MemoryUpload(part.get_filename() or f"attachment-{index}", part.get_content_type(), data))
+    return result
+
+
+def save_draft(user, mailbox, data: dict, attachments: list, replace_uid=None) -> dict:
+    """Зберігає чернетку в теку «Чернетки» (як Gmail/Thunderbird) і прибирає попередню версію."""
+    msg, _rcpts, _extra = build_message(user, mailbox, data, attachments, draft=True)
+    raw = msg.as_bytes()
+    with imap_session(mailbox.address) as conn:
+        folder = _drafts(conn)
+        typ, resp = conn.append(quote(folder), "(\\Draft \\Seen)", imaplib.Time2Internaldate(timezone.now()), raw)
+        if typ != "OK":
+            raise MailUnavailable()
+        match = APPENDUID_RE.search(b" ".join(r for r in resp or [] if isinstance(r, bytes)))
+        uid = int(match.group(1)) if match else None
+        _select(conn, folder, readonly=False)
+        if uid is None:
+            typ, found = conn.uid("SEARCH", None, "HEADER", "Message-ID", f'"{msg["Message-ID"]}"')
+            ids = (found[0] or b"").split() if typ == "OK" and found else []
+            uid = int(ids[-1]) if ids else None
+        if replace_uid and str(replace_uid) != str(uid):
+            try:
+                _expunge(conn, _check_uid(replace_uid))
+            except Exception:
+                pass
+    return {"uid": uid, "attachments": _attachments(msg)}
+
+
+def load_draft(mailbox, uid) -> dict:
+    from .sanitize import sanitize_outgoing_html
+
+    with imap_session(mailbox.address) as conn:
+        msg = _fetch_draft(conn, uid)
+    html_part = msg.get_body(preferencelist=("html",))
+    text_part = msg.get_body(preferencelist=("plain",))
+    if html_part is not None:
+        html = html_part.get_content()
+        for cid, data_uri in _inline_images(msg).items():
+            html = html.replace(f"cid:{cid}", data_uri)
+        html = sanitize_outgoing_html(html)
+    else:
+        text = text_part.get_content() if text_part is not None else ""
+        html = "<p>" + escape_html(text).replace("\n", "<br>") + "</p>"
+    return {
+        "uid": int(_check_uid(uid)),
+        "to": _decode_header(msg["To"]),
+        "cc": _decode_header(msg["Cc"]),
+        "bcc": _decode_header(msg["Bcc"]),
+        "subject": _decode_header(msg["Subject"]),
+        "in_reply_to": str(msg["In-Reply-To"] or ""),
+        "references": str(msg["References"] or ""),
+        "html": html,
+        "attachments": _attachments(msg),
+    }
+
+
+def delete_draft(mailbox, uid) -> None:
+    with imap_session(mailbox.address) as conn:
+        folder = _drafts(conn)
+        _select(conn, folder, readonly=False)
+        _expunge(conn, _check_uid(uid))

@@ -10,6 +10,8 @@ from django.middleware.csrf import get_token
 from django.utils import timezone
 from django.views.decorators.csrf import ensure_csrf_cookie
 from django.utils.decorators import method_decorator
+from django.utils.translation import gettext as _
+from django.utils.translation import gettext_lazy, gettext_noop
 from rest_framework import generics, mixins, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied, ValidationError
@@ -46,7 +48,7 @@ from .serializers import (
 PRE2FA_KEY = "pre2fa"
 PRE2FA_TTL = 300
 PRE2FA_MAX_ATTEMPTS = 5
-GENERIC_LOGIN_ERROR = "Невірний логін або пароль."
+GENERIC_LOGIN_ERROR = gettext_lazy("Невірний логін або пароль.")
 
 
 # ─── Лічильник невдалих 2FA на акаунт ───
@@ -75,11 +77,15 @@ def _mfa_register_failure(request, user) -> None:
         notify(
             user,
             "security",
-            "Хтось підбирає код 2FA до вашого акаунта",
-            "Пароль введено правильно, але код — ні. Вхід тимчасово заблоковано. Змініть пароль.",
+            gettext_noop("Хтось підбирає код 2FA до вашого акаунта"),
+            gettext_noop("Пароль введено правильно, але код — ні. Вхід тимчасово заблоковано. Змініть пароль."),
             "/settings/security",
         )
-        alert_staff("Підбір 2FA", f"Акаунт {user.username}: {count} невдалих кодів за годину.")
+        alert_staff(
+            gettext_noop("Підбір 2FA"),
+            gettext_noop("Акаунт %(username)s: %(count)s невдалих кодів за годину."),
+            params={"username": user.username, "count": count},
+        )
 
 
 def _resolve_username(login_value: str) -> str:
@@ -99,7 +105,14 @@ def _complete_login(request, user, method: str):
     known_ip = AuditLog.objects.filter(user=user, action="login.success", ip_address=ip).exists()
     audit(request, "login.success", user=user, method=method)
     if not known_ip and ip:
-        notify(user, "security", "Новий вхід в акаунт", f"Вхід з IP {ip}. Якщо це не ви — змініть пароль.", "/settings/security")
+        notify(
+            user,
+            "security",
+            gettext_noop("Новий вхід в акаунт"),
+            gettext_noop("Вхід з IP %(ip)s. Якщо це не ви — змініть пароль."),
+            "/settings/security",
+            params={"ip": ip},
+        )
 
 
 def _require_password(request, password: str):
@@ -107,11 +120,11 @@ def _require_password(request, password: str):
     user = request.user
     ip = client_ip(request)
     if lockout.is_locked(user.username, ip):
-        raise PermissionDenied("Забагато невдалих спроб. Спробуйте пізніше.")
+        raise PermissionDenied(_("Забагато невдалих спроб. Спробуйте пізніше."))
     if not user.check_password(password):
         lockout.register_failure(user.username, ip)
         audit(request, "reauth.failed")
-        raise ValidationError({"password": ["Невірний пароль."]})
+        raise ValidationError({"password": [_("Невірний пароль.")]})
     request.session["auth_at"] = int(time.time())
 
 
@@ -155,7 +168,7 @@ class LoginView(APIView):
         if lockout.is_locked(login_value, ip):
             audit(request, "login.locked", target=login_value)
             return Response(
-                {"detail": "Забагато невдалих спроб. Спробуйте через 15 хвилин."},
+                {"detail": _("Забагато невдалих спроб. Спробуйте через 15 хвилин.")},
                 status=status.HTTP_429_TOO_MANY_REQUESTS,
             )
 
@@ -172,7 +185,7 @@ class LoginView(APIView):
             if _mfa_locked(user):
                 audit(request, "login.2fa_locked", user=user)
                 return Response(
-                    {"detail": "Забагато невдалих кодів. Спробуйте пізніше."},
+                    {"detail": _("Забагато невдалих кодів. Спробуйте пізніше.")},
                     status=status.HTTP_429_TOO_MANY_REQUESTS,
                 )
             request.session.cycle_key()
@@ -193,10 +206,10 @@ class LoginTwoFactorView(APIView):
         pending = request.session.get(PRE2FA_KEY)
         if not pending or time.time() - pending["ts"] > PRE2FA_TTL:
             request.session.pop(PRE2FA_KEY, None)
-            return Response({"detail": "Сесія входу завершилась. Увійдіть знову."}, status=400)
+            return Response({"detail": _("Сесія входу завершилась. Увійдіть знову.")}, status=400)
         if pending["attempts"] >= PRE2FA_MAX_ATTEMPTS:
             request.session.pop(PRE2FA_KEY, None)
-            return Response({"detail": "Забагато спроб. Увійдіть знову."}, status=429)
+            return Response({"detail": _("Забагато спроб. Увійдіть знову.")}, status=429)
 
         ser = TwoFactorSerializer(data=request.data)
         ser.is_valid(raise_exception=True)
@@ -207,7 +220,7 @@ class LoginTwoFactorView(APIView):
 
         if _mfa_locked(user):
             request.session.pop(PRE2FA_KEY, None)
-            return Response({"detail": "Забагато невдалих кодів. Спробуйте пізніше."}, status=429)
+            return Response({"detail": _("Забагато невдалих кодів. Спробуйте пізніше.")}, status=429)
 
         method = twofactor.verify_second_factor(user, ser.validated_data["code"])
         if method is None:
@@ -215,7 +228,7 @@ class LoginTwoFactorView(APIView):
             request.session[PRE2FA_KEY] = pending
             audit(request, "login.2fa_failed", user=user)
             _mfa_register_failure(request, user)
-            return Response({"detail": "Невірний код."}, status=400)
+            return Response({"detail": _("Невірний код.")}, status=400)
 
         cache.delete(_mfa_fail_key(user))
         request.session.pop(PRE2FA_KEY, None)
@@ -252,11 +265,11 @@ class RegisterView(APIView):
         if token:
             invite = Invite.objects.filter(token_hash=Invite.hash_token(token)).first()
             if invite is None or not invite.is_valid:
-                raise ValidationError({"invite": ["Запрошення недійсне або прострочене."]})
+                raise ValidationError({"invite": [_("Запрошення недійсне або прострочене.")]})
             if invite.email and invite.email != data["email"]:
-                raise ValidationError({"invite": ["Запрошення видане на іншу адресу."]})
+                raise ValidationError({"invite": [_("Запрошення видане на іншу адресу.")]})
         elif not settings.REGISTRATION_OPEN:
-            raise PermissionDenied("Реєстрація можлива лише за запрошенням.")
+            raise PermissionDenied(_("Реєстрація можлива лише за запрошенням."))
 
         with transaction.atomic():
             extra = {}
@@ -268,7 +281,7 @@ class RegisterView(APIView):
                     used_at=timezone.now(), used_by=user
                 )
                 if updated != 1:
-                    raise ValidationError({"invite": ["Запрошення вже використано."]})
+                    raise ValidationError({"invite": [_("Запрошення вже використано.")]})
         audit(request, "user.registered", user=user, invite=bool(invite))
         return Response({"status": "ok"}, status=201)
 
@@ -323,7 +336,7 @@ class TotpSetupView(APIView):
         ser.is_valid(raise_exception=True)
         _require_password(request, ser.validated_data["password"])
         if request.user.has_2fa:
-            raise ValidationError({"detail": "2FA вже увімкнено. Спочатку вимкніть її."})
+            raise ValidationError({"detail": _("2FA вже увімкнено. Спочатку вимкніть її.")})
         secret, uri, qr = twofactor.start_totp_setup(request.user)
         audit(request, "2fa.setup_started")
         return Response({"secret": secret, "otpauth_uri": uri, "qr_svg": qr})
@@ -336,7 +349,7 @@ class TotpConfirmView(APIView):
         user = User.objects.select_related("totp_device").get(pk=request.user.pk)
         codes = twofactor.confirm_totp(user, ser.validated_data["code"])
         if codes is None:
-            raise ValidationError({"code": ["Невірний код. Перевірте час на телефоні."]})
+            raise ValidationError({"code": [_("Невірний код. Перевірте час на телефоні.")]})
         request.session["mfa"] = True
         _revoke_other_sessions(request)
         audit(request, "2fa.enabled")
@@ -349,11 +362,11 @@ class TwoFactorDisableView(APIView):
         ser.is_valid(raise_exception=True)
         _require_password(request, ser.validated_data["password"])
         if twofactor.verify_second_factor(request.user, ser.validated_data["code"]) is None:
-            raise ValidationError({"code": ["Невірний код."]})
+            raise ValidationError({"code": [_("Невірний код.")]})
         twofactor.disable_2fa(request.user)
         request.session["mfa"] = False
         audit(request, "2fa.disabled")
-        notify(request.user, "security", "Двофакторну автентифікацію вимкнено")
+        notify(request.user, "security", gettext_noop("Двофакторну автентифікацію вимкнено"))
         return Response({"status": "ok"})
 
 
@@ -363,7 +376,7 @@ class BackupCodesView(APIView):
         ser.is_valid(raise_exception=True)
         _require_password(request, ser.validated_data["password"])
         if not request.user.has_2fa:
-            raise ValidationError({"detail": "Спочатку увімкніть 2FA."})
+            raise ValidationError({"detail": _("Спочатку увімкніть 2FA.")})
         codes = twofactor.regenerate_backup_codes(request.user)
         audit(request, "2fa.backup_codes_regenerated")
         return Response({"backup_codes": codes})
@@ -399,7 +412,7 @@ class SessionsViewSet(viewsets.GenericViewSet, mixins.ListModelMixin):
     def destroy(self, request, pk=None):
         public_id = (pk or "").lower()
         if len(public_id) != 20:
-            raise ValidationError({"detail": "Невірний ідентифікатор."})
+            raise ValidationError({"detail": _("Невірний ідентифікатор.")})
         matches = [s for s in self.get_queryset() if session_public_id(s.session_key) == public_id]
         if len(matches) != 1:
             return Response(status=404)
@@ -473,15 +486,15 @@ class AdminUserViewSet(
         if me.is_superuser or target == me:
             return
         if target.is_staff or target.is_superuser:
-            raise PermissionDenied("Керувати адміністраторами може лише суперкористувач.")
+            raise PermissionDenied(_("Керувати адміністраторами може лише суперкористувач."))
 
     def perform_update(self, serializer):
         target = serializer.instance
         self._check_target(target)
         if target == self.request.user and serializer.validated_data.get("is_active") is False:
-            raise ValidationError({"is_active": ["Не можна деактивувати себе."]})
+            raise ValidationError({"is_active": [_("Не можна деактивувати себе.")]})
         if "is_staff" in serializer.validated_data and not self.request.user.is_superuser:
-            raise PermissionDenied("Лише суперкористувач може змінювати права адміністратора.")
+            raise PermissionDenied(_("Лише суперкористувач може змінювати права адміністратора."))
         user = serializer.save()
         if user.is_active is False:
             _revoke_all_sessions(user)
@@ -496,7 +509,7 @@ class AdminUserViewSet(
             extra["quota_bytes"] = int(d["quota_gb"] * 1024**3)
         if d.get("is_staff"):
             if not request.user.is_superuser:
-                raise PermissionDenied("Лише суперкористувач може створювати адміністраторів.")
+                raise PermissionDenied(_("Лише суперкористувач може створювати адміністраторів."))
             extra["is_staff"] = True
         user = User.objects.create_user(d["username"], d["email"], d["password"], **extra)
         audit(request, "admin.user_created", target=user.username)
@@ -506,13 +519,18 @@ class AdminUserViewSet(
     def reset_2fa(self, request, pk=None):
         user = self.get_object()
         if user == request.user:
-            raise ValidationError({"detail": "Використайте власні налаштування безпеки."})
+            raise ValidationError({"detail": _("Використайте власні налаштування безпеки.")})
         self._check_target(user)
         twofactor.disable_2fa(user)
         # Скидання 2FA зазвичай означає втрату телефону — завершуємо всі сесії користувача
         _revoke_all_sessions(user)
         audit(request, "admin.2fa_reset", target=user.username)
-        notify(user, "security", "Адміністратор скинув вашу 2FA", "Увімкніть її знову в налаштуваннях безпеки.")
+        notify(
+            user,
+            "security",
+            gettext_noop("Адміністратор скинув вашу 2FA"),
+            gettext_noop("Увімкніть її знову в налаштуваннях безпеки."),
+        )
         return Response({"status": "ok"})
 
     @action(detail=False, methods=["get"])

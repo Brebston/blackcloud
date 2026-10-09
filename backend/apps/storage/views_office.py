@@ -4,6 +4,7 @@ import logging
 from django.conf import settings
 from django.core import signing
 from django.http import JsonResponse
+from django.utils.translation import gettext as _
 from rest_framework.exceptions import NotFound, ValidationError
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
@@ -30,7 +31,7 @@ def _internal_only(request):
 
 def _enabled():
     if not settings.OFFICE_ENABLED or not settings.OFFICE_JWT_SECRET:
-        raise NotFound("Онлайн-редактор вимкнено.")
+        raise NotFound(_("Онлайн-редактор вимкнено."))
 
 
 class OfficeConfigView(APIView):
@@ -40,11 +41,11 @@ class OfficeConfigView(APIView):
         _enabled()
         f = services.get_readable_file(request.user, pk)
         if f.deleted_at is not None:
-            raise NotFound("Файл у кошику.")
+            raise NotFound(_("Файл у кошику."))
         if office.document_type(f.extension) is None:
-            raise ValidationError({"detail": "Цей формат не відкривається в редакторі."})
+            raise ValidationError({"detail": _("Цей формат не відкривається в редакторі.")})
         if not f.is_downloadable:
-            raise ValidationError({"detail": "Файл ще перевіряється антивірусом або заблокований."})
+            raise ValidationError({"detail": _("Файл ще перевіряється антивірусом або заблокований.")})
         can_edit = (
             f.owner_id == request.user.pk
             and f.extension in office.EDITABLE

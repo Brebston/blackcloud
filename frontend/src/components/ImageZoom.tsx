@@ -1,4 +1,5 @@
 import { PointerEvent as RPointerEvent, useEffect, useRef, useState } from "react";
+import { useT } from "../i18n";
 import Icon from "./Icon";
 
 const MIN = 1;
@@ -15,6 +16,7 @@ const INITIAL: View = { scale: 1, x: 0, y: 0, rotate: 0 };
 
 /** Перегляд зображення з масштабуванням: колесо/тачпад, pinch на телефоні, перетягування, подвійний клік. */
 export default function ImageZoom({ src, alt }: { src: string; alt: string }) {
+  const t = useT();
   const [view, setView] = useState<View>(INITIAL);
   const box = useRef<HTMLDivElement>(null);
   const pointers = useRef(new Map<number, { x: number; y: number }>());
@@ -115,16 +117,16 @@ export default function ImageZoom({ src, alt }: { src: string; alt: string }) {
         />
       </div>
       <div className="zoom-controls">
-        <button className="icon-btn" onClick={() => zoomCenter(0.8)} aria-label="Зменшити" title="Зменшити (−)">
+        <button className="icon-btn" onClick={() => zoomCenter(0.8)} aria-label={t("files.zoom.out")} title={t("files.zoom.outKey")}>
           −
         </button>
-        <button className="zoom-level" onClick={() => setView(INITIAL)} title="Вписати (0)">
+        <button className="zoom-level" onClick={() => setView(INITIAL)} title={t("files.zoom.fit")}>
           {Math.round(view.scale * 100)}%
         </button>
-        <button className="icon-btn" onClick={() => zoomCenter(1.25)} aria-label="Збільшити" title="Збільшити (+)">
+        <button className="icon-btn" onClick={() => zoomCenter(1.25)} aria-label={t("files.zoom.in")} title={t("files.zoom.inKey")}>
           +
         </button>
-        <button className="icon-btn" onClick={() => setView((v) => ({ ...v, rotate: (v.rotate + 90) % 360 }))} aria-label="Повернути" title="Повернути">
+        <button className="icon-btn" onClick={() => setView((v) => ({ ...v, rotate: (v.rotate + 90) % 360 }))} aria-label={t("files.zoom.rotate")} title={t("files.zoom.rotate")}>
           <Icon name="refresh" size={16} />
         </button>
       </div>

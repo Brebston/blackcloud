@@ -3,6 +3,7 @@ import uuid
 from django.conf import settings
 from django.http import HttpResponse
 from django.utils import timezone
+from django.utils.translation import gettext as _
 from django.contrib.auth.hashers import check_password
 from django.core.cache import cache
 from django.db.models import F
@@ -21,7 +22,7 @@ from apps.core.tickets import issue_ticket, peek_ticket
 from apps.storage.services import content_disposition
 
 from . import imap
-from .models import ConfidentialMessage, Mailbox, Signature
+from .models import ConfidentialMessage, Mailbox, Signature, ScheduledMessage
 from .passwords import dovecot_hash, generate_client_password
 
 
@@ -39,7 +40,7 @@ def _mailbox(request) -> Mailbox:
     else:
         mb = qs.order_by("created_at").first()
     if mb is None:
-        raise NotFound("Поштову скриньку не знайдено. Зверніться до адміністратора.")
+        raise NotFound(_("Поштову скриньку не знайдено. Зверніться до адміністратора."))
     return mb
 
 
@@ -50,7 +51,7 @@ def _mailbox_info(mb: Mailbox) -> dict:
 def _folder(request) -> str:
     folder = request.query_params.get("folder") or "INBOX"
     if len(folder) > 200:
-        raise ValidationError({"folder": ["Задовга назва теки."]})
+        raise ValidationError({"folder": [_("Задовга назва теки.")]})
     return folder
 
 
@@ -175,25 +176,120 @@ class AttachmentView(APIView):
         return response
 
 
+def _list_param(data, name: str) -> list:
+    if hasattr(data, "getlist"):
+        values = data.getlist(name)
+    else:
+        values = data.get(name) or []
+    if isinstance(values, str):
+        values = [values]
+    return [v for v in values if str(v).strip() != ""][:20]
+
+
+def _uploads(request, mb) -> list:
+    """Нові вкладення + вкладення, залишені з попередньої версії чернетки."""
+    attachments = list(request.FILES.getlist("attachments")) if hasattr(request, "FILES") else []
+    attachments += imap.draft_attachments(mb, request.data.get("draft_uid"), _list_param(request.data, "keep_attachments"))
+    if len(attachments) > 20:
+        raise ValidationError({"attachments": [_("Максимум %(n)s вкладень.") % {"n": 20}]})
+    return attachments
+
+
 class SendView(APIView):
+    """Надсилання зараз або в заданий час (send_at). Якщо лист писався як чернетка — вона прибирається."""
+
     parser_classes = [MultiPartParser, JSONParser]
     throttle_classes = [ScopedRateThrottle]
     throttle_scope = "mail_send"
 
     def post(self, request):
         mb = _mailbox(request)
-        attachments = request.FILES.getlist("attachments") if hasattr(request, "FILES") else []
-        if len(attachments) > 20:
-            raise ValidationError({"attachments": ["Максимум 20 вкладень."]})
-        result = imap.send_message(request.user, mb, request.data, attachments)
+        attachments = _uploads(request, mb)
+        send_at = request.data.get("send_at")
+        if send_at:
+            when = imap.parse_send_at(send_at)
+            result = imap.schedule_message(request.user, mb, request.data, attachments, when)
+        else:
+            result = imap.send_message(request.user, mb, request.data, attachments)
+        draft_uid = request.data.get("draft_uid")
+        if draft_uid:
+            try:
+                imap.delete_draft(mb, draft_uid)
+            except Exception:
+                pass  # лист уже надіслано; зайва чернетка не критична
         audit(
             request,
-            "mail.sent",
+            "mail.scheduled" if send_at else "mail.sent",
             mailbox=mb.address,
             recipients=len((request.data.get("to") or "").split(",")),
             confidential="confidential" in result,
         )
         return Response(result, status=201)
+
+
+# ═══════════════════════════ Чернетки ═══════════════════════════
+
+
+class DraftsView(APIView):
+    """Автозбереження: нова версія чернетки замінює попередню (draft_uid)."""
+
+    parser_classes = [MultiPartParser, JSONParser]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "mail_draft"
+
+    def post(self, request):
+        mb = _mailbox(request)
+        attachments = _uploads(request, mb)
+        return Response(imap.save_draft(request.user, mb, request.data, attachments, request.data.get("draft_uid")), status=201)
+
+
+class DraftDetailView(APIView):
+    def get(self, request, uid):
+        return Response(imap.load_draft(_mailbox(request), uid))
+
+    def delete(self, request, uid):
+        imap.delete_draft(_mailbox(request), uid)
+        return Response(status=204)
+
+
+# ═══════════════════════════ Заплановані ═══════════════════════════
+
+
+class ScheduledListView(APIView):
+    def get(self, request):
+        mb = _mailbox(request)
+        items = ScheduledMessage.objects.filter(
+            user=request.user,
+            mailbox=mb,
+            status__in=[ScheduledMessage.Status.PENDING, ScheduledMessage.Status.SENDING, ScheduledMessage.Status.FAILED],
+        ).order_by("send_at")[:200]
+        result = []
+        for item in items:
+            meta = imap.scheduled_meta(item)
+            result.append(
+                {
+                    "id": str(item.pk),
+                    "send_at": item.send_at,
+                    "status": item.status,
+                    "to": meta.get("to", ""),
+                    "subject": meta.get("subject", ""),
+                    "confidential": bool(meta.get("confidential_id")),
+                    "created_at": item.created_at,
+                }
+            )
+        return Response(result)
+
+
+class ScheduledCancelView(APIView):
+    def post(self, request, pk):
+        item = ScheduledMessage.objects.filter(
+            pk=pk, user=request.user, status__in=[ScheduledMessage.Status.PENDING, ScheduledMessage.Status.FAILED]
+        ).first()
+        if item is None:
+            raise NotFound(_("Запланований лист не знайдено або його вже надіслано."))
+        imap.cancel_scheduled(item)
+        audit(request, "mail.schedule_cancelled")
+        return Response({"status": "cancelled"})
 
 
 # ═══════════════════════════ Підписи ═══════════════════════════
@@ -211,7 +307,7 @@ class SignatureSerializer(serializers.ModelSerializer):
         from .sanitize import sanitize_outgoing_html
 
         if len(value) > 200_000:
-            raise serializers.ValidationError("Підпис завеликий (максимум ~200 КБ разом із зображеннями).")
+            raise serializers.ValidationError(_("Підпис завеликий (максимум ~200 КБ разом із зображеннями)."))
         return sanitize_outgoing_html(value)
 
 
@@ -226,7 +322,7 @@ class SignaturesView(APIView):
 
     def post(self, request):
         if Signature.objects.filter(user=request.user).count() >= MAX_SIGNATURES:
-            raise ValidationError({"detail": f"Максимум {MAX_SIGNATURES} підписів."})
+            raise ValidationError({"detail": _("Максимум %(n)s підписів.") % {"n": MAX_SIGNATURES}})
         ser = SignatureSerializer(data=request.data)
         ser.is_valid(raise_exception=True)
         sig = ser.save(user=request.user)
@@ -294,10 +390,10 @@ def _confidential_by_token(token) -> ConfidentialMessage:
     from .confidential import hash_token
 
     if not isinstance(token, str) or not token or len(token) > 100:
-        raise NotFound("Лист недоступний.")
+        raise NotFound(_("Лист недоступний."))
     msg = ConfidentialMessage.objects.filter(token_hash=hash_token(token)).first()
     if msg is None or not msg.is_active:
-        raise NotFound("Лист недоступний: термін дії минув або відправник відкликав доступ.")
+        raise NotFound(_("Лист недоступний: термін дії минув або відправник відкликав доступ."))
     return msg
 
 
@@ -314,14 +410,14 @@ class PublicConfidentialView(APIView):
         if msg.passcode_hash:
             key = f"conf-fail:{msg.pk}"
             if (cache.get(key) or 0) >= 10:
-                return Response({"detail": "Забагато невдалих спроб. Спробуйте пізніше."}, status=429)
+                return Response({"detail": _("Забагато невдалих спроб. Спробуйте пізніше.")}, status=429)
             passcode = str(request.data.get("passcode") or "")
             if not passcode:
                 return Response({"requires_passcode": True, "subject": "", "from": msg.from_address})
             if not check_password(passcode, msg.passcode_hash):
                 if not cache.add(key, 1, 3600):
                     cache.incr(key)
-                return Response({"detail": "Невірний код доступу."}, status=403)
+                return Response({"detail": _("Невірний код доступу.")}, status=403)
         ConfidentialMessage.objects.filter(pk=msg.pk).update(view_count=F("view_count") + 1)
         ticket = issue_ticket("conf-render", {"id": str(msg.pk)}, 300)
         return Response(

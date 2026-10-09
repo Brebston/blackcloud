@@ -1,6 +1,7 @@
 from datetime import date, datetime, time, timedelta
 
 from django.utils import timezone
+from django.utils.translation import gettext
 from icalendar import Calendar as ICal
 from icalendar import Event as IEvent
 from icalendar import vRecur
@@ -77,7 +78,7 @@ def import_ics(calendar, data: bytes, user) -> int:
                     recurring_left -= 1
             uid = str(comp.get("uid", ""))[:255]
             defaults = {
-                "title": str(comp.get("summary", "Без назви"))[:200],
+                "title": str(comp.get("summary", gettext("Без назви")))[:200],
                 "description": str(comp.get("description", ""))[:10000],
                 "location": str(comp.get("location", ""))[:300],
                 "start": start,

@@ -751,7 +751,6 @@ button.user-chip:hover { background: var(--surface-2); }
   overflow-wrap: anywhere;
 }
 .rte-compact .rte-area { min-height: 120px; }
-.rte-area:empty::before { content: attr(data-placeholder); color: var(--text-3); }
 .rte-area img { max-width: 100%; height: auto; }
 .rte-area blockquote, .sig-preview blockquote { margin: 6px 0; padding-left: 10px; border-left: 3px solid var(--border-strong); color: var(--text-2); }
 .rte-area a, .sig-preview a { color: var(--accent); }
@@ -769,3 +768,32 @@ button.user-chip:hover { background: var(--surface-2); }
 .conf-card { width: 100%; max-width: 900px; padding: 20px; }
 .conf-card .auth-brand { justify-content: flex-start; margin-bottom: 12px; }
 .conf-card .mail-frame { min-height: 60vh; }
+
+/* ===== TipTap / ProseMirror (injectCSS вимкнено через CSP — базові стилі тут) ===== */
+.ProseMirror { position: relative; word-wrap: break-word; white-space: pre-wrap; white-space: break-spaces; font-variant-ligatures: none; font-feature-settings: "liga" 0; }
+.ProseMirror [contenteditable="false"] { white-space: normal; }
+.ProseMirror pre { white-space: pre-wrap; }
+.ProseMirror img.ProseMirror-selectednode { outline: 2px solid var(--accent); }
+.ProseMirror-hideselection *::selection { background: transparent; }
+.ProseMirror-hideselection { caret-color: transparent; }
+.ProseMirror-gapcursor { display: none; pointer-events: none; position: absolute; }
+.ProseMirror-gapcursor:after { content: ""; display: block; position: absolute; top: -2px; width: 20px; border-top: 1px solid var(--text); animation: pm-cursor-blink 1.1s steps(2, start) infinite; }
+@keyframes pm-cursor-blink { to { visibility: hidden; } }
+.ProseMirror-focused .ProseMirror-gapcursor { display: block; }
+.rte-area p { margin: 0 0 4px; }
+.rte-area p.is-editor-empty:first-child::before { content: attr(data-placeholder); float: left; height: 0; color: var(--text-3); pointer-events: none; }
+.rte-area table, .sig-preview table { border-collapse: collapse; margin: 6px 0; min-width: 50%; }
+.rte-area td, .rte-area th, .sig-preview td, .sig-preview th { border: 1px solid var(--border-strong); padding: 4px 8px; vertical-align: top; min-width: 40px; }
+.rte-area .selectedCell { background: var(--accent-bg); }
+.rte-area .tableWrapper { overflow-x: auto; }
+.rte-area .bc-quote { color: var(--text-2); }
+.rte-select { max-width: 130px; }
+.rte-btn:disabled { opacity: 0.35; cursor: default; background: transparent; }
+.rte-color-btn { display: inline-flex; flex-direction: column; align-items: center; line-height: 1; font-weight: 600; }
+.rte-color-bar { width: 14px; height: 3px; border-radius: 2px; margin-top: 2px; }
+.rte-colorbar, .rte-tablebar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 6px; border-bottom: 1px solid var(--border); }
+.rte-tablebar .rte-btn { font-size: 12px; padding: 0 8px; }
+.rte-swatch { width: 22px; height: 22px; border-radius: 4px; border: 1px solid var(--border-strong); cursor: pointer; padding: 0; }
+.rte-swatch.active { outline: 2px solid var(--accent); outline-offset: 1px; }
+.draft-state { white-space: nowrap; }
+.schedule-panel input[type="datetime-local"] { width: auto; }

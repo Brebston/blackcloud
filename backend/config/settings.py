@@ -66,6 +66,8 @@ MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
     "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
+    # Мова відповіді — з Accept-Language (SPA надсилає поточну мову інтерфейсу); лише uk/en
+    "django.middleware.locale.LocaleMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
@@ -155,6 +157,7 @@ CELERY_BEAT_SCHEDULE = {
     "event-reminders": {"task": "apps.calendars.tasks.send_due_reminders", "schedule": timedelta(minutes=1)},
     "cleanup-sessions": {"task": "apps.accounts.tasks.cleanup_sessions", "schedule": timedelta(hours=12)},
     "purge-old-audit": {"task": "apps.core.tasks.purge_old_audit", "schedule": timedelta(days=1)},
+    "send-scheduled-mail": {"task": "apps.mail.tasks.send_scheduled_mail", "schedule": timedelta(minutes=1)},
     "purge-expired-confidential": {
         "task": "apps.mail.tasks.purge_expired_confidential",
         "schedule": timedelta(hours=1),
@@ -252,6 +255,8 @@ REST_FRAMEWORK = {
         "public_link": "60/min",
         "chat_send": "120/min",
         "mail_send": "30/hour",
+        # автозбереження чернетки — раз на кілька секунд під час набору
+        "mail_draft": "600/hour",
         "user_search": "60/min",
     },
     "EXCEPTION_HANDLER": "apps.core.exceptions.exception_handler",
@@ -329,6 +334,10 @@ MAIL_MAX_ATTACHMENTS_BYTES = 15 * 1024 * 1024
 
 # ─── Інтернаціоналізація ───────────────────────────────────────
 LANGUAGE_CODE = env("LANGUAGE_CODE", "uk")
+# Рядки в коді — українською (msgid); англійський переклад — locale/en/LC_MESSAGES/django.po
+# (оновлення: python scripts/i18n.py extract && python scripts/i18n.py compile)
+LANGUAGES = [("uk", "Українська"), ("en", "English")]
+LOCALE_PATHS = [BASE_DIR / "locale"]
 TIME_ZONE = env("TIME_ZONE", "Europe/Kyiv")
 USE_I18N = True
 USE_TZ = True

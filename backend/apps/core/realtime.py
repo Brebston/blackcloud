@@ -50,17 +50,24 @@ def close_session_sockets(session_keys) -> None:
             _close(session_group(key))
 
 
-def alert_staff(title: str, body: str = "") -> None:
-    """Сповіщення всім адміністраторам про підозрілу активність."""
+def alert_staff(title: str, body: str = "", params: dict | None = None) -> None:
+    """Сповіщення всім адміністраторам про підозрілу активність (шаблони — як у notify)."""
     from django.contrib.auth import get_user_model
 
     for admin_user in get_user_model().objects.filter(is_staff=True, is_active=True):
-        notify(admin_user, "security", title, body, "/admin")
+        notify(admin_user, "security", title, body, "/admin", params=params)
 
 
-def notify(user, kind: str, title: str, body: str = "", link: str = ""):
+def notify(user, kind: str, title: str, body: str = "", link: str = "", params: dict | None = None):
+    """Сповіщення користувачу мовою з його налаштувань.
+
+    title/body — шаблони, позначені gettext_noop (українською, з %(name)s); значення — у params.
+    Переклад виконується тут, бо сповіщення зберігається в БД і надсилається поза запитом користувача."""
+    from .i18n import language_of, render
     from .models import Notification
 
+    with language_of(user):
+        title, body = render(title, params), render(body, params)
     n = Notification.objects.create(user=user, kind=kind, title=title, body=body, link=link)
     push_to_user(
         user.pk,

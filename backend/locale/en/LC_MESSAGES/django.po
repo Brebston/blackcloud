@@ -1,0 +1,760 @@
+# Англійський переклад повідомлень бекенду BlackCloud.
+# Оновлення: python scripts/i18n.py extract → перекласти порожні msgstr → python scripts/i18n.py compile
+msgid ""
+msgstr ""
+"Project-Id-Version: blackcloud\n"
+"Language: en\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+
+#: apps/accounts/models.py:17
+msgid "Ім'я користувача: 3–40 символів, малі латинські літери, цифри, '.', '_', '-'."
+msgstr "Username: 3–40 characters, lowercase Latin letters, digits, '.', '_', '-'."
+
+#: apps/accounts/serializers.py:101
+msgid "Цей email вже використовується."
+msgstr "This email is already in use."
+
+#: apps/accounts/serializers.py:49
+msgid "Невідомий часовий пояс."
+msgstr "Unknown time zone."
+
+#: apps/accounts/serializers.py:93
+msgid "Це ім'я зарезервоване."
+msgstr "This name is reserved."
+
+#: apps/accounts/serializers.py:95
+msgid "Це ім'я вже зайняте."
+msgstr "This name is already taken."
+
+#: apps/accounts/views.py:111
+msgid "Новий вхід в акаунт"
+msgstr "New sign-in to your account"
+
+#: apps/accounts/views.py:112
+#, python-format
+msgid "Вхід з IP %(ip)s. Якщо це не ви — змініть пароль."
+msgstr "Sign-in from IP %(ip)s. If this wasn't you, change your password."
+
+#: apps/accounts/views.py:123
+#: apps/mail/views.py:413
+msgid "Забагато невдалих спроб. Спробуйте пізніше."
+msgstr "Too many failed attempts. Try again later."
+
+#: apps/accounts/views.py:127
+#: apps/storage/views.py:622
+msgid "Невірний пароль."
+msgstr "Incorrect password."
+
+#: apps/accounts/views.py:171
+msgid "Забагато невдалих спроб. Спробуйте через 15 хвилин."
+msgstr "Too many failed attempts. Try again in 15 minutes."
+
+#: apps/accounts/views.py:209
+msgid "Сесія входу завершилась. Увійдіть знову."
+msgstr "The sign-in session has expired. Please sign in again."
+
+#: apps/accounts/views.py:212
+msgid "Забагато спроб. Увійдіть знову."
+msgstr "Too many attempts. Please sign in again."
+
+#: apps/accounts/views.py:223
+#: apps/accounts/views.py:188
+msgid "Забагато невдалих кодів. Спробуйте пізніше."
+msgstr "Too many failed codes. Try again later."
+
+#: apps/accounts/views.py:231
+#: apps/accounts/views.py:365
+msgid "Невірний код."
+msgstr "Invalid code."
+
+#: apps/accounts/views.py:268
+msgid "Запрошення недійсне або прострочене."
+msgstr "The invitation is invalid or expired."
+
+#: apps/accounts/views.py:270
+msgid "Запрошення видане на іншу адресу."
+msgstr "This invitation was issued to a different address."
+
+#: apps/accounts/views.py:272
+msgid "Реєстрація можлива лише за запрошенням."
+msgstr "Registration is by invitation only."
+
+#: apps/accounts/views.py:284
+msgid "Запрошення вже використано."
+msgstr "This invitation has already been used."
+
+#: apps/accounts/views.py:339
+msgid "2FA вже увімкнено. Спочатку вимкніть її."
+msgstr "2FA is already enabled. Disable it first."
+
+#: apps/accounts/views.py:352
+msgid "Невірний код. Перевірте час на телефоні."
+msgstr "Invalid code. Check the time on your phone."
+
+#: apps/accounts/views.py:369
+msgid "Двофакторну автентифікацію вимкнено"
+msgstr "Two-factor authentication disabled"
+
+#: apps/accounts/views.py:379
+msgid "Спочатку увімкніть 2FA."
+msgstr "Enable 2FA first."
+
+#: apps/accounts/views.py:415
+msgid "Невірний ідентифікатор."
+msgstr "Invalid identifier."
+
+#: apps/accounts/views.py:489
+msgid "Керувати адміністраторами може лише суперкористувач."
+msgstr "Only a superuser can manage administrators."
+
+#: apps/accounts/views.py:495
+msgid "Не можна деактивувати себе."
+msgstr "You cannot deactivate yourself."
+
+#: apps/accounts/views.py:497
+msgid "Лише суперкористувач може змінювати права адміністратора."
+msgstr "Only a superuser can change administrator rights."
+
+#: apps/accounts/views.py:51
+msgid "Невірний логін або пароль."
+msgstr "Invalid username or password."
+
+#: apps/accounts/views.py:512
+msgid "Лише суперкористувач може створювати адміністраторів."
+msgstr "Only a superuser can create administrators."
+
+#: apps/accounts/views.py:522
+msgid "Використайте власні налаштування безпеки."
+msgstr "Use your own security settings."
+
+#: apps/accounts/views.py:531
+msgid "Адміністратор скинув вашу 2FA"
+msgstr "An administrator reset your 2FA"
+
+#: apps/accounts/views.py:532
+msgid "Увімкніть її знову в налаштуваннях безпеки."
+msgstr "Turn it back on in your security settings."
+
+#: apps/accounts/views.py:80
+msgid "Хтось підбирає код 2FA до вашого акаунта"
+msgstr "Someone is trying to guess the 2FA code for your account"
+
+#: apps/accounts/views.py:81
+msgid "Пароль введено правильно, але код — ні. Вхід тимчасово заблоковано. Змініть пароль."
+msgstr "The password was correct but the code was not. Sign-in is temporarily blocked. Change your password."
+
+#: apps/accounts/views.py:85
+msgid "Підбір 2FA"
+msgstr "2FA brute force"
+
+#: apps/accounts/views.py:86
+#, python-format
+msgid "Акаунт %(username)s: %(count)s невдалих кодів за годину."
+msgstr "Account %(username)s: %(count)s failed codes in an hour."
+
+#: apps/calendars/ics.py:81
+msgid "Без назви"
+msgstr "(No title)"
+
+#: apps/calendars/models.py:11
+msgid "Колір у форматі #RRGGBB"
+msgstr "Color must be in #RRGGBB format"
+
+#: apps/calendars/recurrence.py:35
+msgid "Задовге правило повторення."
+msgstr "Recurrence rule is too long."
+
+#: apps/calendars/recurrence.py:39
+msgid "Непідтримуване правило повторення."
+msgstr "Unsupported recurrence rule."
+
+#: apps/calendars/recurrence.py:41
+msgid "Надто часте повторення."
+msgstr "Event repeats too often."
+
+#: apps/calendars/recurrence.py:43
+msgid "Невірний інтервал повторення."
+msgstr "Invalid recurrence interval."
+
+#: apps/calendars/recurrence.py:45
+#, python-format
+msgid "Повторювані події можуть починатися з %(min)s до %(max)s року."
+msgstr "Recurring events must start between %(min)s and %(max)s."
+
+#: apps/calendars/recurrence.py:49
+#: apps/calendars/recurrence.py:59
+#, python-format
+msgid "Невірне правило: %(error)s"
+msgstr "Invalid rule: %(error)s"
+
+#: apps/calendars/recurrence.py:61
+msgid "За правилом подія не повторюється жодного разу (перевірте дати)."
+msgstr "This rule produces no occurrences (check the dates)."
+
+#: apps/calendars/serializers.py:63
+msgid "Кінець раніше за початок."
+msgstr "End time is before start time."
+
+#: apps/calendars/serializers.py:69
+msgid "Досягнуто ліміту повторюваних подій."
+msgstr "Recurring event limit reached."
+
+#: apps/calendars/serializers.py:71
+#, python-format
+msgid "Максимум %(n)s днів."
+msgstr "Maximum %(n)s days."
+
+#: apps/calendars/tasks.py:37
+#, python-format
+msgid "Нагадування: %(title)s"
+msgstr "Reminder: %(title)s"
+
+#: apps/calendars/tasks.py:38
+#, python-format
+msgid "Початок о %(when)s"
+msgstr "Starts at %(when)s"
+
+#: apps/calendars/views.py:133
+msgid "Потрібен .ics файл до 5 МБ."
+msgstr "An .ics file up to 5 MB is required."
+
+#: apps/calendars/views.py:137
+msgid "Не вдалося прочитати ICS."
+msgstr "Couldn't read the ICS file."
+
+#: apps/calendars/views.py:153
+msgid "Вкажіть start і end (ISO 8601), діапазон до 400 днів."
+msgstr "Specify start and end (ISO 8601), up to a 400-day range."
+
+#: apps/calendars/views.py:40
+msgid "Немає прав на редагування цього календаря."
+msgstr "You don't have permission to edit this calendar."
+
+#: apps/calendars/views.py:53
+msgid "Забагато календарів."
+msgstr "Too many calendars."
+
+#: apps/calendars/views.py:59
+msgid "Лише власник може це зробити."
+msgstr "Only the owner can do this."
+
+#: apps/calendars/views.py:69
+msgid "Не можна видалити останній календар."
+msgstr "You can't delete your last calendar."
+
+#: apps/calendars/views.py:80
+#: apps/chat/views.py:268
+#: apps/mail/views_admin.py:96
+msgid "Користувача не знайдено."
+msgstr "User not found."
+
+#: apps/calendars/views.py:87
+#, python-format
+msgid "%(user)s поділився календарем"
+msgstr "%(user)s shared a calendar with you"
+
+#: apps/chat/serializers.py:104
+msgid "Порожнє повідомлення."
+msgstr "Message is empty."
+
+#: apps/chat/serializers.py:77
+msgid "Нотатки"
+msgstr "Notes"
+
+#: apps/chat/views.py:148
+msgid "Файл недоступний."
+msgstr "File is unavailable."
+
+#: apps/chat/views.py:174
+msgid "Час на редагування минув."
+msgstr "This message can no longer be edited."
+
+#: apps/chat/views.py:177
+msgid "1–10000 символів."
+msgstr "1–10000 characters."
+
+#: apps/chat/views.py:203
+msgid "Потрібен один емоджі."
+msgstr "A single emoji is required."
+
+#: apps/chat/views.py:213
+msgid "Забагато реакцій на одне повідомлення."
+msgstr "Too many reactions on this message."
+
+#: apps/chat/views.py:216
+msgid "Забагато різних реакцій."
+msgstr "Too many different reactions."
+
+#: apps/chat/views.py:243
+msgid "З особистого діалогу не можна вийти."
+msgstr "You can't leave a direct message conversation."
+
+#: apps/chat/views.py:261
+msgid "Лише адміністратор групи може додавати учасників."
+msgstr "Only a group admin can add members."
+
+#: apps/chat/views.py:270
+msgid "Забагато учасників."
+msgstr "Too many members."
+
+#: apps/chat/views.py:65
+msgid "Розмову не знайдено."
+msgstr "Conversation not found."
+
+#: apps/chat/views.py:81
+msgid "Деяких користувачів не знайдено."
+msgstr "Some users were not found."
+
+#: apps/core/asgi_limits.py:50
+#: apps/core/middleware.py:38
+msgid "Потрібен заголовок Content-Length."
+msgstr "Content-Length header is required."
+
+#: apps/core/asgi_limits.py:58
+#: apps/core/asgi_limits.py:56
+#: apps/core/middleware.py:42
+msgid "Невірний Content-Length."
+msgstr "Invalid Content-Length."
+
+#: apps/core/asgi_limits.py:60
+#: apps/core/middleware.py:44
+msgid "Запит завеликий."
+msgstr "Request is too large."
+
+#: apps/core/exceptions.py:16
+msgid "Внутрішня помилка сервера."
+msgstr "Internal server error."
+
+#: apps/core/permissions.py:24
+msgid "Потрібні права адміністратора та вхід з 2FA."
+msgstr "Administrator rights and a 2FA sign-in are required."
+
+#: apps/mail/confidential.py:41
+#, python-format
+msgid "Допустимі терміни: %(days)s днів."
+msgstr "Allowed expiration periods: %(days)s days."
+
+#: apps/mail/confidential.py:43
+msgid "Конфіденційний лист завеликий (максимум 5 МБ разом із зображеннями)."
+msgstr "Confidential message is too large (5 MB max including images)."
+
+#: apps/mail/imap.py:110
+msgid "Теку не знайдено."
+msgstr "Folder not found."
+
+#: apps/mail/imap.py:195
+msgid "(без теми)"
+msgstr "(no subject)"
+
+#: apps/mail/imap.py:254
+msgid "Лист не знайдено."
+msgstr "Message not found."
+
+#: apps/mail/imap.py:338
+msgid "Вкладення не знайдено."
+msgstr "Attachment not found."
+
+#: apps/mail/imap.py:347
+msgid "Невідомий прапорець."
+msgstr "Unknown flag."
+
+#: apps/mail/imap.py:35
+msgid "Поштовий сервер тимчасово недоступний."
+msgstr "Mail server is temporarily unavailable."
+
+#: apps/mail/imap.py:359
+msgid "Не вдалося перемістити лист."
+msgstr "Couldn't move the message."
+
+#: apps/mail/imap.py:383
+msgid "Недопустимі символи."
+msgstr "Invalid characters."
+
+#: apps/mail/imap.py:389
+#, python-format
+msgid "Невірна адреса: %(address)s"
+msgstr "Invalid address: %(address)s"
+
+#: apps/mail/imap.py:412
+msgid "Вкажіть хоча б одного отримувача."
+msgstr "Add at least one recipient."
+
+#: apps/mail/imap.py:414
+#, python-format
+msgid "Максимум %(n)s отримувачів."
+msgstr "Maximum %(n)s recipients."
+
+#: apps/mail/imap.py:420
+msgid "Лист завеликий."
+msgstr "Message is too large."
+
+#: apps/mail/imap.py:445
+msgid "У конфіденційному режимі вкладення не підтримуються."
+msgstr "Attachments aren't supported in confidential mode."
+
+#: apps/mail/imap.py:464
+msgid "Невірне або завелике вбудоване зображення."
+msgstr "Invalid or oversized inline image."
+
+#: apps/mail/imap.py:467
+msgid "Зображення в листі завеликі (максимум 15 МБ разом)."
+msgstr "Images in the message are too large (15 MB max in total)."
+
+#: apps/mail/imap.py:481
+msgid "Вкладення завеликі (максимум 15 МБ разом)."
+msgstr "Attachments are too large (15 MB max in total)."
+
+#: apps/mail/imap.py:500
+#, python-format
+msgid "Не вдалося надіслати: %(error)s"
+msgstr "Couldn't send: %(error)s"
+
+#: apps/mail/imap.py:544
+msgid "Невірний час надсилання."
+msgstr "Invalid send time."
+
+#: apps/mail/imap.py:547
+msgid "Час надсилання має бути в майбутньому."
+msgstr "The send time must be in the future."
+
+#: apps/mail/imap.py:549
+msgid "Запланувати можна щонайбільше на рік уперед."
+msgstr "You can schedule up to one year ahead."
+
+#: apps/mail/imap.py:563
+#, python-format
+msgid "Забагато запланованих листів (максимум %(n)s)."
+msgstr "Too many scheduled emails (maximum %(n)s)."
+
+#: apps/mail/imap.py:611
+msgid "Скриньку вимкнено."
+msgstr "The mailbox is disabled."
+
+#: apps/mail/imap.py:75
+msgid "Невірна назва теки."
+msgstr "Invalid folder name."
+
+#: apps/mail/imap.py:82
+msgid "Невірний UID."
+msgstr "Invalid UID."
+
+#: apps/mail/imap.py:92
+msgid "Веб-пошту не налаштовано (немає master-пароля Dovecot)."
+msgstr "Webmail is not configured (Dovecot master password is missing)."
+
+#: apps/mail/models.py:8
+msgid "Невірний домен"
+msgstr "Invalid domain"
+
+#: apps/mail/models.py:9
+msgid "Невірна локальна частина адреси"
+msgstr "Invalid address local part"
+
+#: apps/mail/tasks.py:50
+msgid "Запланований лист не надіслано"
+msgstr "Scheduled email not sent"
+
+#: apps/mail/tasks.py:51
+#, python-format
+msgid "«%(subject)s»: спробуйте надіслати його ще раз."
+msgstr "“%(subject)s”: please try sending it again."
+
+#: apps/mail/views.py:194
+#, python-format
+msgid "Максимум %(n)s вкладень."
+msgstr "Maximum %(n)s attachments."
+
+#: apps/mail/views.py:289
+msgid "Запланований лист не знайдено або його вже надіслано."
+msgstr "Scheduled email not found or already sent."
+
+#: apps/mail/views.py:310
+msgid "Підпис завеликий (максимум ~200 КБ разом із зображеннями)."
+msgstr "Signature is too large (~200 KB max including images)."
+
+#: apps/mail/views.py:325
+#, python-format
+msgid "Максимум %(n)s підписів."
+msgstr "Maximum %(n)s signatures."
+
+#: apps/mail/views.py:393
+msgid "Лист недоступний."
+msgstr "Message is unavailable."
+
+#: apps/mail/views.py:396
+msgid "Лист недоступний: термін дії минув або відправник відкликав доступ."
+msgstr "Message is unavailable: it has expired or the sender revoked access."
+
+#: apps/mail/views.py:420
+msgid "Невірний код доступу."
+msgstr "Incorrect passcode."
+
+#: apps/mail/views.py:43
+msgid "Поштову скриньку не знайдено. Зверніться до адміністратора."
+msgstr "Mailbox not found. Contact your administrator."
+
+#: apps/mail/views.py:54
+msgid "Задовга назва теки."
+msgstr "Folder name is too long."
+
+#: apps/mail/views_admin.py:103
+#: apps/mail/views_admin.py:136
+msgid "Ця адреса вже зайнята скринькою або псевдонімом."
+msgstr "This address is already used by a mailbox or alias."
+
+#: apps/mail/views_admin.py:114
+#: apps/mail/views_admin.py:147
+msgid "Ця адреса вже зайнята."
+msgstr "This address is already taken."
+
+#: apps/mail/views_admin.py:30
+msgid "Скриньками адміністраторів керує лише суперкористувач."
+msgstr "Only a superuser can manage administrators' mailboxes."
+
+#: apps/mail/views_admin.py:60
+msgid "Невідомий або вимкнений поштовий домен."
+msgstr "Unknown or disabled mail domain."
+
+#: apps/mail/views_admin.py:99
+#, python-format
+msgid "Максимум %(n)s скриньок на користувача."
+msgstr "Maximum %(n)s mailboxes per user."
+
+#: apps/storage/serializers.py:127
+#, python-format
+msgid "Пароль посилання — щонайменше %(n)s символів."
+msgstr "Link password must be at least %(n)s characters."
+
+#: apps/storage/serializers.py:89
+msgid "Вкажіть або file, або folder."
+msgstr "Specify either file or folder."
+
+#: apps/storage/services.py:124
+msgid "Не можна перемістити папку саму в себе."
+msgstr "You can't move a folder into itself."
+
+#: apps/storage/services.py:126
+#: apps/storage/views.py:160
+msgid "Надто велика вкладеність папок."
+msgstr "Folders are nested too deeply."
+
+#: apps/storage/services.py:155
+#: apps/storage/services.py:165
+msgid "Файл не знайдено."
+msgstr "File not found."
+
+#: apps/storage/services.py:176
+#, python-format
+msgid "Максимальний розмір файлу — %(n)s ГБ."
+msgstr "Maximum file size is %(n)s GB."
+
+#: apps/storage/services.py:178
+msgid "Недостатньо місця у сховищі."
+msgstr "Not enough storage space."
+
+#: apps/storage/services.py:196
+msgid "Завантаження вже завершено або скасовано."
+msgstr "Upload is already finished or canceled."
+
+#: apps/storage/services.py:198
+msgid "Сесія завантаження прострочена."
+msgstr "Upload session has expired."
+
+#: apps/storage/services.py:200
+msgid "Невірний порядок чанків."
+msgstr "Chunks are out of order."
+
+#: apps/storage/services.py:202
+msgid "Зайвий чанк."
+msgstr "Unexpected extra chunk."
+
+#: apps/storage/services.py:204
+#, python-format
+msgid "Очікувалось %(expected)s байт, отримано %(got)s."
+msgstr "Expected %(expected)s bytes, got %(got)s."
+
+#: apps/storage/services.py:218
+msgid "Конфлікт завантаження, повторіть."
+msgstr "Upload conflict, please try again."
+
+#: apps/storage/services.py:225
+#: apps/storage/views.py:329
+msgid "Завантаження вже завершено."
+msgstr "Upload is already finished."
+
+#: apps/storage/services.py:227
+msgid "Отримано не всі чанки."
+msgstr "Not all chunks have been received."
+
+#: apps/storage/services.py:232
+msgid "Конфлікт завантаження."
+msgstr "Upload conflict."
+
+#: apps/storage/services.py:268
+#, python-format
+msgid "Файл недоступний для завантаження (статус: %(status)s)."
+msgstr "File can't be downloaded (status: %(status)s)."
+
+#: apps/storage/services.py:308
+msgid "Файл завеликий."
+msgstr "File is too large."
+
+#: apps/storage/services.py:313
+msgid "Недостатньо місця у сховищі для збереження."
+msgstr "Not enough storage space to save."
+
+#: apps/storage/services.py:48
+msgid "Невірне ім'я."
+msgstr "Invalid name."
+
+#: apps/storage/services.py:54
+msgid "Ім'я не може містити / або \\."
+msgstr "Name can't contain / or \\."
+
+#: apps/storage/services.py:56
+msgid "Невірне ім'я (1–255 символів, без / і \\)."
+msgstr "Invalid name (1–255 characters, no / or \\)."
+
+#: apps/storage/services.py:80
+msgid "Забагато файлів з таким ім'ям."
+msgstr "Too many files with this name."
+
+#: apps/storage/services.py:91
+#: apps/storage/views.py:81
+#: apps/storage/views.py:84
+msgid "Папку не знайдено."
+msgstr "Folder not found."
+
+#: apps/storage/tasks.py:67
+msgid "Файл заблоковано антивірусом"
+msgstr "File blocked by antivirus"
+
+#: apps/storage/tasks.py:68
+#, python-format
+msgid "«%(name)s»: %(detail)s"
+msgstr "“%(name)s”: %(detail)s"
+
+#: apps/storage/views.py:251
+#: apps/storage/views.py:263
+#: apps/storage/views_office.py:44
+msgid "Файл у кошику."
+msgstr "File is in the trash."
+
+#: apps/storage/views.py:265
+msgid "Файл недоступний для перегляду."
+msgstr "File can't be previewed."
+
+#: apps/storage/views.py:267
+msgid "Цей тип файлу не переглядається в браузері."
+msgstr "This file type can't be previewed in the browser."
+
+#: apps/storage/views.py:291
+msgid "Посилання для перегляду прострочене. Відкрийте файл знову."
+msgstr "Preview link has expired. Open the file again."
+
+#: apps/storage/views.py:386
+msgid "file або folder"
+msgstr "file or folder"
+
+#: apps/storage/views.py:447
+msgid "Заражений файл не можна поширювати."
+msgstr "Infected files can't be shared."
+
+#: apps/storage/views.py:453
+msgid "Не можна поширити кореневу папку."
+msgstr "You can't share the root folder."
+
+#: apps/storage/views.py:462
+#, python-format
+msgid "%(user)s поділився з вами"
+msgstr "%(user)s shared with you"
+
+#: apps/storage/views.py:463
+#, python-format
+msgid "%(name)s"
+msgstr "%(name)s"
+
+#: apps/storage/views.py:515
+msgid "Файл ще не перевірено або заблоковано."
+msgstr "File hasn't been scanned yet or is blocked."
+
+#: apps/storage/views.py:546
+#: apps/storage/views.py:549
+#: apps/storage/views.py:634
+msgid "Посилання недійсне або прострочене."
+msgstr "Link is invalid or has expired."
+
+#: apps/storage/views.py:56
+#: apps/storage/views.py:61
+msgid "Чанк завеликий."
+msgstr "Chunk is too large."
+
+#: apps/storage/views.py:576
+msgid "Хтось підбирає пароль до вашого посилання"
+msgstr "Someone is trying to guess your link's password"
+
+#: apps/storage/views.py:577
+#, python-format
+msgid "Посилання на «%(name)s» тимчасово заблоковано на годину. Можливо, варто його відкликати."
+msgstr "The link to “%(name)s” has been blocked for an hour. You may want to revoke it."
+
+#: apps/storage/views.py:582
+msgid "Підбір пароля публічного посилання"
+msgstr "Public link password guessing"
+
+#: apps/storage/views.py:583
+#, python-format
+msgid "Власник: %(username)s"
+msgstr "Owner: %(username)s"
+
+#: apps/storage/views.py:618
+msgid "Забагато невдалих спроб. Спробуйте через годину."
+msgstr "Too many failed attempts. Try again in an hour."
+
+#: apps/storage/views.py:631
+msgid "Посилання для завантаження прострочене. Оновіть сторінку."
+msgstr "Download link has expired. Refresh the page."
+
+#: apps/storage/views.py:640
+msgid "Ліміт завантажень вичерпано."
+msgstr "Download limit reached."
+
+#: apps/storage/views_admin.py:110
+msgid "Файл з карантину видалено"
+msgstr "Quarantined file deleted"
+
+#: apps/storage/views_admin.py:111
+#, python-format
+msgid "Адміністратор остаточно видалив «%(name)s»."
+msgstr "An administrator permanently deleted “%(name)s”."
+
+#: apps/storage/views_admin.py:145
+msgid "Антивірус вимкнено в конфігурації."
+msgstr "Antivirus is disabled in the configuration."
+
+#: apps/storage/views_admin.py:35
+msgid "Файл не знайдено в карантині."
+msgstr "File not found in quarantine."
+
+#: apps/storage/views_admin.py:45
+msgid "Файли адміністраторів може видаляти лише суперкористувач."
+msgstr "Only a superuser can delete administrators' files."
+
+#: apps/storage/views_admin.py:85
+msgid "Антивірус вимкнено в конфігурації — повторна перевірка неможлива."
+msgstr "Antivirus is disabled in the configuration, so rescanning isn't possible."
+
+#: apps/storage/views_office.py:34
+msgid "Онлайн-редактор вимкнено."
+msgstr "The online editor is disabled."
+
+#: apps/storage/views_office.py:46
+msgid "Цей формат не відкривається в редакторі."
+msgstr "This format can't be opened in the editor."
+
+#: apps/storage/views_office.py:48
+msgid "Файл ще перевіряється антивірусом або заблокований."
+msgstr "File is still being scanned by antivirus or is blocked."

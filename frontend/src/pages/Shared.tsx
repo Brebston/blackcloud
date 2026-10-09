@@ -4,10 +4,12 @@ import { del, errorText, get } from "../api/client";
 import type { Share } from "../api/types";
 import Icon from "../components/Icon";
 import { useToast } from "../components/Toast";
+import { useT } from "../i18n";
 import { fileIcon, formatBytes, formatDate } from "../lib/format";
 
 export default function SharedPage() {
   const toast = useToast();
+  const t = useT();
   const [incoming, setIncoming] = useState<Share[]>([]);
   const [outgoing, setOutgoing] = useState<Share[]>([]);
   const [error, setError] = useState("");
@@ -28,24 +30,24 @@ export default function SharedPage() {
 
   const revoke = async (id: string) => {
     await del(`/api/files/shares/${id}/`);
-    toast("Доступ відкликано", "success");
+    toast(t("files.shared.revoked"), "success");
     load();
   };
 
   return (
     <div className="page">
       <div className="page-head">
-        <h2>Спільні файли</h2>
+        <h2>{t("files.shared.title")}</h2>
       </div>
       {error && <div className="banner banner-danger">{error}</div>}
 
-      <h3 className="section-title">Поділилися зі мною</h3>
+      <h3 className="section-title">{t("files.shared.withMe")}</h3>
       <div className="card table-card">
         <table className="table">
           <tbody>
             {incoming.length === 0 && (
               <tr>
-                <td className="empty-small">Поки що нічого</td>
+                <td className="empty-small">{t("files.shared.nothingYet")}</td>
               </tr>
             )}
             {incoming.map((s) => (
@@ -65,17 +67,17 @@ export default function SharedPage() {
                     )}
                   </span>
                 </td>
-                <td className="muted">від {s.owner}</td>
+                <td className="muted">{t("files.shared.from", { owner: s.owner })}</td>
                 <td className="col-size muted">{s.file_info ? formatBytes(s.file_info.size) : ""}</td>
                 <td className="col-date muted">{formatDate(s.created_at)}</td>
                 <td className="col-actions">
                   <div className="row-actions">
                     {s.file_info?.downloadable && (
-                      <a className="icon-btn" title="Завантажити" href={`/api/files/items/${s.file}/download/`}>
+                      <a className="icon-btn" title={t("files.download")} href={`/api/files/items/${s.file}/download/`}>
                         <Icon name="download" size={16} />
                       </a>
                     )}
-                    <button className="icon-btn danger" title="Прибрати зі списку" onClick={() => revoke(s.id)}>
+                    <button className="icon-btn danger" title={t("files.shared.removeFromList")} onClick={() => revoke(s.id)}>
                       <Icon name="x" size={16} />
                     </button>
                   </div>
@@ -86,13 +88,13 @@ export default function SharedPage() {
         </table>
       </div>
 
-      <h3 className="section-title">Я поділився</h3>
+      <h3 className="section-title">{t("files.shared.byMe")}</h3>
       <div className="card table-card">
         <table className="table">
           <tbody>
             {outgoing.length === 0 && (
               <tr>
-                <td className="empty-small">Ви ще нічим не ділилися</td>
+                <td className="empty-small">{t("files.shared.noneByMe")}</td>
               </tr>
             )}
             {outgoing.map((s) => (
@@ -103,11 +105,11 @@ export default function SharedPage() {
                     {s.target_name}
                   </span>
                 </td>
-                <td className="muted">з {s.recipient}</td>
+                <td className="muted">{t("files.shared.to", { recipient: s.recipient })}</td>
                 <td className="col-date muted">{formatDate(s.created_at)}</td>
                 <td className="col-actions">
                   <button className="link-btn danger" onClick={() => revoke(s.id)}>
-                    Відкликати
+                    {t("files.shared.revoke")}
                   </button>
                 </td>
               </tr>

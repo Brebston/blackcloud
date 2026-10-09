@@ -1,5 +1,16 @@
 // Українська — основна мова інтерфейсу. Нові рядки додаються спершу сюди;
 // TypeScript вимагає, щоб у en.ts були ті самі ключі.
+import * as files from "./parts/files";
+import * as calendar from "./parts/calendar";
+import * as chat from "./parts/chat";
+import * as emoji from "./parts/emoji";
+import * as security from "./parts/security";
+import * as auth from "./parts/auth";
+import * as publicShare from "./parts/publicShare";
+import * as office from "./parts/office";
+import * as admin from "./parts/admin";
+import * as misc from "./parts/misc";
+
 const uk = {
   "common.language": "Мова",
   "common.loading": "Завантаження…",
@@ -17,6 +28,50 @@ const uk = {
   "common.ok": "OK",
   "common.yes": "так",
   "common.no": "ні",
+  "common.close": "Закрити",
+  "editor.undo": "Скасувати дію",
+  "editor.redo": "Повторити дію",
+  "editor.font": "Шрифт",
+  "editor.color": "Колір тексту",
+  "editor.colorReset": "Без кольору",
+  "editor.alignLeft": "Ліворуч",
+  "editor.alignCenter": "По центру",
+  "editor.alignRight": "Праворуч",
+  "editor.table": "Таблиця",
+  "editor.rowAbove": "+ рядок вище",
+  "editor.rowBelow": "+ рядок нижче",
+  "editor.colLeft": "+ стовпець ліворуч",
+  "editor.colRight": "+ стовпець праворуч",
+  "editor.deleteRow": "Видалити рядок",
+  "editor.deleteCol": "Видалити стовпець",
+  "editor.deleteTable": "Видалити таблицю",
+  "mail.scheduled": "Заплановані листи",
+  "compose.draftTitle": "Чернетка",
+  "compose.saving": "Збереження…",
+  "compose.saved": "Чернетку збережено",
+  "compose.savedAt": "Чернетку збережено о {time}",
+  "compose.saveFailed": "Не вдалося зберегти чернетку",
+  "compose.draftSaved": "Чернетку збережено в «Чернетках»",
+  "compose.discard": "Видалити чернетку",
+  "compose.confirmDiscard": "Видалити цю чернетку?",
+  "compose.schedule": "Пізніше",
+  "compose.schedTitle": "Запланувати надсилання",
+  "compose.schedTomorrowMorning": "Завтра вранці",
+  "compose.schedTomorrowAfternoon": "Завтра після обіду",
+  "compose.schedMonday": "У понеділок вранці",
+  "compose.schedPick": "Дата й час надсилання",
+  "compose.schedSet": "Запланувати",
+  "compose.schedPast": "Виберіть час щонайменше на хвилину пізніше від поточного.",
+  "compose.scheduledToast": "Лист заплановано на {date}",
+  "sched.hint": "Листи надсилаються автоматично в зазначений час. До того їх можна скасувати.",
+  "sched.empty": "Запланованих листів немає.",
+  "sched.when": "Коли",
+  "sched.cancel": "Скасувати",
+  "sched.confirmCancel": "Скасувати надсилання цього листа?",
+  "sched.cancelled": "Надсилання скасовано",
+  "sched.status.pending": "заплановано",
+  "sched.status.sending": "надсилається",
+  "sched.status.failed": "не вдалося",
 
   "nav.files": "Файли",
   "nav.shared": "Спільні",
@@ -296,6 +351,16 @@ const uk = {
   "mb.confirmRename": "Перейменувати {from} на {to}? Поштовим клієнтам доведеться змінити логін.",
   "mb.confirmDisable": "Вимкнути {address}? Вхід і отримання листів буде припинено.",
   "mb.renameNote": "Листи при перейменуванні зберігаються: тека на сервері не змінюється.",
+  ...files.uk,
+  ...calendar.uk,
+  ...chat.uk,
+  ...emoji.uk,
+  ...security.uk,
+  ...auth.uk,
+  ...publicShare.uk,
+  ...office.uk,
+  ...admin.uk,
+  ...misc.uk,
 };
 
 export default uk;

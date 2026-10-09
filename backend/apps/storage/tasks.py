@@ -5,6 +5,7 @@ import logging
 from celery import shared_task
 from django.conf import settings
 from django.utils import timezone
+from django.utils.translation import gettext_noop
 
 from apps.core.models import AuditLog
 from apps.core.realtime import notify, push_to_user
@@ -60,7 +61,14 @@ def scan_file(self, file_id: str):
         AuditLog.objects.create(
             user=f.owner, action="file.infected", target=str(f.pk), metadata={"name": f.name, "signature": detail}
         )
-        notify(f.owner, "security", "Файл заблоковано антивірусом", f"«{f.name}»: {detail}", "/files")
+        notify(
+            f.owner,
+            "security",
+            gettext_noop("Файл заблоковано антивірусом"),
+            gettext_noop("«%(name)s»: %(detail)s"),
+            "/files",
+            params={"name": f.name, "detail": detail},
+        )
 
 
 @shared_task

@@ -81,7 +81,8 @@ export default function LoginPage() {
       await finish();
     } catch (err) {
       setError(errorText(err));
-      if (errorText(err).includes("Увійдіть знову")) {
+      // Сервер відповідає мовою інтерфейсу: перевіряємо обидва варіанти
+      if (/Увійдіть знову|sign in again/i.test(errorText(err))) {
         setStep("password");
         setCode("");
       }

@@ -12,6 +12,7 @@ from datetime import datetime, timedelta, timezone as dt_timezone
 
 from dateutil.rrule import rrulestr
 from django.conf import settings
+from django.utils.translation import gettext as _
 from rest_framework.exceptions import ValidationError
 
 MAX_OCCURRENCES = 500
@@ -31,21 +32,21 @@ def validate_rrule(rule: str, dtstart: datetime) -> str:
     if not rule:
         return ""
     if len(rule) > 300:
-        _bad("Задовге правило повторення.")
+        _bad(_("Задовге правило повторення."))
     parts = dict(part.split("=", 1) for part in rule.split(";") if "=" in part)
     keys = {part.split("=", 1)[0] for part in rule.split(";") if part}
     if not keys <= ALLOWED_KEYS or "FREQ" not in keys:
-        _bad("Непідтримуване правило повторення.")
+        _bad(_("Непідтримуване правило повторення."))
     if parts.get("FREQ") in {"SECONDLY", "MINUTELY", "HOURLY"}:
-        _bad("Надто часте повторення.")
+        _bad(_("Надто часте повторення."))
     if "INTERVAL" in parts and (not parts["INTERVAL"].isdigit() or not 1 <= int(parts["INTERVAL"]) <= MAX_INTERVAL):
-        _bad("Невірний інтервал повторення.")
+        _bad(_("Невірний інтервал повторення."))
     if dtstart is None or not MIN_YEAR <= dtstart.year <= MAX_YEAR:
-        _bad(f"Повторювані події можуть починатися з {MIN_YEAR} до {MAX_YEAR} року.")
+        _bad(_("Повторювані події можуть починатися з %(min)s до %(max)s року.") % {"min": MIN_YEAR, "max": MAX_YEAR})
     try:
         parsed = rrulestr(rule, dtstart=dtstart)
     except (ValueError, TypeError) as exc:
-        _bad(f"Невірне правило: {exc}")
+        _bad(_("Невірне правило: %(error)s") % {"error": exc})
     # Проба: перше входження має бути протягом 8 років від початку
     try:
         cap = dtstart + PROBE_SPAN
@@ -55,9 +56,9 @@ def validate_rrule(rule: str, dtstart: datetime) -> str:
         probe = parsed.replace(count=None, until=min(until, cap) if until else cap)
         first = probe.after(dtstart - timedelta(seconds=1), inc=True)
     except (ValueError, TypeError, OverflowError) as exc:
-        _bad(f"Невірне правило: {exc}")
+        _bad(_("Невірне правило: %(error)s") % {"error": exc})
     if first is None:
-        _bad("За правилом подія не повторюється жодного разу (перевірте дати).")
+        _bad(_("За правилом подія не повторюється жодного разу (перевірте дати)."))
     return rule
 
 

@@ -2,10 +2,12 @@ import { ChangeEvent, FormEvent, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { errorText, post } from "../api/client";
 import Icon from "../components/Icon";
+import { useT } from "../i18n";
 
 export default function RegisterPage() {
   const [params] = useSearchParams();
   const navigate = useNavigate();
+  const t = useT();
   const [form, setForm] = useState({ username: "", email: "", password: "", password2: "", invite: params.get("invite") || "" });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
@@ -17,10 +19,10 @@ export default function RegisterPage() {
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     const errs: Record<string, string> = {};
-    if (!/^[a-z0-9][a-z0-9._-]{2,39}$/.test(form.username)) errs.username = "3–40 символів: малі латинські літери, цифри, . _ -";
-    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(form.email)) errs.email = "Невірний email.";
-    if (form.password.length < 12) errs.password = "Мінімум 12 символів.";
-    if (form.password !== form.password2) errs.password2 = "Паролі не збігаються.";
+    if (!/^[a-z0-9][a-z0-9._-]{2,39}$/.test(form.username)) errs.username = t("auth.badUsername");
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(form.email)) errs.email = t("auth.badEmail");
+    if (form.password.length < 12) errs.password = t("auth.pwTooShort");
+    if (form.password !== form.password2) errs.password2 = t("auth.pwMismatch");
     if (Object.keys(errs).length) {
       setErrors(errs);
       return;
@@ -46,39 +48,39 @@ export default function RegisterPage() {
       <div className="auth-card">
         <div className="auth-brand">
           <Icon name="cloud" size={32} />
-          <h1>Реєстрація</h1>
+          <h1>{t("auth.title")}</h1>
         </div>
         <form onSubmit={submit} noValidate>
           <label>
-            Ім'я користувача
+            {t("auth.username")}
             <input autoFocus autoComplete="username" value={form.username} onChange={set("username")} />
             {errors.username && <span className="field-error">{errors.username}</span>}
           </label>
           <label>
-            Email
+            {t("auth.email")}
             <input type="email" autoComplete="email" value={form.email} onChange={set("email")} />
             {errors.email && <span className="field-error">{errors.email}</span>}
           </label>
           <label>
-            Пароль
+            {t("auth.password")}
             <input type="password" autoComplete="new-password" value={form.password} onChange={set("password")} />
             {errors.password && <span className="field-error">{errors.password}</span>}
           </label>
           <label>
-            Повторіть пароль
+            {t("auth.repeatPassword")}
             <input type="password" autoComplete="new-password" value={form.password2} onChange={set("password2")} />
             {errors.password2 && <span className="field-error">{errors.password2}</span>}
           </label>
           <label>
-            Код запрошення
+            {t("auth.invite")}
             <input value={form.invite} onChange={set("invite")} />
           </label>
           {errors.form && <div className="form-error">{errors.form}</div>}
           <button className="btn btn-primary btn-block" disabled={busy}>
-            {busy ? "Створення…" : "Створити акаунт"}
+            {busy ? t("auth.creating") : t("auth.createAccount")}
           </button>
           <div className="auth-foot">
-            Вже є акаунт? <Link to="/login">Увійти</Link>
+            {t("auth.haveAccount")} <Link to="/login">{t("auth.signIn")}</Link>
           </div>
         </form>
       </div>

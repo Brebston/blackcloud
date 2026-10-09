@@ -47,10 +47,44 @@ function remember(lang: Lang, pending: boolean) {
   }
 }
 
+/** Форма множини: індекс 0 — «один», 1 — «декілька», 2 — «багато» (для англійської — 0 або 1). */
+function pluralIndex(lang: Lang, n: number): number {
+  const abs = Math.abs(Math.trunc(n));
+  if (lang === "en") return abs === 1 ? 0 : 1;
+  const d10 = abs % 10;
+  const d100 = abs % 100;
+  if (d10 === 1 && d100 !== 11) return 0;
+  if (d10 >= 2 && d10 <= 4 && (d100 < 12 || d100 > 14)) return 1;
+  return 2;
+}
+
+/**
+ * Підставляє змінні: «{name}». Множина: «{n|файл|файли|файлів}» (англ.: «{n|file|files}») —
+ * форма обирається за значенням змінної n (або іншої, вказаної першою).
+ */
 export function translate(lang: Lang, key: TKey, vars?: Record<string, string | number>): string {
   const template = DICTS[lang][key] ?? uk[key] ?? String(key);
   if (!vars) return template;
-  return template.replace(/\{(\w+)\}/g, (m, name) => (name in vars ? String(vars[name]) : m));
+  return template
+    .replace(/\{(\w+)\|([^{}]*)\}/g, (m, name, forms: string) => {
+      if (!(name in vars)) return m;
+      const list = forms.split("|");
+      return list[Math.min(pluralIndex(lang, Number(vars[name])), list.length - 1)] ?? m;
+    })
+    .replace(/\{(\w+)\}/g, (m, name) => (name in vars ? String(vars[name]) : m));
+}
+
+/** Поточна мова інтерфейсу поза React-компонентами (виставляється в <html lang>). */
+export function currentLang(): Lang {
+  return document.documentElement.lang === "en" ? "en" : "uk";
+}
+
+/**
+ * Переклад поза компонентами (утиліти в lib/, повідомлення, сформовані в момент дії).
+ * У компонентах використовуйте useT(): тоді текст оновиться одразу після зміни мови.
+ */
+export function tr(key: TKey, vars?: Record<string, string | number>): string {
+  return translate(currentLang(), key, vars);
 }
 
 interface I18nState {

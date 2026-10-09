@@ -10,10 +10,11 @@ from django.db import models
 from django.db.models import F
 from django.db.models.functions import Greatest
 from django.utils import timezone
+from django.utils.translation import gettext_lazy
 
 USERNAME_VALIDATOR = RegexValidator(
     r"^[a-z0-9][a-z0-9._-]{2,39}$",
-    "Ім'я користувача: 3–40 символів, малі латинські літери, цифри, '.', '_', '-'.",
+    gettext_lazy("Ім'я користувача: 3–40 символів, малі латинські літери, цифри, '.', '_', '-'."),
 )
 
 

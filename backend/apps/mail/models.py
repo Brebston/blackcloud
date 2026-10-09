@@ -3,9 +3,10 @@ import uuid
 from django.conf import settings
 from django.core.validators import RegexValidator
 from django.db import models
+from django.utils.translation import gettext_lazy
 
-DOMAIN_VALIDATOR = RegexValidator(r"^(?=.{1,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$", "Невірний домен")
-LOCAL_PART_VALIDATOR = RegexValidator(r"^[a-z0-9][a-z0-9._+-]{0,63}$", "Невірна локальна частина адреси")
+DOMAIN_VALIDATOR = RegexValidator(r"^(?=.{1,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$", gettext_lazy("Невірний домен"))
+LOCAL_PART_VALIDATOR = RegexValidator(r"^[a-z0-9][a-z0-9._+-]{0,63}$", gettext_lazy("Невірна локальна частина адреси"))
 
 
 class MailDomain(models.Model):
@@ -119,3 +120,31 @@ class ConfidentialMessage(models.Model):
         from django.utils import timezone
 
         return self.revoked_at is None and self.expires_at > timezone.now() and bool(self.html_encrypted)
+
+
+class ScheduledMessage(models.Model):
+    """Лист, запланований на пізніше. Готовий MIME (разом із вкладеннями) і службові дані
+    зберігаються зашифрованими; після надсилання або скасування вміст стирається."""
+
+    class Status(models.TextChoices):
+        PENDING = "pending", "pending"
+        SENDING = "sending", "sending"
+        SENT = "sent", "sent"
+        FAILED = "failed", "failed"
+        CANCELLED = "cancelled", "cancelled"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="scheduled_messages")
+    mailbox = models.ForeignKey(Mailbox, on_delete=models.CASCADE, related_name="scheduled_messages")
+    send_at = models.DateTimeField(db_index=True)
+    status = models.CharField(max_length=10, choices=Status.choices, default=Status.PENDING, db_index=True)
+    attempts = models.PositiveSmallIntegerField(default=0)
+    # Fernet(base64(MIME)) і Fernet(JSON: тема, кому, адреси, відповідь, конфіденційний запис)
+    payload_encrypted = models.TextField(blank=True)
+    meta_encrypted = models.TextField(blank=True)
+    error = models.CharField(max_length=200, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    sent_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["send_at"]

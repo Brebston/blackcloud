@@ -9,6 +9,7 @@ import { useToast } from "../components/Toast";
 import UserPicker from "../components/UserPicker";
 import { useAuth } from "../hooks/useAuth";
 import { sendEvent, useEvents } from "../hooks/useEvents";
+import { useT } from "../i18n";
 import { QUICK_REACTIONS, rememberEmoji } from "../lib/emoji";
 import { formatBytes, formatDate } from "../lib/format";
 
@@ -17,6 +18,7 @@ export default function ChatPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const toast = useToast();
+  const t = useT();
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [messages, setMessages] = useState<Message[]>([]);
   const [hasMore, setHasMore] = useState(false);
@@ -108,7 +110,7 @@ export default function ChatPage() {
     const body = text.trim();
     if (!body || !id) return;
     if (body.length > 10000) {
-      toast("Повідомлення задовге (максимум 10 000 символів).", "error");
+      toast(t("chat.tooLong"), "error");
       return;
     }
     try {
@@ -159,12 +161,12 @@ export default function ChatPage() {
       <div className={`chat-layout ${id ? "has-open" : ""}`}>
         <aside className="card chat-list">
           <div className="row-between chat-list-head">
-            <strong>Розмови</strong>
-            <button className="icon-btn" onClick={() => setNewChat(true)} aria-label="Нова розмова">
+            <strong>{t("chat.conversations")}</strong>
+            <button className="icon-btn" onClick={() => setNewChat(true)} aria-label={t("chat.newConversation")}>
               <Icon name="plus" size={16} />
             </button>
           </div>
-          {conversations.length === 0 && <div className="empty-small">Почніть нову розмову</div>}
+          {conversations.length === 0 && <div className="empty-small">{t("chat.startNew")}</div>}
           {conversations.map((c) => (
             <button key={c.id} className={`conv ${c.id === id ? "active" : ""}`} onClick={() => navigate(`/chat/${c.id}`)}>
               <div className="avatar">{c.is_group ? <Icon name="users" size={16} /> : c.display_title.slice(0, 1).toUpperCase()}</div>
@@ -175,7 +177,7 @@ export default function ChatPage() {
                 </div>
                 <div className="row-between">
                   <span className="truncate small muted">
-                    {c.last_message ? `${c.last_message.sender === user?.username ? "Ви: " : ""}${c.last_message.body}` : "Немає повідомлень"}
+                    {c.last_message ? `${c.last_message.sender === user?.username ? t("chat.you") : ""}${c.last_message.body}` : t("chat.noMessages")}
                   </span>
                   {c.unread > 0 && <span className="count">{c.unread}</span>}
                 </div>
@@ -188,39 +190,39 @@ export default function ChatPage() {
           {!id && (
             <div className="empty">
               <Icon name="chat" size={32} />
-              Оберіть розмову
+              {t("chat.selectConversation")}
             </div>
           )}
           {id && (
             <>
               <div className="chat-head">
-                <button className="icon-btn mobile-only" onClick={() => navigate("/chat")} aria-label="Назад">
+                <button className="icon-btn mobile-only" onClick={() => navigate("/chat")} aria-label={t("common.back")}>
                   <Icon name="chevronLeft" />
                 </button>
                 <div>
                   <strong>{current?.display_title}</strong>
                   <div className="small muted">
-                    {typing ? `${typing} друкує…` : current?.participants.map((p) => p.username).join(", ")}
+                    {typing ? t("chat.typing", { name: typing }) : current?.participants.map((p) => p.username).join(", ")}
                   </div>
                 </div>
                 {current?.is_group && (
                   <button
                     className="btn btn-sm"
                     onClick={async () => {
-                      if (!window.confirm("Вийти з групи?")) return;
+                      if (!window.confirm(t("chat.leaveConfirm"))) return;
                       await post(`/api/chat/conversations/${id}/leave/`);
                       navigate("/chat");
                       loadConversations();
                     }}
                   >
-                    Вийти
+                    {t("chat.leave")}
                   </button>
                 )}
               </div>
               <div className="messages" ref={messagesRef}>
                 {hasMore && (
                   <button className="link-btn center" onClick={loadOlder}>
-                    Завантажити попередні
+                    {t("chat.loadOlder")}
                   </button>
                 )}
                 {messages.map((m) => {
@@ -230,7 +232,7 @@ export default function ChatPage() {
                       {!mine && current?.is_group && <div className="msg-sender">{m.sender}</div>}
                       <div className="bubble">
                         {m.deleted ? (
-                          <em className="muted">повідомлення видалено</em>
+                          <em className="muted">{t("chat.deleted")}</em>
                         ) : (
                           <>
                             <div className="msg-text">{m.body}</div>
@@ -245,8 +247,8 @@ export default function ChatPage() {
                           <button
                             type="button"
                             className="msg-react-btn"
-                            aria-label="Реакція"
-                            title="Реакція"
+                            aria-label={t("chat.react")}
+                            title={t("chat.react")}
                             onClick={(ev) => {
                               if (reactingTo?.id === m.id) return setReactingTo(null);
                               const { above } = spaceAround(ev.currentTarget.closest(".bubble"));
@@ -266,7 +268,7 @@ export default function ChatPage() {
                             <button
                               type="button"
                               className="emoji-btn more"
-                              aria-label="Більше емоджі"
+                              aria-label={t("chat.moreEmoji")}
                               onClick={(ev) => {
                                 const { above, below } = spaceAround(ev.currentTarget.closest(".bubble"));
                                 const up = below < PICKER_HEIGHT && above > below;
@@ -286,17 +288,17 @@ export default function ChatPage() {
                         )}
                         <div className="msg-meta">
                           {formatDate(m.created_at)}
-                          {m.edited_at && " · змінено"}
+                          {m.edited_at && t("chat.edited")}
                           {mine && !m.deleted && (
                             <>
                               <button className="link-btn" onClick={() => { setEditing(m); setText(m.body); }}>
-                                ред.
+                                {t("chat.editShort")}
                               </button>
                               <button
                                 className="link-btn"
-                                onClick={() => window.confirm("Видалити повідомлення?") && del(`/api/chat/messages/${m.id}/`)}
+                                onClick={() => window.confirm(t("chat.deleteConfirm")) && del(`/api/chat/messages/${m.id}/`)}
                               >
-                                вид.
+                                {t("chat.deleteShort")}
                               </button>
                             </>
                           )}
@@ -329,9 +331,9 @@ export default function ChatPage() {
               <form className="composer" onSubmit={send}>
                 {editing && (
                   <div className="editing-bar small">
-                    Редагування повідомлення{" "}
+                    {t("chat.editing")}{" "}
                     <button type="button" className="link-btn" onClick={() => { setEditing(null); setText(""); }}>
-                      скасувати
+                      {t("chat.cancelEdit")}
                     </button>
                   </div>
                 )}
@@ -339,8 +341,8 @@ export default function ChatPage() {
                   <button
                     type="button"
                     className="icon-btn emoji-toggle"
-                    aria-label="Емоджі"
-                    title="Емоджі"
+                    aria-label={t("chat.emoji")}
+                    title={t("chat.emoji")}
                     onMouseDown={(e) => e.stopPropagation()}
                     onClick={() => setEmojiOpen((v) => !v)}
                   >
@@ -353,7 +355,7 @@ export default function ChatPage() {
                 <textarea
                   ref={textRef}
                   rows={1}
-                  placeholder="Повідомлення…"
+                  placeholder={t("chat.placeholder")}
                   value={text}
                   maxLength={10000}
                   onChange={(e) => {
@@ -370,7 +372,7 @@ export default function ChatPage() {
                     }
                   }}
                 />
-                <button className="btn btn-primary" disabled={!text.trim()} aria-label="Надіслати">
+                <button className="btn btn-primary" disabled={!text.trim()} aria-label={t("chat.send")}>
                   <Icon name="send" size={16} />
                 </button>
               </form>
@@ -394,12 +396,13 @@ export default function ChatPage() {
 }
 
 function NewChatDialog({ onClose, onCreated }: { onClose: () => void; onCreated: (id: string) => void }) {
+  const t = useT();
   const [selected, setSelected] = useState<string[]>([]);
   const [title, setTitle] = useState("");
   const [error, setError] = useState("");
 
   const create = async () => {
-    if (!selected.length) return setError("Оберіть хоча б одного учасника.");
+    if (!selected.length) return setError(t("chat.pickParticipant"));
     try {
       const c = await post<Conversation>("/api/chat/conversations/", { usernames: selected, title: selected.length > 1 ? title : "" });
       onCreated(c.id);
@@ -409,24 +412,24 @@ function NewChatDialog({ onClose, onCreated }: { onClose: () => void; onCreated:
   };
 
   return (
-    <Modal title="Нова розмова" onClose={onClose}>
+    <Modal title={t("chat.newConversation")} onClose={onClose}>
       <div className="stack">
         <UserPicker onPick={(u) => !selected.includes(u.username) && setSelected([...selected, u.username])} />
         <div className="row gap wrap">
           {selected.map((u) => (
             <span key={u} className="pill">
               {u}
-              <button type="button" className="pill-x" onClick={() => setSelected(selected.filter((x) => x !== u))} aria-label="Прибрати">
+              <button type="button" className="pill-x" onClick={() => setSelected(selected.filter((x) => x !== u))} aria-label={t("common.remove")}>
                 ×
               </button>
             </span>
           ))}
         </div>
-        {selected.length > 1 && <input placeholder="Назва групи" value={title} onChange={(e) => setTitle(e.target.value)} maxLength={100} />}
+        {selected.length > 1 && <input placeholder={t("chat.groupName")} value={title} onChange={(e) => setTitle(e.target.value)} maxLength={100} />}
         {error && <div className="form-error">{error}</div>}
         <div className="modal-actions">
           <button className="btn btn-primary" onClick={create}>
-            Почати
+            {t("chat.start")}
           </button>
         </div>
       </div>

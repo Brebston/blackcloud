@@ -11,9 +11,15 @@ Django ASGIHandler спершу повністю вичитує тіло (у п�
 
 import json
 
+from django.utils import translation
+from django.utils.translation import gettext_noop
+
+from .i18n import language_from_header
 
 
-async def _reply(send, status: int, detail: str):
+async def _reply(send, status: int, detail: str, headers: dict):
+    with translation.override(language_from_header(headers.get(b"accept-language"))):
+        detail = translation.gettext(detail)
     body = json.dumps({"detail": detail}).encode()
     await send(
         {
@@ -41,17 +47,17 @@ class BodyLimitMiddleware:
 
         if length_raw is None:
             if chunked:
-                return await _reply(send, 411, "Потрібен заголовок Content-Length.")
+                return await _reply(send, 411, gettext_noop("Потрібен заголовок Content-Length."), headers)
             declared = 0
         else:
             try:
                 declared = int(length_raw)
             except ValueError:
-                return await _reply(send, 400, "Невірний Content-Length.")
+                return await _reply(send, 400, gettext_noop("Невірний Content-Length."), headers)
             if declared < 0:
-                return await _reply(send, 400, "Невірний Content-Length.")
+                return await _reply(send, 400, gettext_noop("Невірний Content-Length."), headers)
             if declared > self.max_body:
-                return await _reply(send, 413, "Запит завеликий.")
+                return await _reply(send, 413, gettext_noop("Запит завеликий."), headers)
 
         received = 0
 
