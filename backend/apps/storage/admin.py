@@ -3,7 +3,7 @@ from django.contrib import admin
 from apps.core.admin_mixins import AuditedAdminMixin, ReadOnlyAdmin
 from apps.core.admin_site import admin_site
 
-from .models import File, Folder, PublicLink, Share
+from .models import File, FileVersion, Folder, PublicLink, Share
 
 
 class FileAdmin(AuditedAdminMixin, admin.ModelAdmin):
@@ -27,6 +27,9 @@ class FileAdmin(AuditedAdminMixin, admin.ModelAdmin):
         "key_version",
         "content_version",
         "has_thumbnail",
+        "version_counter",
+        "modified_by",
+        "content_updated_at",
         "deleted_at",
     )
 
@@ -47,7 +50,19 @@ class PublicLinkAdmin(ReadOnlyAdmin):
     exclude = ("token_hash", "password_hash")
 
 
+class FileVersionAdmin(ReadOnlyAdmin):
+    """Архівні версії — лише перегляд метаданих (вміст і ключі недоступні)."""
+
+    list_display = ("file", "number", "size", "status", "created_at", "archived_at")
+    list_filter = ("status",)
+    exclude = ("wrapped_key",)
+
+    def get_readonly_fields(self, request, obj=None):
+        return [name for name in super().get_readonly_fields(request, obj) if name != "wrapped_key"]
+
+
 admin_site.register(File, FileAdmin)
+admin_site.register(FileVersion, FileVersionAdmin)
 admin_site.register(Folder, FolderAdmin)
 admin_site.register(Share, ReadOnlyAdmin)
 admin_site.register(PublicLink, PublicLinkAdmin)

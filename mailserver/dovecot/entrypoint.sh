@@ -41,7 +41,10 @@ chmod 640 /etc/dovecot/dovecot-sql.conf.ext
 
 # ─── Master-user для веб-пошти (лише з внутрішньої мережі) ───
 HASH="$(doveadm pw -s ARGON2ID -p "$MASTER_PW")"
-printf 'webmail:%s::::::allow_nets=%s\n' "$HASH" "$WEBMAIL_CLIENT_IP/32" > /etc/dovecot/master-users
+# WEBMAIL_EXTRA_IPS — інші довірені контейнери через кому (worker: фонові завдання пошти)
+NETS="$WEBMAIL_CLIENT_IP/32"
+for ip in $(printf '%s' "${WEBMAIL_EXTRA_IPS:-}" | tr ',' ' '); do NETS="$NETS,$ip/32"; done
+printf 'webmail:%s::::::allow_nets=%s\n' "$HASH" "$NETS" > /etc/dovecot/master-users
 chown root:dovecot /etc/dovecot/master-users
 chmod 640 /etc/dovecot/master-users
 

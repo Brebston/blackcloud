@@ -24,6 +24,11 @@ case "${1:-web}" in
   worker)
     exec celery -A config worker -l INFO --concurrency "${WORKER_CONCURRENCY:-2}" -Q default,scan
     ;;
+  pusher)
+    # Лише черга "push": шифрує й надсилає Web Push у сервіси браузерів (мережа egress).
+    # Без ключів шифрування файлів і без пароля БД (SERVICE_ROLE=pusher у compose).
+    exec celery -A config worker -l INFO --concurrency "${PUSH_CONCURRENCY:-2}" -Q push -n "pusher@%h"
+    ;;
   beat)
     exec celery -A config beat -l INFO --schedule /tmp/celerybeat-schedule
     ;;

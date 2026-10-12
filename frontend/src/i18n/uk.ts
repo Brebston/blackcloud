@@ -10,6 +10,10 @@ import * as publicShare from "./parts/publicShare";
 import * as office from "./parts/office";
 import * as admin from "./parts/admin";
 import * as misc from "./parts/misc";
+import * as mailui from "./parts/mailui";
+import * as push from "./parts/push";
+import * as files2 from "./parts/files2";
+import * as dav from "./parts/dav";
 
 const uk = {
   "common.language": "Мова",
@@ -123,6 +127,7 @@ const uk = {
   "settings.tab.security": "Безпека",
   "settings.tab.sessions": "Пристрої",
   "settings.tab.mail": "Поштові клієнти",
+  "settings.tab.dav": "Мережевий диск",
   "settings.tab.activity": "Журнал",
 
   "appearance.title": "Оформлення",
@@ -361,6 +366,10 @@ const uk = {
   ...office.uk,
   ...admin.uk,
   ...misc.uk,
+  ...mailui.uk,
+  ...push.uk,
+  ...files2.uk,
+  ...dav.uk,
 };
 
 export default uk;

@@ -2,11 +2,12 @@ from django.conf import settings
 from django.urls import include, path
 
 from apps.core.admin_site import admin_site
-from apps.core.views import health
+from apps.core.views import HealthDeepView, health
 from apps.storage.views import PreviewServeView
 
 urlpatterns = [
     path("api/health/", health),
+    path("api/health/deep/", HealthDeepView.as_view()),
     path("api/auth/", include("apps.accounts.urls_auth")),
     path("api/account/", include("apps.accounts.urls_account")),
     path("api/admin/", include("apps.accounts.urls_admin")),
@@ -23,5 +24,9 @@ urlpatterns = [
     path("api/mail/", include("apps.mail.urls")),
     path("api/office/", include("apps.storage.urls_office")),
     path("api/notifications/", include("apps.core.urls")),
+    path("api/push/", include("apps.push.urls")),
+    path("api/dav/", include("apps.dav.urls_api")),
+    # WebDAV: /dav/… (Basic auth з паролем застосунку, без сесій і CSRF)
+    path("", include("apps.dav.urls")),
     path(f"{settings.ADMIN_URL_PREFIX}/", admin_site.urls),
 ]

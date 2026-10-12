@@ -8,14 +8,14 @@ import magic
 from asgiref.sync import sync_to_async
 from django.conf import settings
 from django.db import transaction
-from django.db.models import F
+from django.db.models import F, Max, Sum
 from django.http import StreamingHttpResponse
 from django.utils import timezone
 from django.utils.translation import gettext as _
 from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
 
 from . import crypto
-from .models import File, Folder, Share
+from .models import File, FileVersion, Folder, Share
 from .objectstore import get_store
 
 logger = logging.getLogger("blackcloud")
@@ -272,11 +272,14 @@ def file_response(f: File, *, inline: bool = False, frame_ancestor: str | None =
         content_type = "text/plain; charset=utf-8"
     response = StreamingHttpResponse(aiter_plaintext(f), content_type=content_type)
     response["Content-Length"] = str(f.size)
-    response["Content-Disposition"] = content_disposition("inline" if show_inline else "attachment", f.name)
+    if not show_inline:
+        _attachment_headers(response, f.name)
+        return response
+    response["Content-Disposition"] = content_disposition("inline", f.name)
     response["X-Content-Type-Options"] = "nosniff"
     response["Cache-Control"] = "private, no-store"
     response["Referrer-Policy"] = "no-referrer"
-    if show_inline and frame_ancestor:
+    if frame_ancestor:
         frame_rule = f"frame-ancestors {frame_ancestor}"
         if f.mime_type == "application/pdf":
             # Вбудований PDF-переглядач браузера не працює в CSP sandbox; ізоляцію
@@ -294,71 +297,477 @@ def file_response(f: File, *, inline: bool = False, frame_ancestor: str | None =
     return response
 
 
-# ─────────────────────────── Заміна вмісту (онлайн-редактор) ───────────────────────────
+# ─────────────────────────── Версії вмісту ───────────────────────────
+#
+# Поточний вміст завжди описує сам File (ключ, розмір, статус антивірусу), тому
+# завантаження, перегляд, мініатюри й ONLYOFFICE працюють як раніше. Попередні версії —
+# рядки FileVersion з власним ключем даних; їхні чанки лежать за File.chunk_key(i, number).
+# Кожна версія займає місце в квоті власника. Нова версія завжди проходить антивірус.
 
 
-def replace_content(f: File, data: bytes) -> File:
-    """Записує нову версію файлу (новий ключ даних), стару видаляє після коміту.
+def max_versions() -> int:
+    """Скільки версій (разом із поточною) зберігати на файл; 1 — без історії."""
+    return max(1, int(getattr(settings, "FILE_MAX_VERSIONS", 20)))
 
-    Квота коригується атомарно на різницю розмірів.
-    """
-    from .tasks import scan_file
 
-    if len(data) > settings.MAX_FILE_SIZE:
+def _archived(f: File):
+    return FileVersion.objects.filter(file=f).exclude(status=File.Status.UPLOADING)
+
+
+def _next_number(f: File) -> int:
+    """Наступний номер версії (виклик лише під select_for_update рядка File)."""
+    top = FileVersion.objects.filter(file=f).aggregate(m=Max("number"))["m"]
+    # Лічильник не дає повторно видати номер видаленої версії (її об'єкти стираються після коміту)
+    number = max(f.content_version, f.version_counter, -1 if top is None else top) + 1
+    File.objects.filter(pk=f.pk).update(version_counter=number)
+    f.version_counter = number
+    return number
+
+
+def _version_keys(f: File, number: int, chunks: int) -> list[str]:
+    return [f.chunk_key(i, number) for i in range(chunks)]
+
+
+def _drop_versions(f: File, versions) -> list[str]:
+    """Видаляє рядки версій і звільняє їхню квоту (у поточній транзакції).
+
+    Повертає ключі об'єктів, які треба стерти зі сховища ПІСЛЯ коміту."""
+    keys, total = [], 0
+    for v in versions:
+        if FileVersion.objects.filter(pk=v.pk).delete()[0]:
+            total += v.size
+            keys += _version_keys(f, v.number, v.chunks_total)
+    f.owner.release_bytes(total)
+    return keys
+
+
+def _delete_objects_on_commit(keys: list[str]) -> None:
+    if not keys:
+        return
+
+    def _run():
+        try:
+            get_store().delete(keys)
+        except Exception:
+            logger.warning("failed to delete %s stale objects", len(keys), exc_info=True)
+
+    transaction.on_commit(_run)
+
+
+def _reserve_with_pruning(f: File, size: int, keep_ids=()) -> list[str]:
+    """Резервує місце; якщо квоти бракує — видаляє найстаріші архівні версії ЦЬОГО файлу.
+
+    Якщо місця не вистачає навіть без історії — PermissionDenied (транзакція відкотиться,
+    тож і видалені версії повернуться)."""
+    keys: list[str] = []
+    while not f.owner.try_reserve_bytes(size):
+        victim = _archived(f).exclude(pk__in=list(keep_ids)).order_by("number").first()
+        if victim is None:
+            raise PermissionDenied(_("Недостатньо місця у сховищі для збереження."))
+        keys += _drop_versions(f, [victim])
+    return keys
+
+
+def _prune_count(f: File, keep_ids=()) -> list[str]:
+    """Залишає не більше max_versions() - 1 архівних версій (найновіші)."""
+    limit = max_versions() - 1
+    archived = list(_archived(f).order_by("-number"))
+    excess = [v for v in archived[limit:] if v.pk not in set(keep_ids)]
+    return _drop_versions(f, excess)
+
+
+def _swap_in(f: File, *, number, size, wrapped, key_version, chunk_size, chunks, mime, author, current_released=False):
+    """Робить новий вміст поточним: старий поточний стає архівною версією (або видаляється,
+    якщо історію вимкнено). Виклик лише під select_for_update. Повертає (ключі до видалення, архівна версія)."""
+    drop: list[str] = []
+    archived = None
+    if f.has_thumbnail:
+        drop.append(f.thumb_key())
+    if max_versions() > 1:
+        archived = FileVersion.objects.create(
+            file=f,
+            number=f.content_version,
+            size=f.size,
+            mime_type=f.mime_type,
+            sha256=f.sha256,
+            status=f.status,
+            scan_detail=f.scan_detail,
+            wrapped_key=f.wrapped_key,
+            key_version=f.key_version,
+            chunk_size=f.chunk_size,
+            chunks_received=f.chunks_total,
+            author_id=f.modified_by_id or f.owner_id,
+            created_at=f.content_updated_at or f.created_at,
+        )
+    else:
+        if not current_released:
+            f.owner.release_bytes(f.size)
+        drop += _version_keys(f, f.content_version, f.chunks_total)
+    now = timezone.now()
+    File.objects.filter(pk=f.pk).update(
+        size=size,
+        wrapped_key=wrapped,
+        key_version=key_version,
+        chunk_size=chunk_size,
+        chunks_received=chunks,
+        content_version=number,
+        mime_type=mime,
+        sha256="",
+        status=File.Status.SCANNING,
+        scan_detail="",
+        has_thumbnail=False,
+        modified_by=author,
+        content_updated_at=now,
+        updated_at=now,
+    )
+    drop += _prune_count(f)
+    return drop, archived
+
+
+def _after_swap(f: File, drop: list[str], archived) -> None:
+    from .tasks import scan_file, scan_version
+
+    _delete_objects_on_commit(drop)
+    file_id = str(f.pk)
+    transaction.on_commit(lambda: scan_file.delay(file_id))
+    if archived is not None and archived.status == File.Status.SCANNING:
+        # Попередня версія ще не встигла пройти антивірус — перевіряємо її окремо
+        version_id = str(archived.pk)
+        transaction.on_commit(lambda: scan_version.delay(version_id))
+
+
+def _write_version_chunks(f: File, number: int, data_key: bytes, chunks, size: int, chunk_size: int):
+    """Перерізає довільні шматки відкритого тексту на чанки chunk_size і шифрує їх.
+
+    Повертає (кількість чанків, перші байти для визначення MIME)."""
+    store = get_store()
+    written: list[str] = []
+    buf = bytearray()
+    head = b""
+    total = 0
+    index = 0
+
+    def put(data: bytes):
+        nonlocal index
+        key = f.chunk_key(index, number)
+        store.put(key, crypto.encrypt_chunk(data_key, f.id, index, data))
+        written.append(key)
+        index += 1
+
+    try:
+        for piece in chunks:
+            total += len(piece)
+            if total > size:
+                raise ValidationError({"detail": _("Розмір даних не збігається з оголошеним.")})
+            if len(head) < 65536:
+                head += bytes(piece[: 65536 - len(head)])
+            buf += piece
+            while len(buf) >= chunk_size:
+                put(bytes(buf[:chunk_size]))
+                del buf[:chunk_size]
+        if buf:
+            put(bytes(buf))
+        if total != size:
+            raise ValidationError({"detail": _("Розмір даних не збігається з оголошеним.")})
+    except BaseException:
+        try:
+            store.delete(written)
+        except Exception:
+            logger.warning("failed to clean partial version of %s", f.pk, exc_info=True)
+        raise
+    return index, head
+
+
+def store_new_version(f: File, chunks, *, size: int, author=None, keep_ids=()) -> File:
+    """Записує новий вміст файлу як нову поточну версію (публічний помічник, напр. для WebDAV).
+
+    chunks — ітерабельне з байтами відкритого тексту довільної довжини (сумарно рівно size).
+    Попередній вміст стає архівною версією, квота резервується атомарно (за потреби —
+    ціною найстаріших версій цього файлу), новий вміст отримує новий ключ і йде на антивірус."""
+    if size < 0 or size > settings.MAX_FILE_SIZE:
         raise ValidationError({"detail": _("Файл завеликий.")})
     with transaction.atomic():
         f = File.objects.select_for_update().select_related("owner").get(pk=f.pk)
-        delta = len(data) - f.size
-        if delta > 0 and not f.owner.try_reserve_bytes(delta):
-            raise PermissionDenied(_("Недостатньо місця у сховищі для збереження."))
-        if delta < 0:
-            f.owner.release_bytes(-delta)
-
-        old_version, old_chunks, old_thumb = f.content_version, f.chunks_total, f.has_thumbnail
-        new_version = old_version + 1
+        if f.deleted_at is not None or f.status == File.Status.UPLOADING:
+            raise ValidationError({"detail": _("Файл недоступний для зміни.")})
+        drop: list[str] = []
+        released = False
+        if max_versions() > 1:
+            # Звільняємо місце під ліміт кількості ще до резервування квоти
+            limit = max_versions() - 2
+            archived = [v for v in _archived(f).order_by("-number") if v.pk not in set(keep_ids)]
+            drop += _drop_versions(f, archived[max(limit, 0) :])
+        else:
+            f.owner.release_bytes(f.size)
+            released = True
+        drop += _reserve_with_pruning(f, size, keep_ids)
+        number = _next_number(f)
         chunk_size = settings.UPLOAD_CHUNK_SIZE
         data_key = crypto.new_data_key()
         wrapped, key_version = crypto.wrap_key(data_key, f.id)
-        store = get_store()
-        count = 0
-        for count, offset in enumerate(range(0, len(data), chunk_size), start=1):
-            index = count - 1
-            store.put(
-                f.chunk_key(index, new_version),
-                crypto.encrypt_chunk(data_key, f.id, index, data[offset : offset + chunk_size]),
-            )
+        count, head = _write_version_chunks(f, number, data_key, chunks, size, chunk_size)
         try:
-            mime = magic.from_buffer(data[:65536], mime=True)[:127] if data else f.mime_type
+            mime = magic.from_buffer(head, mime=True)[:127] if head else f.mime_type
         except Exception:
             mime = f.mime_type
-        File.objects.filter(pk=f.pk).update(
-            size=len(data),
-            wrapped_key=wrapped,
+        more, archived_v = _swap_in(
+            f,
+            number=number,
+            size=size,
+            wrapped=wrapped,
             key_version=key_version,
             chunk_size=chunk_size,
-            chunks_received=count,
-            content_version=new_version,
-            mime_type=mime,
-            sha256="",
-            status=File.Status.SCANNING,
-            scan_detail="",
-            has_thumbnail=False,
-            updated_at=timezone.now(),
+            chunks=count,
+            mime=mime,
+            author=author,
+            current_released=released,
         )
-        old_keys = [f.chunk_key(i, old_version) for i in range(old_chunks)]
-        if old_thumb:
-            old_keys.append(f.thumb_key(old_version))
-
-        def _after_commit():
-            try:
-                store.delete(old_keys)
-            except Exception:
-                logger.warning("failed to delete old version of %s", f.pk, exc_info=True)
-            scan_file.delay(str(f.pk))
-
-        transaction.on_commit(_after_commit)
+        _after_swap(f, drop + more, archived_v)
     f.refresh_from_db()
     return f
+
+
+def replace_content(f: File, data: bytes, *, author=None) -> File:
+    """Нова версія з онлайн-редактора (сигнатура збережена для сумісності)."""
+    if len(data) > settings.MAX_FILE_SIZE:
+        raise ValidationError({"detail": _("Файл завеликий.")})
+    return store_new_version(f, [data], size=len(data), author=author or f.owner)
+
+
+def iter_version_plaintext(v: FileVersion):
+    """Розшифрований вміст архівної версії (чанк за чанком)."""
+    f = v.file
+    data_key = crypto.unwrap_key(v.wrapped_key, v.key_version, f.id)
+    store = get_store()
+    for index in range(v.chunks_total):
+        yield crypto.decrypt_chunk(data_key, f.id, index, store.get(f.chunk_key(index, v.number)))
+
+
+async def aiter_version_plaintext(v: FileVersion):
+    data_key = crypto.unwrap_key(v.wrapped_key, v.key_version, v.file.id)
+    store = get_store()
+
+    def read(index):
+        return crypto.decrypt_chunk(data_key, v.file.id, index, store.get(v.file.chunk_key(index, v.number)))
+
+    for index in range(v.chunks_total):
+        yield await sync_to_async(read, thread_sensitive=False)(index)
+
+
+def get_own_version(user, file_id, version_id) -> tuple[File, FileVersion | None]:
+    """Файл власника і його версія; version_id == id файлу означає поточну версію (None)."""
+    f = get_own_file(user, file_id)
+    if str(version_id) == str(f.pk):
+        return f, None
+    v = _archived(f).filter(pk=version_id).first()
+    if v is None:
+        raise NotFound(_("Версію не знайдено."))
+    v.file = f
+    return f, v
+
+
+def list_versions(f: File) -> list[dict]:
+    owner_name = f.owner.username
+    names = {}
+
+    def author_name(uid):
+        if uid is None:
+            return ""
+        if uid not in names:
+            from django.contrib.auth import get_user_model
+
+            names[uid] = get_user_model().objects.filter(pk=uid).values_list("username", flat=True).first() or ""
+        return names[uid]
+
+    names[f.owner_id] = owner_name
+    items = [
+        {
+            "id": str(f.pk),
+            "number": f.content_version,
+            "created_at": f.content_updated_at or f.created_at,
+            "size": f.size,
+            "author": author_name(f.modified_by_id or f.owner_id),
+            "status": f.status,
+            "status_display": f.get_status_display(),
+            "downloadable": f.is_downloadable,
+            "is_current": True,
+        }
+    ]
+    for v in _archived(f).order_by("-number"):
+        items.append(
+            {
+                "id": str(v.pk),
+                "number": v.number,
+                "created_at": v.created_at,
+                "size": v.size,
+                "author": author_name(v.author_id),
+                "status": v.status,
+                "status_display": v.get_status_display(),
+                "downloadable": v.is_downloadable,
+                "is_current": False,
+            }
+        )
+    return items
+
+
+def restore_version(f: File, v: FileVersion, user) -> File:
+    """Відновлення копіюванням (copy-on-write): вміст версії перешифровується новим ключем
+    у НОВУ поточну версію, яка знову проходить антивірус. Історія лишається незмінною."""
+    if not v.is_downloadable:
+        raise ValidationError({"detail": _("Відновити можна лише версію, перевірену антивірусом.")})
+    return store_new_version(f, iter_version_plaintext(v), size=v.size, author=user, keep_ids=[v.pk])
+
+
+def delete_version(f: File, v: FileVersion) -> None:
+    with transaction.atomic():
+        f = File.objects.select_for_update().select_related("owner").get(pk=f.pk)
+        if not _archived(f).filter(pk=v.pk).exists():
+            raise NotFound(_("Версію не знайдено."))
+        _delete_objects_on_commit(_drop_versions(f, [v]))
+
+
+def version_response(f: File, v: FileVersion) -> StreamingHttpResponse:
+    """Завантаження архівної версії — ті самі правила, що й для файлу (attachment, sandbox)."""
+    if not v.is_downloadable:
+        raise PermissionDenied(_("Версія недоступна для завантаження (статус: %(status)s).") % {"status": v.get_status_display()})
+    stem, ext = os.path.splitext(f.name)
+    response = StreamingHttpResponse(aiter_version_plaintext(v), content_type="application/octet-stream")
+    response["Content-Length"] = str(v.size)
+    _attachment_headers(response, f"{stem} (v{v.number}){ext}")
+    return response
+
+
+def _attachment_headers(response, filename: str) -> None:
+    response["Content-Disposition"] = content_disposition("attachment", filename)
+    response["X-Content-Type-Options"] = "nosniff"
+    response["Cache-Control"] = "private, no-store"
+    response["Referrer-Policy"] = "no-referrer"
+    response["Content-Security-Policy"] = "default-src 'none'; frame-ancestors 'none'; sandbox"
+    response["Cross-Origin-Resource-Policy"] = "same-origin"
+    response["X-Frame-Options"] = "DENY"
+
+
+# ─── Завантаження нової версії чанками (upload з replace_file_id) ───
+
+
+def start_version_upload(user, target: File, size: int) -> FileVersion:
+    if size < 0 or size > settings.MAX_FILE_SIZE:
+        raise ValidationError({"size": [_("Максимальний розмір файлу — %(n)s ГБ.") % {"n": settings.MAX_FILE_SIZE // 1024**3}]})
+    with transaction.atomic():
+        f = File.objects.select_for_update().select_related("owner").filter(pk=target.pk, owner=user).first()
+        if f is None or f.deleted_at is not None:
+            raise NotFound(_("Файл не знайдено."))
+        if f.status == File.Status.UPLOADING:
+            raise ValidationError({"detail": _("Файл недоступний для зміни.")})
+        try:
+            drop = _reserve_with_pruning(f, size)
+        except PermissionDenied:
+            raise PermissionDenied(_("Недостатньо місця у сховищі."))
+        v = FileVersion(
+            file=f,
+            number=_next_number(f),
+            size=size,
+            chunk_size=settings.UPLOAD_CHUNK_SIZE,
+            status=File.Status.UPLOADING,
+            upload_expires_at=timezone.now() + settings.UPLOAD_SESSION_TTL,
+            author=user,
+        )
+        v.wrapped_key, v.key_version = crypto.wrap_key(crypto.new_data_key(), f.id)
+        v.save()
+        _delete_objects_on_commit(drop)
+    return v
+
+
+def get_own_upload(user, pk) -> File | FileVersion:
+    """Сесія завантаження: новий файл (File) або нова версія наявного (FileVersion)."""
+    f = File.objects.filter(pk=pk, owner=user, deleted_at__isnull=True).first()
+    if f is not None:
+        return f
+    v = (
+        FileVersion.objects.select_related("file", "file__owner")
+        .filter(pk=pk, file__owner=user, status=File.Status.UPLOADING)
+        .first()
+    )
+    if v is None:
+        raise NotFound(_("Файл не знайдено."))
+    return v
+
+
+def write_version_chunk(v: FileVersion, index: int, data: bytes) -> FileVersion:
+    if v.status != File.Status.UPLOADING:
+        raise ValidationError({"detail": _("Завантаження вже завершено або скасовано.")})
+    if v.upload_expires_at and v.upload_expires_at < timezone.now():
+        raise ValidationError({"detail": _("Сесія завантаження прострочена.")})
+    if index != v.chunks_received:
+        raise ValidationError({"detail": _("Невірний порядок чанків."), "expected_index": v.chunks_received})
+    if index >= v.chunks_total:
+        raise ValidationError({"detail": _("Зайвий чанк.")})
+    if len(data) != v.expected_chunk_len(index):
+        raise ValidationError({"detail": _("Очікувалось %(expected)s байт, отримано %(got)s.") % {"expected": v.expected_chunk_len(index), "got": len(data)}})
+    f = v.file
+    data_key = crypto.unwrap_key(v.wrapped_key, v.key_version, f.id)
+    get_store().put(f.chunk_key(index, v.number), crypto.encrypt_chunk(data_key, f.id, index, data))
+    updates = {"chunks_received": F("chunks_received") + 1}
+    if index == 0:
+        try:
+            updates["mime_type"] = magic.from_buffer(data[:65536], mime=True)[:127]
+        except Exception:
+            logger.warning("mime detection failed", exc_info=True)
+    updated = FileVersion.objects.filter(pk=v.pk, chunks_received=index, status=File.Status.UPLOADING).update(**updates)
+    if updated != 1:
+        raise ValidationError({"detail": _("Конфлікт завантаження, повторіть.")})
+    v.refresh_from_db()
+    return v
+
+
+def complete_version_upload(v: FileVersion) -> File:
+    if v.status != File.Status.UPLOADING:
+        raise ValidationError({"detail": _("Завантаження вже завершено.")})
+    if v.chunks_received != v.chunks_total:
+        raise ValidationError({"detail": _("Отримано не всі чанки."), "expected_index": v.chunks_received})
+    with transaction.atomic():
+        f = File.objects.select_for_update().select_related("owner").get(pk=v.file_id)
+        v = FileVersion.objects.select_for_update().filter(pk=v.pk, status=File.Status.UPLOADING).first()
+        if v is None:
+            raise ValidationError({"detail": _("Конфлікт завантаження.")})
+        if f.deleted_at is not None or f.status == File.Status.UPLOADING:
+            raise ValidationError({"detail": _("Файл недоступний для зміни.")})
+        params = dict(
+            number=v.number,
+            size=v.size,
+            wrapped=v.wrapped_key,
+            key_version=v.key_version,
+            chunk_size=v.chunk_size,
+            chunks=v.chunks_received,
+            mime=v.mime_type,
+            author=v.author,
+        )
+        # Квота вже зарезервована на старті — переходить від сесії до поточної версії
+        v.delete()
+        drop, archived = _swap_in(f, **params)
+        _after_swap(f, drop, archived)
+    f.refresh_from_db()
+    return f
+
+
+def abort_version_upload(v: FileVersion) -> None:
+    with transaction.atomic():
+        f = File.objects.select_for_update().select_related("owner").get(pk=v.file_id)
+        v = FileVersion.objects.filter(pk=v.pk, status=File.Status.UPLOADING).first()
+        if v is None:
+            raise ValidationError({"detail": _("Завантаження вже завершено.")})
+        _delete_objects_on_commit(_drop_versions(f, [v]))
+
+
+def prune_versions(f: File, *, older_than=None) -> int:
+    """Видаляє зайві (понад FILE_MAX_VERSIONS) і, за потреби, застарілі архівні версії."""
+    with transaction.atomic():
+        f = File.objects.select_for_update().select_related("owner").get(pk=f.pk)
+        keys = _prune_count(f)
+        if older_than is not None:
+            keys += _drop_versions(f, list(_archived(f).filter(archived_at__lt=older_than)))
+        _delete_objects_on_commit(keys)
+    return len(keys)
 
 
 def read_thumbnail(f: File) -> bytes:
@@ -377,7 +786,8 @@ def purge_file(f: File) -> None:
         logger.exception("failed to delete objects for %s", f.pk)
         raise
     owner = f.owner
-    size = f.size
+    # Квота: поточний вміст + усі версії (архівні й незавершені завантаження)
+    size = f.size + (FileVersion.objects.filter(file=f).aggregate(s=Sum("size"))["s"] or 0)
     f.delete()
     owner.release_bytes(size)
 

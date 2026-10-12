@@ -89,6 +89,7 @@ def test_replace_content_new_version_quota_and_cleanup(alice, client_for, settin
     from apps.storage import services
 
     settings.UPLOAD_CHUNK_SIZE = 1024
+    settings.FILE_MAX_VERSIONS = 1  # без історії версій — стара версія видаляється одразу
     c = client_for(alice)
     info = upload(c, b"a" * 3000, name="notes.txt")
     f = File.objects.get(pk=info["id"])

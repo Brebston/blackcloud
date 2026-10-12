@@ -39,12 +39,13 @@ msgid "Вхід з IP %(ip)s. Якщо це не ви — змініть пар�
 msgstr "Sign-in from IP %(ip)s. If this wasn't you, change your password."
 
 #: apps/accounts/views.py:123
+#: apps/dav/views.py:174
 #: apps/mail/views.py:413
 msgid "Забагато невдалих спроб. Спробуйте пізніше."
 msgstr "Too many failed attempts. Try again later."
 
 #: apps/accounts/views.py:127
-#: apps/storage/views.py:622
+#: apps/storage/views.py:771
 msgid "Невірний пароль."
 msgstr "Incorrect password."
 
@@ -246,7 +247,7 @@ msgid "Не можна видалити останній календар."
 msgstr "You can't delete your last calendar."
 
 #: apps/calendars/views.py:80
-#: apps/chat/views.py:268
+#: apps/chat/views.py:270
 #: apps/mail/views_admin.py:96
 msgid "Користувача не знайдено."
 msgstr "User not found."
@@ -264,63 +265,64 @@ msgstr "Message is empty."
 msgid "Нотатки"
 msgstr "Notes"
 
-#: apps/chat/views.py:148
+#: apps/chat/views.py:149
 msgid "Файл недоступний."
 msgstr "File is unavailable."
 
-#: apps/chat/views.py:174
+#: apps/chat/views.py:176
 msgid "Час на редагування минув."
 msgstr "This message can no longer be edited."
 
-#: apps/chat/views.py:177
+#: apps/chat/views.py:179
 msgid "1–10000 символів."
 msgstr "1–10000 characters."
 
-#: apps/chat/views.py:203
+#: apps/chat/views.py:205
 msgid "Потрібен один емоджі."
 msgstr "A single emoji is required."
 
-#: apps/chat/views.py:213
+#: apps/chat/views.py:215
 msgid "Забагато реакцій на одне повідомлення."
 msgstr "Too many reactions on this message."
 
-#: apps/chat/views.py:216
+#: apps/chat/views.py:218
 msgid "Забагато різних реакцій."
 msgstr "Too many different reactions."
 
-#: apps/chat/views.py:243
+#: apps/chat/views.py:245
 msgid "З особистого діалогу не можна вийти."
 msgstr "You can't leave a direct message conversation."
 
-#: apps/chat/views.py:261
+#: apps/chat/views.py:263
 msgid "Лише адміністратор групи може додавати учасників."
 msgstr "Only a group admin can add members."
 
-#: apps/chat/views.py:270
+#: apps/chat/views.py:272
 msgid "Забагато учасників."
 msgstr "Too many members."
 
-#: apps/chat/views.py:65
+#: apps/chat/views.py:66
 msgid "Розмову не знайдено."
 msgstr "Conversation not found."
 
-#: apps/chat/views.py:81
+#: apps/chat/views.py:82
 msgid "Деяких користувачів не знайдено."
 msgstr "Some users were not found."
 
-#: apps/core/asgi_limits.py:50
-#: apps/core/middleware.py:38
+#: apps/core/asgi_limits.py:64
+#: apps/core/middleware.py:44
 msgid "Потрібен заголовок Content-Length."
 msgstr "Content-Length header is required."
 
-#: apps/core/asgi_limits.py:58
-#: apps/core/asgi_limits.py:56
-#: apps/core/middleware.py:42
+#: apps/core/asgi_limits.py:81
+#: apps/core/asgi_limits.py:79
+#: apps/core/asgi_limits.py:72
 msgid "Невірний Content-Length."
 msgstr "Invalid Content-Length."
 
-#: apps/core/asgi_limits.py:60
-#: apps/core/middleware.py:44
+#: apps/core/asgi_limits.py:83
+#: apps/core/asgi_limits.py:70
+#: apps/core/middleware.py:50
 msgid "Запит завеликий."
 msgstr "Request is too large."
 
@@ -331,6 +333,173 @@ msgstr "Internal server error."
 #: apps/core/permissions.py:24
 msgid "Потрібні права адміністратора та вхід з 2FA."
 msgstr "Administrator rights and a 2FA sign-in are required."
+
+#: apps/dav/api.py:50
+msgid "WebDAV"
+msgstr "WebDAV"
+
+#: apps/dav/api.py:56
+#, python-format
+msgid "Максимум %(n)s паролів WebDAV. Видаліть непотрібні."
+msgstr "At most %(n)s WebDAV passwords. Delete the ones you no longer need."
+
+#: apps/dav/ops.py:164
+#: apps/storage/services.py:126
+#: apps/storage/views.py:162
+msgid "Надто велика вкладеність папок."
+msgstr "Folders are nested too deeply."
+
+#: apps/dav/views.py:145
+msgid "Невірний шлях."
+msgstr "Invalid path."
+
+#: apps/dav/views.py:147
+msgid "Невірне або заборонене XML-тіло запиту."
+msgstr "Invalid or forbidden XML request body."
+
+#: apps/dav/views.py:161
+msgid "Міжсайтові запити до WebDAV заборонені."
+msgstr "Cross-site requests to WebDAV are not allowed."
+
+#: apps/dav/views.py:163
+msgid "WebDAV доступний лише через HTTPS."
+msgstr "WebDAV is only available over HTTPS."
+
+#: apps/dav/views.py:195
+#: apps/storage/services.py:48
+msgid "Невірне ім'я."
+msgstr "Invalid name."
+
+#: apps/dav/views.py:311
+#: apps/dav/views.py:331
+#: apps/dav/views.py:392
+msgid "Не знайдено."
+msgstr "Not found."
+
+#: apps/dav/views.py:383
+msgid "Файл ще перевіряється антивірусом. Спробуйте за хвилину."
+msgstr "The file is still being scanned by the antivirus. Try again in a minute."
+
+#: apps/dav/views.py:385
+msgid "Файл заблоковано антивірусом."
+msgstr "The file has been blocked by the antivirus."
+
+#: apps/dav/views.py:386
+#: apps/storage/services.py:268
+#, python-format
+msgid "Файл недоступний для завантаження (статус: %(status)s)."
+msgstr "File can't be downloaded (status: %(status)s)."
+
+#: apps/dav/views.py:464
+#: apps/storage/services.py:488
+#: apps/storage/services.py:533
+msgid "Файл завеликий."
+msgstr "File is too large."
+
+#: apps/dav/views.py:472
+msgid "Не можна записати файл у корінь як ресурс."
+msgstr "Cannot write a file onto the root collection."
+
+#: apps/dav/views.py:475
+#: apps/dav/views.py:541
+#: apps/dav/views.py:697
+msgid "Батьківської папки не існує."
+msgstr "The parent folder does not exist."
+
+#: apps/dav/views.py:477
+msgid "Це папка."
+msgstr "This is a folder."
+
+#: apps/dav/views.py:485
+#: apps/storage/services.py:176
+#: apps/storage/services.py:655
+#, python-format
+msgid "Максимальний розмір файлу — %(n)s ГБ."
+msgstr "Maximum file size is %(n)s GB."
+
+#: apps/dav/views.py:498
+msgid "Розмір тіла запиту не збігається з Content-Length."
+msgstr "The request body size does not match Content-Length."
+
+#: apps/dav/views.py:500
+msgid "Файл з таким ім'ям щойно створено іншим клієнтом."
+msgstr "A file with this name was just created by another client."
+
+#: apps/dav/views.py:524
+msgid "Корінь не можна видалити."
+msgstr "The root cannot be deleted."
+
+#: apps/dav/views.py:536
+msgid "MKCOL з тілом не підтримується."
+msgstr "MKCOL with a request body is not supported."
+
+#: apps/dav/views.py:543
+#: apps/dav/views.py:549
+msgid "Ресурс уже існує."
+msgstr "The resource already exists."
+
+#: apps/dav/views.py:559
+msgid "Потрібен заголовок Destination."
+msgstr "The Destination header is required."
+
+#: apps/dav/views.py:564
+msgid "Destination має вказувати на цей сервер (/dav/)."
+msgstr "Destination must point to this server (/dav/)."
+
+#: apps/dav/views.py:570
+msgid "Корінь не можна копіювати чи переміщувати."
+msgstr "The root cannot be copied or moved."
+
+#: apps/dav/views.py:576
+msgid "Не можна замінити корінь."
+msgstr "The root cannot be replaced."
+
+#: apps/dav/views.py:578
+msgid "Джерело й призначення збігаються."
+msgstr "Source and destination are the same."
+
+#: apps/dav/views.py:580
+msgid "Не можна скопіювати чи перемістити папку саму в себе."
+msgstr "A folder cannot be copied or moved into itself."
+
+#: apps/dav/views.py:584
+msgid "Батьківської папки призначення не існує."
+msgstr "The destination parent folder does not exist."
+
+#: apps/dav/views.py:591
+msgid "Призначення вже існує (Overwrite: F)."
+msgstr "The destination already exists (Overwrite: F)."
+
+#: apps/dav/views.py:617
+#: apps/storage/services.py:178
+#: apps/storage/services.py:665
+msgid "Недостатньо місця у сховищі."
+msgstr "Not enough storage space."
+
+#: apps/dav/views.py:629
+#: apps/dav/views.py:604
+msgid "Призначення вже існує."
+msgstr "The destination already exists."
+
+#: apps/dav/views.py:632
+msgid "Папка завелика для копіювання на сервері. Скопіюйте її частинами або через вебінтерфейс."
+msgstr "The folder is too large to copy on the server. Copy it in parts or via the web interface."
+
+#: apps/dav/views.py:635
+msgid "У папці є файли, які ще не перевірено антивірусом або заблоковано."
+msgstr "The folder contains files that have not been scanned by the antivirus yet or are blocked."
+
+#: apps/dav/views.py:693
+msgid "Depth для LOCK — 0 або infinity."
+msgstr "Depth for LOCK must be 0 or infinity."
+
+#: apps/dav/views.py:720
+msgid "Потрібен заголовок Lock-Token."
+msgstr "The Lock-Token header is required."
+
+#: apps/dav/views.py:98
+msgid "Потрібен пароль застосунку WebDAV (див. Налаштування → WebDAV)."
+msgstr "A WebDAV app password is required (see Settings → WebDAV)."
 
 #: apps/mail/confidential.py:41
 #, python-format
@@ -346,6 +515,7 @@ msgid "Теку не знайдено."
 msgstr "Folder not found."
 
 #: apps/mail/imap.py:195
+#: apps/push/mailwatch.py:90
 msgid "(без теми)"
 msgstr "(no subject)"
 
@@ -523,12 +693,58 @@ msgstr "Unknown or disabled mail domain."
 msgid "Максимум %(n)s скриньок на користувача."
 msgstr "Maximum %(n)s mailboxes per user."
 
-#: apps/storage/serializers.py:127
+#: apps/push/mailwatch.py:89
+#: apps/push/service.py:85
+msgid "Новий лист"
+msgstr "New email"
+
+#: apps/push/service.py:115
+msgid "Вкладення"
+msgstr "Attachment"
+
+#: apps/push/service.py:117
+msgid "Групова розмова"
+msgstr "Group chat"
+
+#: apps/push/service.py:85
+msgid "Нове повідомлення"
+msgstr "New message"
+
+#: apps/push/views.py:108
+msgid "Обов'язкове поле."
+msgstr "This field is required."
+
+#: apps/push/views.py:123
+msgid "Push-сповіщення працюють на цьому пристрої."
+msgstr "Push notifications work on this device."
+
+#: apps/push/views.py:123
+msgid "Тестове сповіщення"
+msgstr "Test notification"
+
+#: apps/push/views.py:127
+msgid "Немає пристроїв, підписаних на сповіщення."
+msgstr "No devices are subscribed to notifications."
+
+#: apps/push/views.py:39
+msgid "Непідтримуваний сервіс push-сповіщень."
+msgstr "Unsupported push notification service."
+
+#: apps/push/views.py:54
+#: apps/push/views.py:46
+msgid "Невірний ключ підписки."
+msgstr "Invalid subscription key."
+
+#: apps/push/views.py:72
+msgid "Push-сповіщення не налаштовано на сервері."
+msgstr "Push notifications are not configured on the server."
+
+#: apps/storage/serializers.py:129
 #, python-format
 msgid "Пароль посилання — щонайменше %(n)s символів."
 msgstr "Link password must be at least %(n)s characters."
 
-#: apps/storage/serializers.py:89
+#: apps/storage/serializers.py:91
 msgid "Вкажіть або file, або folder."
 msgstr "Specify either file or folder."
 
@@ -536,79 +752,73 @@ msgstr "Specify either file or folder."
 msgid "Не можна перемістити папку саму в себе."
 msgstr "You can't move a folder into itself."
 
-#: apps/storage/services.py:126
-#: apps/storage/views.py:160
-msgid "Надто велика вкладеність папок."
-msgstr "Folders are nested too deeply."
-
 #: apps/storage/services.py:155
 #: apps/storage/services.py:165
+#: apps/storage/services.py:692
 msgid "Файл не знайдено."
 msgstr "File not found."
 
-#: apps/storage/services.py:176
-#, python-format
-msgid "Максимальний розмір файлу — %(n)s ГБ."
-msgstr "Maximum file size is %(n)s GB."
-
-#: apps/storage/services.py:178
-msgid "Недостатньо місця у сховищі."
-msgstr "Not enough storage space."
-
 #: apps/storage/services.py:196
+#: apps/storage/services.py:698
 msgid "Завантаження вже завершено або скасовано."
 msgstr "Upload is already finished or canceled."
 
 #: apps/storage/services.py:198
+#: apps/storage/services.py:700
 msgid "Сесія завантаження прострочена."
 msgstr "Upload session has expired."
 
 #: apps/storage/services.py:200
+#: apps/storage/services.py:702
 msgid "Невірний порядок чанків."
 msgstr "Chunks are out of order."
 
 #: apps/storage/services.py:202
+#: apps/storage/services.py:704
 msgid "Зайвий чанк."
 msgstr "Unexpected extra chunk."
 
 #: apps/storage/services.py:204
+#: apps/storage/services.py:706
 #, python-format
 msgid "Очікувалось %(expected)s байт, отримано %(got)s."
 msgstr "Expected %(expected)s bytes, got %(got)s."
 
 #: apps/storage/services.py:218
+#: apps/storage/services.py:718
 msgid "Конфлікт завантаження, повторіть."
 msgstr "Upload conflict, please try again."
 
 #: apps/storage/services.py:225
-#: apps/storage/views.py:329
+#: apps/storage/services.py:725
+#: apps/storage/services.py:758
 msgid "Завантаження вже завершено."
 msgstr "Upload is already finished."
 
 #: apps/storage/services.py:227
+#: apps/storage/services.py:727
 msgid "Отримано не всі чанки."
 msgstr "Not all chunks have been received."
 
 #: apps/storage/services.py:232
+#: apps/storage/services.py:732
 msgid "Конфлікт завантаження."
 msgstr "Upload conflict."
 
-#: apps/storage/services.py:268
-#, python-format
-msgid "Файл недоступний для завантаження (статус: %(status)s)."
-msgstr "File can't be downloaded (status: %(status)s)."
-
-#: apps/storage/services.py:308
-msgid "Файл завеликий."
-msgstr "File is too large."
-
-#: apps/storage/services.py:313
+#: apps/storage/services.py:366
 msgid "Недостатньо місця у сховищі для збереження."
 msgstr "Not enough storage space to save."
 
-#: apps/storage/services.py:48
-msgid "Невірне ім'я."
-msgstr "Invalid name."
+#: apps/storage/services.py:471
+#: apps/storage/services.py:461
+msgid "Розмір даних не збігається з оголошеним."
+msgstr "The data size does not match the declared size."
+
+#: apps/storage/services.py:492
+#: apps/storage/services.py:661
+#: apps/storage/services.py:734
+msgid "Файл недоступний для зміни."
+msgstr "The file cannot be modified."
 
 #: apps/storage/services.py:54
 msgid "Ім'я не може містити / або \\."
@@ -618,107 +828,138 @@ msgstr "Name can't contain / or \\."
 msgid "Невірне ім'я (1–255 символів, без / і \\)."
 msgstr "Invalid name (1–255 characters, no / or \\)."
 
+#: apps/storage/services.py:564
+#: apps/storage/services.py:625
+msgid "Версію не знайдено."
+msgstr "Version not found."
+
+#: apps/storage/services.py:617
+msgid "Відновити можна лише версію, перевірену антивірусом."
+msgstr "Only a version that passed the antivirus check can be restored."
+
+#: apps/storage/services.py:632
+#, python-format
+msgid "Версія недоступна для завантаження (статус: %(status)s)."
+msgstr "This version is not available for download (status: %(status)s)."
+
 #: apps/storage/services.py:80
 msgid "Забагато файлів з таким ім'ям."
 msgstr "Too many files with this name."
 
 #: apps/storage/services.py:91
-#: apps/storage/views.py:81
-#: apps/storage/views.py:84
+#: apps/storage/views.py:433
+#: apps/storage/views.py:436
 msgid "Папку не знайдено."
 msgstr "Folder not found."
 
-#: apps/storage/tasks.py:67
+#: apps/storage/tasks.py:52
 msgid "Файл заблоковано антивірусом"
 msgstr "File blocked by antivirus"
 
-#: apps/storage/tasks.py:68
+#: apps/storage/tasks.py:53
 #, python-format
 msgid "«%(name)s»: %(detail)s"
 msgstr "“%(name)s”: %(detail)s"
 
-#: apps/storage/views.py:251
-#: apps/storage/views.py:263
+#: apps/storage/views.py:253
+#: apps/storage/views.py:265
 #: apps/storage/views_office.py:44
 msgid "Файл у кошику."
 msgstr "File is in the trash."
 
-#: apps/storage/views.py:265
+#: apps/storage/views.py:267
 msgid "Файл недоступний для перегляду."
 msgstr "File can't be previewed."
 
-#: apps/storage/views.py:267
+#: apps/storage/views.py:269
 msgid "Цей тип файлу не переглядається в браузері."
 msgstr "This file type can't be previewed in the browser."
 
-#: apps/storage/views.py:291
+#: apps/storage/views.py:293
 msgid "Посилання для перегляду прострочене. Відкрийте файл знову."
 msgstr "Preview link has expired. Open the file again."
 
-#: apps/storage/views.py:386
+#: apps/storage/views.py:402
+msgid "Поточну версію не можна видалити."
+msgstr "The current version cannot be deleted."
+
+#: apps/storage/views.py:420
+msgid "Ця версія вже поточна."
+msgstr "This version is already current."
+
+#: apps/storage/views.py:483
+msgid "Нічого не вибрано."
+msgstr "Nothing is selected."
+
+#: apps/storage/views.py:485
+#, python-format
+msgid "Забагато елементів (максимум %(n)s)."
+msgstr "Too many items (maximum %(n)s)."
+
+#: apps/storage/views.py:535
 msgid "file або folder"
 msgstr "file or folder"
 
-#: apps/storage/views.py:447
+#: apps/storage/views.py:57
+#: apps/storage/views.py:62
+msgid "Чанк завеликий."
+msgstr "Chunk is too large."
+
+#: apps/storage/views.py:596
 msgid "Заражений файл не можна поширювати."
 msgstr "Infected files can't be shared."
 
-#: apps/storage/views.py:453
+#: apps/storage/views.py:602
 msgid "Не можна поширити кореневу папку."
 msgstr "You can't share the root folder."
 
-#: apps/storage/views.py:462
+#: apps/storage/views.py:611
 #, python-format
 msgid "%(user)s поділився з вами"
 msgstr "%(user)s shared with you"
 
-#: apps/storage/views.py:463
+#: apps/storage/views.py:612
 #, python-format
 msgid "%(name)s"
 msgstr "%(name)s"
 
-#: apps/storage/views.py:515
+#: apps/storage/views.py:664
 msgid "Файл ще не перевірено або заблоковано."
 msgstr "File hasn't been scanned yet or is blocked."
 
-#: apps/storage/views.py:546
-#: apps/storage/views.py:549
-#: apps/storage/views.py:634
+#: apps/storage/views.py:695
+#: apps/storage/views.py:698
+#: apps/storage/views.py:783
 msgid "Посилання недійсне або прострочене."
 msgstr "Link is invalid or has expired."
 
-#: apps/storage/views.py:56
-#: apps/storage/views.py:61
-msgid "Чанк завеликий."
-msgstr "Chunk is too large."
-
-#: apps/storage/views.py:576
+#: apps/storage/views.py:725
 msgid "Хтось підбирає пароль до вашого посилання"
 msgstr "Someone is trying to guess your link's password"
 
-#: apps/storage/views.py:577
+#: apps/storage/views.py:726
 #, python-format
 msgid "Посилання на «%(name)s» тимчасово заблоковано на годину. Можливо, варто його відкликати."
 msgstr "The link to “%(name)s” has been blocked for an hour. You may want to revoke it."
 
-#: apps/storage/views.py:582
+#: apps/storage/views.py:731
 msgid "Підбір пароля публічного посилання"
 msgstr "Public link password guessing"
 
-#: apps/storage/views.py:583
+#: apps/storage/views.py:732
 #, python-format
 msgid "Власник: %(username)s"
 msgstr "Owner: %(username)s"
 
-#: apps/storage/views.py:618
+#: apps/storage/views.py:767
 msgid "Забагато невдалих спроб. Спробуйте через годину."
 msgstr "Too many failed attempts. Try again in an hour."
 
-#: apps/storage/views.py:631
+#: apps/storage/views.py:780
 msgid "Посилання для завантаження прострочене. Оновіть сторінку."
 msgstr "Download link has expired. Refresh the page."
 
-#: apps/storage/views.py:640
+#: apps/storage/views.py:789
 msgid "Ліміт завантажень вичерпано."
 msgstr "Download limit reached."
 
@@ -758,3 +999,17 @@ msgstr "This format can't be opened in the editor."
 #: apps/storage/views_office.py:48
 msgid "Файл ще перевіряється антивірусом або заблокований."
 msgstr "File is still being scanned by antivirus or is blocked."
+
+#: apps/storage/zipstream.py:121
+msgid "Ці файли не додано до архіву (ще не перевірені антивірусом або заблоковані):"
+msgstr "These files were not added to the archive (not yet checked by the antivirus or blocked):"
+
+#: apps/storage/zipstream.py:59
+#, python-format
+msgid "Забагато файлів для ZIP-архіву (максимум %(n)s)."
+msgstr "Too many files for a ZIP archive (maximum %(n)s)."
+
+#: apps/storage/zipstream.py:88
+#, python-format
+msgid "Архів завеликий (максимум %(n)s ГБ). Завантажте частинами."
+msgstr "The archive is too large (maximum %(n)s GB). Download it in parts."
