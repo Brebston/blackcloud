@@ -30,6 +30,7 @@ const FOLDER_ICONS: Record<string, string> = {
 
 const MAX_TOTAL_BYTES = 15 * 1024 * 1024;
 const CONFIDENTIAL_DAYS = [1, 7, 30, 90];
+const POLL_MS = 15_000;
 const MAILBOX_KEY = "bc_mailbox";
 
 interface ListResult {
@@ -197,20 +198,79 @@ export default function MailPage() {
   );
 
   const loadFolders = useCallback(() => get<MailFolder[]>(withBox("/api/mail/folders/")).then(setFolders), [withBox]);
-  const loadList = useCallback(async () => {
-    setLoading(true);
-    try {
-      setList(
-        await get<ListResult>(
-          withBox(`/api/mail/messages/?folder=${encodeURIComponent(folder)}&page=${page}&q=${encodeURIComponent(appliedQuery)}`),
-        ),
-      );
-    } catch (e) {
-      toast(errorText(e), "error");
-    } finally {
-      setLoading(false);
-    }
-  }, [folder, page, appliedQuery, toast, withBox]);
+  // silent — фонове оновлення (нові листи): без індикатора завантаження й без повідомлень про помилки
+  const loadList = useCallback(
+    async (silent = false) => {
+      if (!silent) setLoading(true);
+      try {
+        setList(
+          await get<ListResult>(
+            withBox(`/api/mail/messages/?folder=${encodeURIComponent(folder)}&page=${page}&q=${encodeURIComponent(appliedQuery)}`),
+          ),
+        );
+      } catch (e) {
+        if (!silent) toast(errorText(e), "error");
+      } finally {
+        if (!silent) setLoading(false);
+      }
+    },
+    [folder, page, appliedQuery, toast, withBox],
+  );
+
+  // Нові листи з'являються самі (як у Gmail): поки вкладка відкрита, кожні POLL_MS перевіряємо
+  // лічильники тек (один легкий IMAP-запит STATUS) і, якщо в поточній теці щось змінилося,
+  // тихо оновлюємо список. Прихована вкладка не опитує сервер; при поверненні — перевірка одразу.
+  const foldersRef = useRef<MailFolder[]>([]);
+  foldersRef.current = folders;
+  const folderRef = useRef(folder);
+  folderRef.current = folder;
+  const loadListRef = useRef(loadList);
+  loadListRef.current = loadList;
+  useEffect(() => {
+    if (!mailbox) return;
+    let stopped = false;
+    let busy = false;
+    const check = async () => {
+      if (busy || document.visibilityState !== "visible") return;
+      busy = true;
+      try {
+        const fresh = await get<MailFolder[]>(withBox("/api/mail/folders/"));
+        if (stopped) return;
+        const before = foldersRef.current.find((f) => f.name === folderRef.current);
+        const after = fresh.find((f) => f.name === folderRef.current);
+        setFolders(fresh);
+        if (before && after && (before.messages !== after.messages || before.unseen !== after.unseen)) {
+          await loadListRef.current(true);
+        }
+      } catch {
+        /* сервер тимчасово недоступний — спробуємо наступного разу */
+      } finally {
+        busy = false;
+      }
+    };
+    const timer = window.setInterval(check, POLL_MS);
+    const onVisible = () => {
+      if (document.visibilityState === "visible") check();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", onVisible);
+    return () => {
+      stopped = true;
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", onVisible);
+    };
+  }, [mailbox, withBox]);
+
+  // Кількість непрочитаних у «Вхідних» — у заголовку вкладки, як у Gmail
+  const inboxUnseen = folders.find((f) => f.special === "\\Inbox" || f.name === "INBOX")?.unseen || 0;
+  useEffect(() => {
+    const base = document.title.replace(/^\(\d+\) /, "");
+    document.title = inboxUnseen > 0 ? `(${inboxUnseen}) ${base}` : base;
+    return () => {
+      document.title = document.title.replace(/^\(\d+\) /, "");
+    };
+  }, [inboxUnseen]);
 
   useEffect(() => {
     get<MailboxInfo[]>("/api/mail/mailboxes/")
