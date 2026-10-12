@@ -69,6 +69,12 @@ jobs:
           git merge --ff-only "$DEPLOY_SHA"
           echo "Розгорнуто: $(git log -1 --format='%h %s')"
 
+      - name: Нові секрети (лише відсутні файли; наявні й .env не змінюються)
+        run: |
+          set -eu
+          cd "$DEPLOY_PATH"
+          sh scripts/init-secrets.sh --secrets-only
+
       - name: Збірка і запуск
         run: |
           set -eu

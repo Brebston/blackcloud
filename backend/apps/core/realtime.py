@@ -74,4 +74,8 @@ def notify(user, kind: str, title: str, body: str = "", link: str = "", params: 
         "notification",
         {"id": str(n.id), "kind": kind, "title": title, "body": body, "link": link, "created_at": n.created_at.isoformat()},
     )
+    # Web Push на пристрої користувача (категорія "other"; надсилає сервіс pusher)
+    from apps.push.service import send_later
+
+    send_later(user, "other", title, body, link or "/", f"n-{n.id}")
     return n

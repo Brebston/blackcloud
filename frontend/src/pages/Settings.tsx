@@ -2,7 +2,9 @@ import { FormEvent, useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { del, errorText, get, patch, post } from "../api/client";
 import type { Preferences } from "../api/types";
+import DavSettings from "../components/DavSettings";
 import Icon from "../components/Icon";
+import PushSettings from "../components/PushSettings";
 import { useToast } from "../components/Toast";
 import { useAuth } from "../hooks/useAuth";
 import { LANGS, useI18n, useT } from "../i18n";
@@ -16,6 +18,7 @@ const TABS: { id: string; label: TKey; icon: string }[] = [
   { id: "security", label: "settings.tab.security", icon: "shield" },
   { id: "sessions", label: "settings.tab.sessions", icon: "lock" },
   { id: "mail", label: "settings.tab.mail", icon: "mail" },
+  { id: "dav", label: "settings.tab.dav", icon: "folder" },
   { id: "activity", label: "settings.tab.activity", icon: "eye" },
 ];
 
@@ -38,12 +41,14 @@ export default function SettingsPage() {
       {tab === "profile" && (
         <>
           <AppearanceCard />
+          <PushSettings />
           <ProfileTab />
         </>
       )}
       {tab === "security" && <SecurityTab />}
       {tab === "sessions" && <SessionsTab />}
       {tab === "mail" && <MailClientTab />}
+      {tab === "dav" && <DavSettings />}
       {tab === "activity" && <ActivityTab />}
     </div>
   );

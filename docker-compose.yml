@@ -24,6 +24,8 @@ networks:
   thumbs:
     internal: true
   mailnet:
+  # egress — лише вихід в інтернет для pusher (Web Push у сервіси браузерів)
+  egress:
 
 volumes:
   postgres_data:
@@ -37,6 +39,7 @@ volumes:
   static_files:
   office_data:
   office_lib:
+  uptime_kuma_data:
 
 secrets:
   django_secret_key:
@@ -59,6 +62,12 @@ secrets:
     file: ./secrets/mail_crypt_private_key
   mail_crypt_public_key:
     file: ./secrets/mail_crypt_public_key
+  vapid_private_key:
+    file: ./secrets/vapid_private_key
+  vapid_public_key:
+    file: ./secrets/vapid_public_key
+  health_token:
+    file: ./secrets/health_token
 
 x-backend-common: &backend-common
   build:
@@ -142,7 +151,7 @@ services:
       - --entrypoints.web.http.redirections.entrypoint.scheme=https
       - --entrypoints.websecure.address=:443
       - --entrypoints.websecure.http.tls=true
-      - --entrypoints.websecure.transport.respondingTimeouts.readTimeout=300s
+      - --entrypoints.websecure.transport.respondingTimeouts.readTimeout=1800s
       - --entrypoints.websecure.transport.respondingTimeouts.writeTimeout=300s
       - --providers.file.directory=/etc/traefik/dynamic
       - --providers.file.watch=true
@@ -198,6 +207,8 @@ services:
       - file_master_keys
       - field_encryption_key
       - dovecot_master_password
+      - health_token
+      - vapid_public_key
     volumes:
       - objects_data:/data/objects
       - static_files:/app/staticfiles
@@ -214,7 +225,44 @@ services:
   worker:
     <<: *backend-common
     command: ["worker"]
-    networks: [internal, thumbs]
+    # dovecot_master_password і фіксована адреса .11 — для фонових завдань пошти
+    # (відкладене надсилання, перевірка нових листів для push-сповіщень)
+    secrets:
+      - django_secret_key
+      - app_db_password
+      - redis_password
+      - file_master_keys
+      - field_encryption_key
+      - dovecot_master_password
+      - vapid_public_key
+    networks:
+      internal:
+        ipv4_address: 172.30.0.11
+      thumbs: {}
+
+  # Надсилання Web Push (черга "push"): єдиний сервіс застосунку з виходом в інтернет.
+  # Без ключів шифрування, SECRET_KEY і пароля БД — лише Redis і приватний ключ VAPID.
+  pusher:
+    <<: *backend-common
+    command: ["pusher"]
+    # Без .env (там можуть бути інші секрети) — лише потрібні змінні
+    env_file: []
+    environment:
+      SERVICE_ROLE: pusher
+      REDIS_HOST: redis
+      DOMAIN: ${DOMAIN}
+      MAIL_DOMAIN: ${MAIL_DOMAIN:-}
+      ACME_EMAIL: ${ACME_EMAIL:-}
+      TIME_ZONE: ${TIME_ZONE:-Europe/Kyiv}
+    secrets:
+      - redis_password
+      - vapid_private_key
+    volumes: []
+    networks: [internal, egress]
+    mem_limit: 256m
+    depends_on:
+      redis:
+        condition: service_healthy
 
   beat:
     <<: *backend-common
@@ -305,6 +353,7 @@ services:
       MAIL_HOSTNAME: ${MAIL_HOSTNAME}
       MAIL_DOMAIN: ${MAIL_DOMAIN}
       WEBMAIL_CLIENT_IP: 172.30.0.10
+      WEBMAIL_EXTRA_IPS: 172.30.0.11
     secrets: [mail_db_password]
     ports:
       - "25:25"
@@ -327,6 +376,8 @@ services:
     environment:
       MAIL_HOSTNAME: ${MAIL_HOSTNAME}
       WEBMAIL_CLIENT_IP: 172.30.0.10
+      # worker: відкладені листи та перевірка нових листів для push-сповіщень
+      WEBMAIL_EXTRA_IPS: 172.30.0.11
     secrets: [mail_db_password, dovecot_master_password, mail_crypt_private_key, mail_crypt_public_key]
     ports:
       - "993:993"
@@ -347,6 +398,7 @@ services:
     environment:
       MAIL_DOMAIN: ${MAIL_DOMAIN}
       WEBMAIL_CLIENT_IP: 172.30.0.10
+      WEBMAIL_EXTRA_IPS: 172.30.0.11
       SPAMHAUS_DQS_KEY: ${SPAMHAUS_DQS_KEY:-}
     secrets: [redis_password]
     volumes:
@@ -384,6 +436,28 @@ services:
     cap_drop: [ALL]
     cap_add: [CHOWN, DAC_OVERRIDE, FOWNER]
     depends_on: [traefik]
+
+  # Моніторинг і сповіщення в Telegram (Uptime Kuma). Вмикається профілем monitoring
+  # у COMPOSE_PROFILES. Веб-інтерфейс — лише на 127.0.0.1:3001 сервера (доступ через
+  # SSH-тунель), назовні не публікується.
+  uptime-kuma:
+    image: ${UPTIME_KUMA_IMAGE:-louislam/uptime-kuma:1.23.16}
+    profiles: [monitoring]
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3001:3001"
+    volumes:
+      - uptime_kuma_data:/app/data
+    # edge — щоб звертатися до сайту через Traefik і мати вихід в інтернет (Telegram)
+    networks: [edge]
+    extra_hosts:
+      # Домен сайту веде прямо на Traefik — без NAT hairpin на роутері.
+      # (Лише один запис: якщо DOMAIN і MAIL_HOSTNAME однакові, як на localhost, дублікат ламає compose.)
+      - "${DOMAIN}:172.31.250.2"
+      # Хост (опубліковані поштові порти 25/465/587/993) для TCP-моніторів
+      - "host.docker.internal:host-gateway"
+    security_opt:
+      - no-new-privileges:true
 
   # Онлайн-редактор Word/Excel/PowerPoint. Вмикається через COMPOSE_PROFILES=office у .env
   # (потребує ~2–3 ГБ RAM). Доступний лише через Traefik на піддомені office.<DOMAIN>

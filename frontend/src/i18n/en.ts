@@ -9,6 +9,10 @@ import * as publicShare from "./parts/publicShare";
 import * as office from "./parts/office";
 import * as admin from "./parts/admin";
 import * as misc from "./parts/misc";
+import * as mailui from "./parts/mailui";
+import * as push from "./parts/push";
+import * as files2 from "./parts/files2";
+import * as dav from "./parts/dav";
 
 
 // Англійський переклад. Тип гарантує, що жоден ключ не пропущено.
@@ -124,6 +128,7 @@ const en: Record<keyof typeof uk, string> = {
   "settings.tab.security": "Security",
   "settings.tab.sessions": "Devices",
   "settings.tab.mail": "Mail clients",
+  "settings.tab.dav": "Network drive",
   "settings.tab.activity": "Log",
 
   "appearance.title": "Appearance",
@@ -361,6 +366,10 @@ const en: Record<keyof typeof uk, string> = {
   ...office.en,
   ...admin.en,
   ...misc.en,
+  ...mailui.en,
+  ...push.en,
+  ...files2.en,
+  ...dav.en,
 };
 
 export default en;

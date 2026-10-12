@@ -20,12 +20,21 @@ if DEBUG and not (IS_LOCAL_DOMAIN or TESTING):
 ALLOW_DEV_KEYS = TESTING or (DEBUG and IS_LOCAL_DOMAIN and env_bool("ALLOW_INSECURE_DEV_KEYS"))
 
 
+# Сервіс pusher (єдиний з виходом в інтернет) не отримує ключів шифрування і SECRET_KEY:
+# він лише надсилає вже готові push-повідомлення з черги.
+PUSHER_ROLE = env("SERVICE_ROLE") == "pusher"
+
+
 def _require_secret(name: str, dev_value: str) -> str:
     value = read_secret(name)
     if value:
         return value
     if ALLOW_DEV_KEYS:
         return dev_value
+    if PUSHER_ROLE:
+        import secrets
+
+        return secrets.token_urlsafe(50) if name == "DJANGO_SECRET_KEY" else ""
     raise RuntimeError(f"Секрет {name} не задано (запустіть make secrets)")
 
 
@@ -59,6 +68,8 @@ INSTALLED_APPS = [
     "apps.calendars",
     "apps.chat",
     "apps.mail",
+    "apps.push",
+    "apps.dav",
 ]
 
 MIDDLEWARE = [
@@ -144,7 +155,11 @@ CELERY_BROKER_URL = f"{REDIS_URL}/1"
 CELERY_RESULT_BACKEND = None
 CELERY_TASK_ALWAYS_EAGER = TESTING
 CELERY_TASK_DEFAULT_QUEUE = "default"
-CELERY_TASK_ROUTES = {"apps.storage.tasks.scan_file": {"queue": "scan"}}
+CELERY_TASK_ROUTES = {
+    "apps.storage.tasks.scan_file": {"queue": "scan"},
+    # Надсилання Web Push — лише сервіс pusher (єдиний з виходом в інтернет)
+    "apps.push.tasks.send_push": {"queue": "push"},
+}
 CELERY_TASK_ACKS_LATE = True
 CELERY_WORKER_PREFETCH_MULTIPLIER = 1
 CELERY_TASK_SERIALIZER = "json"
@@ -154,10 +169,18 @@ CELERY_BEAT_SCHEDULE = {
     "requeue-stuck-scans": {"task": "apps.storage.tasks.requeue_stuck_scans", "schedule": timedelta(minutes=5)},
     "cleanup-stale-uploads": {"task": "apps.storage.tasks.cleanup_stale_uploads", "schedule": timedelta(hours=1)},
     "expire-public-links": {"task": "apps.storage.tasks.expire_public_links", "schedule": timedelta(hours=1)},
+    "prune-file-versions": {"task": "apps.storage.tasks.prune_file_versions", "schedule": timedelta(hours=24)},
     "event-reminders": {"task": "apps.calendars.tasks.send_due_reminders", "schedule": timedelta(minutes=1)},
     "cleanup-sessions": {"task": "apps.accounts.tasks.cleanup_sessions", "schedule": timedelta(hours=12)},
     "purge-old-audit": {"task": "apps.core.tasks.purge_old_audit", "schedule": timedelta(days=1)},
+    # Мітка живості beat+worker для /api/health/deep/ (застарілі не накопичуються в черзі)
+    "celery-heartbeat": {
+        "task": "apps.core.tasks.celery_heartbeat",
+        "schedule": timedelta(minutes=1),
+        "options": {"expires": 50},
+    },
     "send-scheduled-mail": {"task": "apps.mail.tasks.send_scheduled_mail", "schedule": timedelta(minutes=1)},
+    "push-poll-new-mail": {"task": "apps.push.tasks.poll_new_mail", "schedule": timedelta(minutes=1)},
     "purge-expired-confidential": {
         "task": "apps.mail.tasks.purge_expired_confidential",
         "schedule": timedelta(hours=1),
@@ -283,11 +306,21 @@ PUBLIC_LINK_MAX_FAILURES = 10  # невдалих паролів на посил
 PREVIEW_TICKET_TTL = 120
 DOWNLOAD_TICKET_TTL = 60
 UNSCANNED_POLICY = env("UNSCANNED_POLICY", "block")  # block | allow
+# Історія версій файлів: скільки версій (з поточною) зберігати і скільки днів — архівні (0 — без ліміту)
+FILE_MAX_VERSIONS = env_int("FILE_MAX_VERSIONS", 20)
+FILE_VERSIONS_MAX_AGE_DAYS = env_int("FILE_VERSIONS_MAX_AGE_DAYS", 90)
+# Завантаження папок ZIP-архівом (стрімінг на льоту)
+ZIP_MAX_BYTES = env_int("ZIP_MAX_GB", 10) * GB
+ZIP_MAX_FILES = env_int("ZIP_MAX_FILES", 10000)
 
 # local — шифровані чанки на Docker-томі (за замовчуванням);
 # s3 — будь-яке S3-сумісне сховище (Garage, SeaweedFS, AWS S3, Backblaze B2 тощо)
 OBJECT_STORE = "local" if TESTING else env("OBJECT_STORE", "local")
 LOCAL_OBJECT_STORE_DIR = BASE_DIR / ".local-objects" if TESTING else Path(env("LOCAL_OBJECT_STORE_DIR", str(BASE_DIR / ".local-objects")))
+# Куди Django складає тіла запитів, більші за FILE_UPLOAD_MAX_MEMORY_SIZE. WebDAV PUT може
+# бути до MAX_FILE_SIZE, а /tmp у контейнері — tmpfs на 256 МБ, тому тимчасові файли — на
+# томі з об'єктами (apps.dav.apps створює теку й робить її tempfile.tempdir для процесу).
+FILE_UPLOAD_TEMP_DIR = None if TESTING else env("FILE_UPLOAD_TEMP_DIR", str(Path(LOCAL_OBJECT_STORE_DIR) / ".tmp"))
 S3_ENDPOINT_URL = env("S3_ENDPOINT_URL", "")
 S3_ACCESS_KEY = read_secret("S3_ACCESS_KEY")
 S3_SECRET_KEY = read_secret("S3_SECRET_KEY")
@@ -313,6 +346,18 @@ THUMBNAILS_ENABLED = env_bool("THUMBNAILS_ENABLED", True)
 # Порожньо — рендер у процесі воркера (лише для тестів і розробки).
 THUMBNAILER_URL = "" if TESTING else env("THUMBNAILER_URL", "")
 
+# ─── Моніторинг: /api/health/deep/ (Uptime Kuma) ───────────────
+# Без секрету health_token ендпоінт вимкнено (404)
+HEALTH_TOKEN = read_secret("HEALTH_TOKEN", "")
+HEALTH_DISK_ALERT_PERCENT = env_int("HEALTH_DISK_ALERT_PERCENT", 85)
+HEALTH_CERT_MIN_DAYS = env_int("HEALTH_CERT_MIN_DAYS", 14)
+# Сертифікат сайту читаємо напряму з Traefik (фіксована IP у мережі edge), минаючи NAT
+HEALTH_TLS_HOST = env("HEALTH_TLS_HOST", "172.31.250.2")
+# Сертифікат пошти — з Dovecot (IMAPS) у внутрішній мережі; порожньо — не перевіряти
+HEALTH_MAIL_TLS_HOST = env("HEALTH_MAIL_TLS_HOST", "dovecot")
+HEALTH_MAIL_TLS_PORT = env_int("HEALTH_MAIL_TLS_PORT", 993)
+HEALTH_CELERY_MAX_AGE = env_int("HEALTH_CELERY_MAX_AGE", 300)
+
 # ─── Календар ──────────────────────────────────────────────────
 MAX_RECURRING_EVENTS_PER_USER = env_int("MAX_RECURRING_EVENTS_PER_USER", 300)
 
@@ -331,6 +376,12 @@ SMTP_PORT = env_int("SMTP_PORT", 10025)
 DOVECOT_MASTER_USER = "webmail"
 DOVECOT_MASTER_PASSWORD = read_secret("DOVECOT_MASTER_PASSWORD")
 MAIL_MAX_ATTACHMENTS_BYTES = 15 * 1024 * 1024
+
+# ─── Push-сповіщення (Web Push, VAPID) ─────────────────────────
+# Приватний ключ є лише в сервісі pusher; backend віддає браузеру публічний.
+VAPID_PRIVATE_KEY = read_secret("VAPID_PRIVATE_KEY", "")
+VAPID_PUBLIC_KEY = read_secret("VAPID_PUBLIC_KEY", "")
+VAPID_SUBJECT = "mailto:" + (env("ACME_EMAIL", "") or f"postmaster@{MAIL_DOMAIN}")
 
 # ─── Інтернаціоналізація ───────────────────────────────────────
 LANGUAGE_CODE = env("LANGUAGE_CODE", "uk")

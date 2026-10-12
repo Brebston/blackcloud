@@ -49,6 +49,8 @@ class StartUploadSerializer(serializers.Serializer):
     name = serializers.CharField(max_length=1024)
     size = serializers.IntegerField(min_value=0)
     folder = serializers.UUIDField(required=False, allow_null=True)
+    # Явно: зберегти як нову версію цього файлу (name/folder тоді ігноруються)
+    replace_file_id = serializers.UUIDField(required=False, allow_null=True)
 
 
 class RenameMoveSerializer(serializers.Serializer):

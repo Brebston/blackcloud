@@ -1,5 +1,6 @@
 #!/usr/bin/env sh
 # Генерує всі секрети у ./secrets (лише якщо їх ще немає).
+# --secrets-only: лише відсутні файли в secrets/, .env не чіпається (так його викликає автодеплой).
 # Каталог secrets/ має права 700 (інші користувачі хоста не можуть у нього зайти),
 # а самі файли — 644, бо Docker Compose монтує їх у контейнери з правами хоста,
 # і сервіси працюють від непривілейованих користувачів. У git секрети не потрапляють.
@@ -32,6 +33,8 @@ make_secret dovecot_master_password "$(rand 48 40)"
 make_secret file_master_keys        "1:$(head -c 32 /dev/urandom | base64 | tr -d '\n')"
 # Ключ шифрування чутливих полів у БД (TOTP-секрети тощо), формат Fernet
 make_secret field_encryption_key    "$(head -c 32 /dev/urandom | base64 | tr '+/' '-_' | tr -d '\n')"
+# Токен моніторингу: Authorization: Bearer <токен> для /api/health/deep/ (Uptime Kuma)
+make_secret health_token            "$(rand 48 40)"
 
 # Глобальна пара EC-ключів Dovecot mail_crypt (шифрування листів на диску)
 if [ ! -s secrets/mail_crypt_private_key ]; then
@@ -47,6 +50,32 @@ if [ ! -s secrets/mail_crypt_private_key ]; then
     chmod 644 secrets/mail_crypt_private_key secrets/mail_crypt_public_key
     echo "  УВАГА: openssl не знайдено — шифрування листів на диску вимкнене"
   fi
+fi
+
+# Пара ключів VAPID для Web Push (EC P-256). Приватний — лише сервісу pusher,
+# публічний — backend (віддає браузерам як applicationServerKey).
+if [ ! -s secrets/vapid_private_key ]; then
+  if command -v openssl >/dev/null 2>&1; then
+    umask 077
+    openssl ecparam -name prime256v1 -genkey 2>/dev/null | openssl pkey -out secrets/vapid_private_key
+    openssl pkey -in secrets/vapid_private_key -pubout -out secrets/vapid_public_key
+    umask 022
+    chmod 644 secrets/vapid_private_key secrets/vapid_public_key
+    echo "  створено secrets/vapid_{private,public}_key"
+  else
+    : > secrets/vapid_private_key; : > secrets/vapid_public_key
+    chmod 644 secrets/vapid_private_key secrets/vapid_public_key
+    echo "  УВАГА: openssl не знайдено — push-сповіщення вимкнені"
+  fi
+elif [ ! -s secrets/vapid_public_key ] && command -v openssl >/dev/null 2>&1; then
+  openssl pkey -in secrets/vapid_private_key -pubout -out secrets/vapid_public_key
+  chmod 644 secrets/vapid_public_key
+fi
+[ -e secrets/vapid_public_key ] || { : > secrets/vapid_public_key; chmod 644 secrets/vapid_public_key; }
+
+if [ "${1:-}" = "--secrets-only" ]; then
+  echo "Готово (лише секрети)."
+  exit 0
 fi
 
 if [ ! -f .env ]; then

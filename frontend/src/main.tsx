@@ -6,7 +6,11 @@ import { ToastProvider } from "./components/Toast";
 import { AuthProvider } from "./hooks/useAuth";
 import { I18nProvider, storedLang } from "./i18n";
 import { applyAppearance, storedAppearance } from "./lib/appearance";
+import { initPwa } from "./lib/pwa";
 import "./styles.css";
+
+// Service worker (push-сповіщення, офлайн-оболонка) і підказка встановлення застосунку
+initPwa();
 
 // Тема, акцент і мова з браузера — ще до першого рендеру, щоб не було «мигання»
 const appearance = storedAppearance();

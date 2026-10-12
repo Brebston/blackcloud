@@ -24,6 +24,18 @@ http:
       tls:
         {{ if $resolver }}certResolver: {{ $resolver }}{{ end }}
 
+    # WebDAV (мережевий диск): HTTP Basic з паролем застосунку. Finder робить сотні PROPFIND
+    # поспіль, тож ліміт частоти вищий, ніж для /api/auth. Тіло не буферизується (немає
+    # middleware buffering): великі PUT ідуть потоком, ліміт розміру перевіряє backend.
+    dav:
+      rule: 'Host(`{{ $domain }}`) && (Path(`/dav`) || PathPrefix(`/dav/`))'
+      entryPoints: [websecure]
+      service: backend
+      middlewares: [security-headers, api-csp, dav-ratelimit]
+      priority: 120
+      tls:
+        {{ if $resolver }}certResolver: {{ $resolver }}{{ end }}
+
     public-links:
       rule: 'Host(`{{ $domain }}`) && PathPrefix(`/api/public`)'
       entryPoints: [websecure]
@@ -213,6 +225,12 @@ http:
         period: 1m
         burst: 10
 
+    dav-ratelimit:
+      rateLimit:
+        average: 1200
+        period: 1m
+        burst: 600
+
     public-ratelimit:
       rateLimit:
         average: 60
@@ -220,6 +238,15 @@ http:
         burst: 20
 
 tls:
+  {{ if env "LOCAL_TLS_CERT" }}
+  # Лише для локальної розробки (docker-compose.dev.yml): довірений сертифікат mkcert
+  # замість самопідписаного — без нього браузер не реєструє service worker, а Finder — WebDAV
+  stores:
+    default:
+      defaultCertificate:
+        certFile: {{ env "LOCAL_TLS_CERT" }}
+        keyFile: {{ env "LOCAL_TLS_KEY" }}
+  {{ end }}
   options:
     default:
       minVersion: VersionTLS12

@@ -11,6 +11,7 @@ from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 
 from apps.core.audit import audit
+from apps.push.service import notify_chat_message
 from apps.storage.models import File, Share
 
 from .emoji import is_single_emoji
@@ -158,6 +159,7 @@ class MessagesView(APIView):
                     Share.objects.get_or_create(owner=request.user, recipient=p.user, file=file)
         data = MessageSerializer(msg).data
         broadcast(conv, "message.new", data)
+        notify_chat_message(conv, msg, request.user)
         return Response(data, status=201)
 
 

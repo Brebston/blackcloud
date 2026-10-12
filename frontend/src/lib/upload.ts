@@ -15,6 +15,13 @@ interface StartResponse {
   chunk_size: number;
   chunks_total: number;
   next_index: number;
+  /** Лише для нової версії наявного файлу: id цього файлу. */
+  file_id?: string;
+}
+
+export interface UploadOptions {
+  /** Зберегти як нову версію наявного файлу (лише власник). */
+  replaceFileId?: string;
 }
 
 /**
@@ -27,9 +34,16 @@ export async function uploadFile(
   folder: string | null,
   onProgress: (p: UploadProgress) => void,
   signal?: AbortSignal,
+  options: UploadOptions = {},
 ): Promise<void> {
-  const start = await post<StartResponse>("/api/files/uploads/", { name: file.name, size: file.size, folder });
-  const progress: UploadProgress = { id: start.id, name: start.name, loaded: 0, total: file.size, state: "uploading" };
+  const start = await post<StartResponse>("/api/files/uploads/", {
+    name: file.name,
+    size: file.size,
+    folder,
+    ...(options.replaceFileId ? { replace_file_id: options.replaceFileId } : {}),
+  });
+  // Для нової версії рядок прогресу прив'язується до id файлу (статус антивірусу з таблиці)
+  const progress: UploadProgress = { id: start.file_id || start.id, name: start.name, loaded: 0, total: file.size, state: "uploading" };
   onProgress({ ...progress });
 
   try {

@@ -7,6 +7,9 @@ set -eu
 # Лише контейнер backend (фіксована адреса) може відправляти через 10025 без пароля.
 # Раніше довірялася вся внутрішня мережа — тобто й ClamAV, Rspamd, Redis тощо.
 WEBMAIL_CLIENT_IP="${WEBMAIL_CLIENT_IP:-172.30.0.10}"
+# WEBMAIL_EXTRA_IPS — інші довірені контейнери через кому (worker: відкладене надсилання)
+WEBMAIL_NETS="127.0.0.0/8,$WEBMAIL_CLIENT_IP/32"
+for ip in $(printf '%s' "${WEBMAIL_EXTRA_IPS:-}" | tr ',' ' '); do WEBMAIL_NETS="$WEBMAIL_NETS,$ip/32"; done
 DB_PW="$(cat /run/secrets/mail_db_password)"
 
 # ─── TLS ─────────────────────────────────────────────────────
@@ -137,7 +140,7 @@ postconf -P "465/inet/smtpd_tls_wrappermode=yes"
 postconf -M "10025/inet=10025 inet n - n - - smtpd"
 for opt in \
   "syslog_name=postfix/webmail" \
-  "mynetworks=127.0.0.0/8,$WEBMAIL_CLIENT_IP/32" \
+  "mynetworks=$WEBMAIL_NETS" \
   "smtpd_client_restrictions=permit_mynetworks,reject" \
   "smtpd_relay_restrictions=permit_mynetworks,reject" \
   "smtpd_recipient_restrictions=permit_mynetworks,reject" \

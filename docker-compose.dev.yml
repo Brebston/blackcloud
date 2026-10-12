@@ -1,7 +1,16 @@
-# Локальна розробка: https://localhost із самопідписаним сертифікатом Traefik.
+# Локальна розробка: https://localhost.
+# Сертифікат: якщо є certs/dev/localhost.pem і localhost-key.pem (mkcert, див. README «Локальна розробка»),
+# Traefik віддає його — браузер і Finder йому довіряють (потрібно для service worker/push і WebDAV).
+# Інакше — самопідписаний сертифікат Traefik.
 #   cp .env.example .env  →  DOMAIN=localhost, TLS_RESOLVER=, SNI_STRICT=false, DJANGO_DEBUG=true
 #   make up-dev
 services:
+  traefik:
+    environment:
+      LOCAL_TLS_CERT: ${LOCAL_TLS_CERT:-/certs-dev/localhost.pem}
+      LOCAL_TLS_KEY: ${LOCAL_TLS_KEY:-/certs-dev/localhost-key.pem}
+    volumes:
+      - ./certs/dev:/certs-dev:ro
   backend:
     environment:
       DJANGO_DEBUG: "true"

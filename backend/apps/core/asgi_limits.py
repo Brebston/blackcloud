@@ -31,6 +31,18 @@ async def _reply(send, status: int, detail: str, headers: dict):
     await send({"type": "http.response.body", "body": body})
 
 
+def is_dav_path(path: str) -> bool:
+    """WebDAV (/dav/): Finder надсилає PUT з chunked-тілом без Content-Length (з
+    X-Expected-Entity-Length). Лише тут chunked дозволено, а ліміт — MAX_FILE_SIZE."""
+    return path == "/dav" or path.startswith("/dav/")
+
+
+def dav_max_body() -> int:
+    from django.conf import settings
+
+    return settings.MAX_FILE_SIZE
+
+
 class BodyLimitMiddleware:
     def __init__(self, app, max_body: int):
         self.app = app
@@ -44,11 +56,22 @@ class BodyLimitMiddleware:
             headers[name.lower()] = value
         length_raw = headers.get(b"content-length")
         chunked = b"chunked" in headers.get(b"transfer-encoding", b"").lower()
+        dav = is_dav_path(scope.get("path", ""))
+        max_body = dav_max_body() if dav else self.max_body
 
         if length_raw is None:
-            if chunked:
+            if chunked and not dav:
                 return await _reply(send, 411, gettext_noop("Потрібен заголовок Content-Length."), headers)
             declared = 0
+            if chunked:
+                expected = headers.get(b"x-expected-entity-length")
+                try:
+                    if expected is not None and int(expected) > max_body:
+                        return await _reply(send, 413, gettext_noop("Запит завеликий."), headers)
+                except ValueError:
+                    return await _reply(send, 400, gettext_noop("Невірний Content-Length."), headers)
+                # Тіло невідомої довжини: обриваємо, щойно воно перевищить ліміт
+                declared = max_body
         else:
             try:
                 declared = int(length_raw)
@@ -56,7 +79,7 @@ class BodyLimitMiddleware:
                 return await _reply(send, 400, gettext_noop("Невірний Content-Length."), headers)
             if declared < 0:
                 return await _reply(send, 400, gettext_noop("Невірний Content-Length."), headers)
-            if declared > self.max_body:
+            if declared > max_body:
                 return await _reply(send, 413, gettext_noop("Запит завеликий."), headers)
 
         received = 0

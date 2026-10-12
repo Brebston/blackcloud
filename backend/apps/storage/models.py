@@ -53,6 +53,13 @@ class File(models.Model):
     # Версія вмісту: збільшується при кожному збереженні з онлайн-редактора
     content_version = models.PositiveIntegerField(default=0)
     has_thumbnail = models.BooleanField(default=False)
+    # Хто і коли записав поточний вміст (для історії версій); null — власник / created_at
+    modified_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
+    )
+    content_updated_at = models.DateTimeField(null=True, blank=True)
+    # Останній виданий номер версії вмісту (номери ніколи не використовуються повторно)
+    version_counter = models.PositiveIntegerField(default=0)
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -101,6 +108,61 @@ class File(models.Model):
         if self.status == self.Status.CLEAN:
             return True
         return self.status == self.Status.UNSCANNED and settings.UNSCANNED_POLICY == "allow"
+
+
+class FileVersion(models.Model):
+    """Попередня (неактуальна) версія вмісту файлу або незавершене завантаження нової версії.
+
+    Поточна версія завжди описується самим File; тут — лише архівні знімки з власним
+    ключем даних. Чанки лежать у сховищі за File.chunk_key(i, number) і шифруються з
+    AAD = id файлу (як і поточна версія), тож перенесення версії в File не потребує
+    перешифрування. Розмір кожної версії враховується в квоті власника."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    file = models.ForeignKey(File, on_delete=models.CASCADE, related_name="versions")
+    # Номер версії вмісту (= File.content_version, яку вона мала, коли була поточною)
+    number = models.PositiveIntegerField()
+    size = models.BigIntegerField()
+    mime_type = models.CharField(max_length=127, default="application/octet-stream")
+    sha256 = models.CharField(max_length=64, blank=True)
+    status = models.CharField(max_length=12, choices=File.Status.choices, default=File.Status.UPLOADING, db_index=True)
+    scan_detail = models.CharField(max_length=200, blank=True)
+    wrapped_key = models.BinaryField()
+    key_version = models.PositiveSmallIntegerField(default=1)
+    chunk_size = models.PositiveIntegerField()
+    chunks_received = models.PositiveIntegerField(default=0)
+    upload_expires_at = models.DateTimeField(null=True, blank=True)
+    author = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    # Коли цей вміст було створено (а не коли він став архівним)
+    created_at = models.DateTimeField(default=timezone.now)
+    archived_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-number"]
+        constraints = [
+            models.UniqueConstraint(fields=["file", "number"], name="uniq_file_version_number"),
+            models.CheckConstraint(condition=Q(size__gte=0), name="file_version_size_non_negative"),
+        ]
+
+    @property
+    def chunks_total(self) -> int:
+        if self.size == 0:
+            return 0
+        return (self.size + self.chunk_size - 1) // self.chunk_size
+
+    def expected_chunk_len(self, index: int) -> int:
+        if index < self.chunks_total - 1:
+            return self.chunk_size
+        return self.size - self.chunk_size * (self.chunks_total - 1)
+
+    def chunk_key(self, index: int) -> str:
+        return self.file.chunk_key(index, self.number)
+
+    @property
+    def is_downloadable(self) -> bool:
+        if self.status == File.Status.CLEAN:
+            return True
+        return self.status == File.Status.UNSCANNED and settings.UNSCANNED_POLICY == "allow"
 
 
 class Share(models.Model):

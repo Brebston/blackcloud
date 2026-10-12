@@ -6,6 +6,7 @@ import FileViewer from "../components/FileViewer";
 import Icon from "../components/Icon";
 import Modal from "../components/Modal";
 import ShareDialog from "../components/ShareDialog";
+import VersionsDialog from "../components/VersionsDialog";
 import { useToast } from "../components/Toast";
 import { useAuth } from "../hooks/useAuth";
 import { useEvents } from "../hooks/useEvents";
@@ -57,6 +58,7 @@ type Dialog =
   | { kind: "move"; type: "file" | "folder"; id: string; name: string }
   | { kind: "share"; type: "file" | "folder"; id: string; name: string; downloadable?: boolean }
   | { kind: "info"; file: FileItem }
+  | { kind: "versions"; file: FileItem }
   | null;
 
 export default function FilesPage() {
@@ -77,6 +79,8 @@ export default function FilesPage() {
   const [query, setQuery] = useState("");
   const [searchResults, setSearchResults] = useState<{ folders: Folder[]; files: FileItem[] } | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const versionInputRef = useRef<HTMLInputElement>(null);
+  const [versionTarget, setVersionTarget] = useState<FileItem | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
   const load = useCallback(async () => {
@@ -117,14 +121,26 @@ export default function FilesPage() {
   const startUploads = async (files: FileList | File[]) => {
     if (!data?.writable) return;
     const target = data.folder?.id || null;
+    const list = Array.from(files);
+    // Файли з іменами, що вже є в папці: одне питання на всю партію —
+    // зберегти як нові версії чи (як раніше) обидва з різними іменами
+    const existing = new Map(data.files.map((f) => [f.name, f]));
+    const conflicts = list.filter((f) => existing.has(f.name));
+    let asVersions = false;
+    if (conflicts.length > 0) {
+      const names = conflicts.slice(0, 5).map((f) => `«${f.name}»`).join(", ") + (conflicts.length > 5 ? ", …" : "");
+      asVersions = window.confirm(t("files2.replaceConfirm", { n: conflicts.length, names }));
+    }
     abortRef.current = new AbortController();
-    for (const file of Array.from(files)) {
+    for (const file of list) {
+      const replace = asVersions ? existing.get(file.name) : undefined;
       try {
         await uploadFile(
           file,
           target,
           (p) => setUploads((u) => ({ ...u, [p.id]: p })),
           abortRef.current.signal,
+          replace ? { replaceFileId: replace.id } : {},
         );
       } catch (e) {
         toast(`${file.name}: ${errorText(e)}`, "error");
@@ -132,6 +148,45 @@ export default function FilesPage() {
     }
     load();
     refreshUser();
+  };
+
+  /** Нова версія конкретного файлу (дія в рядку або в діалозі історії). */
+  const uploadVersion = async (picked: File, target: FileItem) => {
+    abortRef.current = new AbortController();
+    try {
+      await uploadFile(
+        picked,
+        target.folder,
+        (p) => setUploads((u) => ({ ...u, [p.id]: { ...p, name: target.name } })),
+        abortRef.current.signal,
+        { replaceFileId: target.id },
+      );
+      toast(t("files2.versionUploaded", { name: target.name }), "success");
+    } catch (e) {
+      toast(`${target.name}: ${errorText(e)}`, "error");
+    }
+    load();
+    refreshUser();
+  };
+
+  /** ZIP: спершу перевірка лімітів (?check=1), щоб помилку показати тут, а не сирим JSON. */
+  const downloadZip = async (url: string) => {
+    try {
+      const info = await get<{ files: number; bytes: number; skipped: number }>(`${url}${url.includes("?") ? "&" : "?"}check=1`);
+      if (info.files === 0 && info.skipped === 0) {
+        toast(t("files2.zipEmpty"), "error");
+        return;
+      }
+      toast(info.skipped > 0 ? t("files2.zipSkipped", { n: info.skipped }) : t("files2.zipPreparing"), "info");
+      const a = document.createElement("a");
+      a.href = url;
+      a.rel = "noopener";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    } catch (e) {
+      toast(errorText(e), "error");
+    }
   };
 
   const onDrop = (e: DragEvent) => {
@@ -183,6 +238,20 @@ export default function FilesPage() {
       )}
       {writable && (
         <>
+          <button className="icon-btn" title={t("files2.versions")} aria-label={t("files2.versions")} onClick={() => setDialog({ kind: "versions", file: f })}>
+            <Icon name="clock" size={16} />
+          </button>
+          <button
+            className="icon-btn"
+            title={t("files2.uploadVersion")}
+            aria-label={t("files2.uploadVersion")}
+            onClick={() => {
+              setVersionTarget(f);
+              versionInputRef.current?.click();
+            }}
+          >
+            <Icon name="upload" size={16} />
+          </button>
           <button className="icon-btn" title={t("files.share")} onClick={() => setDialog({ kind: "share", type: "file", id: f.id, name: f.name, downloadable: f.downloadable })}>
             <Icon name="share" size={16} />
           </button>
@@ -266,7 +335,23 @@ export default function FilesPage() {
                   e.target.value = "";
                 }}
               />
+              <input
+                ref={versionInputRef}
+                type="file"
+                hidden
+                onChange={(e) => {
+                  const picked = e.target.files?.[0];
+                  e.target.value = "";
+                  if (picked && versionTarget) uploadVersion(picked, versionTarget);
+                  setVersionTarget(null);
+                }}
+              />
             </>
+          )}
+          {data?.folder && !searchResults && (
+            <button className="btn" title={t("files2.zipFolder")} onClick={() => downloadZip(`/api/files/folders/${data.folder!.id}/zip/`)}>
+              <Icon name="archive" size={16} /> {t("files2.zip")}
+            </button>
           )}
         </div>
       </div>
@@ -379,8 +464,12 @@ export default function FilesPage() {
                 <td className="col-size muted">—</td>
                 <td className="col-date muted">{formatDate(f.updated_at)}</td>
                 <td className="col-actions">
-                  {writable && (
-                    <div className="row-actions">
+                  <div className="row-actions">
+                    <button className="icon-btn" title={t("files2.zipFolder")} aria-label={t("files2.zipFolder")} onClick={() => downloadZip(`/api/files/folders/${f.id}/zip/`)}>
+                      <Icon name="archive" size={16} />
+                    </button>
+                    {writable && (
+                    <>
                       <button className="icon-btn" title={t("files.share")} onClick={() => setDialog({ kind: "share", type: "folder", id: f.id, name: f.name })}>
                         <Icon name="share" size={16} />
                       </button>
@@ -393,8 +482,9 @@ export default function FilesPage() {
                       <button className="icon-btn danger" title={t("files.toTrash")} onClick={() => remove("folder", f.id, f.name)}>
                         <Icon name="trash" size={16} />
                       </button>
-                    </div>
-                  )}
+                    </>
+                    )}
+                  </div>
                 </td>
               </tr>
             ))}
@@ -475,6 +565,17 @@ export default function FilesPage() {
         />
       )}
       {dialog?.kind === "info" && <InfoDialog file={dialog.file} onClose={() => setDialog(null)} />}
+      {dialog?.kind === "versions" && (
+        <VersionsDialog
+          file={dialog.file}
+          onClose={() => setDialog(null)}
+          onChanged={() => {
+            load();
+            refreshUser();
+          }}
+          onUploadVersion={(picked) => uploadVersion(picked, dialog.file)}
+        />
+      )}
       {dragging && (
         <div className="drop-overlay">
           <Icon name="upload" size={40} />

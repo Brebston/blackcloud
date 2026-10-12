@@ -2,6 +2,7 @@ from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.contrib.auth.hashers import check_password, make_password
 from django.core.cache import cache
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
 from django.db.models import Count, F, Q, Sum
 from django.http import HttpResponse
@@ -18,8 +19,8 @@ from apps.core.audit import audit
 from apps.core.realtime import alert_staff, notify
 from apps.core.tickets import consume_ticket, issue_ticket, peek_ticket
 
-from . import services
-from .models import File, Folder, PublicLink, Share
+from . import services, zipstream
+from .models import File, FileVersion, Folder, PublicLink, Share
 from .serializers import (
     CreateFolderSerializer,
     CreatePublicLinkSerializer,
@@ -139,12 +140,13 @@ class UsageView(APIView):
         user = User.objects.get(pk=request.user.pk)
         base = File.objects.filter(owner=user).exclude(status=File.Status.UPLOADING)
         trash = base.filter(deleted_at__isnull=False).aggregate(s=Sum("size"))["s"] or 0
+        versions = FileVersion.objects.filter(file__owner=user).aggregate(s=Sum("size"))["s"] or 0
         by_type = {}
         for row in base.filter(deleted_at__isnull=True).values("mime_type").annotate(s=Sum("size")):
             group = row["mime_type"].split("/")[0]
             by_type[group] = by_type.get(group, 0) + row["s"]
         return Response(
-            {"quota_bytes": user.quota_bytes, "used_bytes": user.used_bytes, "trash_bytes": trash, "by_type": by_type}
+            {"quota_bytes": user.quota_bytes, "used_bytes": user.used_bytes, "trash_bytes": trash, "versions_bytes": versions, "by_type": by_type}
         )
 
 
@@ -306,6 +308,23 @@ class UploadStartView(APIView):
     def post(self, request):
         ser = StartUploadSerializer(data=request.data)
         ser.is_valid(raise_exception=True)
+        replace_id = ser.validated_data.get("replace_file_id")
+        if replace_id:
+            # Явний запит: зберегти як нову версію наявного файлу (лише власник)
+            target = services.get_own_file(request.user, replace_id)
+            v = services.start_version_upload(request.user, target, ser.validated_data["size"])
+            return Response(
+                {
+                    "id": v.id,
+                    "file_id": target.id,
+                    "name": target.name,
+                    "chunk_size": v.chunk_size,
+                    "chunks_total": v.chunks_total,
+                    "next_index": 0,
+                    "version": True,
+                },
+                status=201,
+            )
         folder = services.get_own_folder(request.user, ser.validated_data.get("folder"))
         f = services.start_upload(
             request.user, name=ser.validated_data["name"], size=ser.validated_data["size"], folder=folder
@@ -318,13 +337,16 @@ class UploadStartView(APIView):
 
 class UploadDetailView(APIView):
     def get(self, request, pk):
-        f = services.get_own_file(request.user, pk)
+        f = services.get_own_upload(request.user, pk)
         return Response(
             {"id": f.id, "status": f.status, "next_index": f.chunks_received, "chunks_total": f.chunks_total}
         )
 
     def delete(self, request, pk):
-        f = services.get_own_file(request.user, pk)
+        f = services.get_own_upload(request.user, pk)
+        if isinstance(f, FileVersion):
+            services.abort_version_upload(f)
+            return Response(status=204)
         if f.status != File.Status.UPLOADING:
             raise ValidationError({"detail": _("Завантаження вже завершено.")})
         services.purge_file(f)
@@ -337,19 +359,146 @@ class UploadChunkView(APIView):
     throttle_scope = "upload_chunk"
 
     def put(self, request, pk, index):
-        f = services.get_own_file(request.user, pk)
+        f = services.get_own_upload(request.user, pk)
         data = request.data if isinstance(request.data, bytes | bytearray) else b""
-        f = services.write_chunk(f, int(index), bytes(data))
+        if isinstance(f, FileVersion):
+            f = services.write_version_chunk(f, int(index), bytes(data))
+        else:
+            f = services.write_chunk(f, int(index), bytes(data))
         return Response({"next_index": f.chunks_received, "chunks_total": f.chunks_total})
 
 
 class UploadCompleteView(APIView):
     def post(self, request, pk):
-        f = services.get_own_file(request.user, pk)
+        f = services.get_own_upload(request.user, pk)
+        if isinstance(f, FileVersion):
+            number = f.number
+            f = services.complete_version_upload(f)
+            audit(request, "file.version_uploaded", target=str(f.pk), size=f.size, version=number)
+            return Response(FileSerializer(f).data)
         with transaction.atomic():
             f = services.complete_upload(f)
         audit(request, "file.uploaded", target=str(f.pk), size=f.size)
         return Response(FileSerializer(f).data)
+
+
+# ═══════════════════════════ Версії файлу ═══════════════════════════
+#
+# Історія версій доступна лише ВЛАСНИКУ: спільний доступ дає читання поточного вмісту,
+# але не попередніх версій (там можуть бути дані, які власник свідомо прибрав).
+# Іншим користувачам — 404, як для чужого файлу.
+
+
+class FileVersionsView(APIView):
+    def get(self, request, pk):
+        f = services.get_own_file(request.user, pk)
+        return Response({"max_versions": services.max_versions(), "versions": services.list_versions(f)})
+
+
+class FileVersionDetailView(APIView):
+    def delete(self, request, pk, vid):
+        f, v = services.get_own_version(request.user, pk, vid)
+        if v is None:
+            raise ValidationError({"detail": _("Поточну версію не можна видалити.")})
+        services.delete_version(f, v)
+        audit(request, "file.version_deleted", target=str(f.pk), version=v.number, size=v.size)
+        return Response(status=204)
+
+
+class FileVersionDownloadView(APIView):
+    def get(self, request, pk, vid):
+        f, v = services.get_own_version(request.user, pk, vid)
+        if v is None:
+            return services.file_response(f)
+        return services.version_response(f, v)
+
+
+class FileVersionRestoreView(APIView):
+    def post(self, request, pk, vid):
+        f, v = services.get_own_version(request.user, pk, vid)
+        if v is None:
+            raise ValidationError({"detail": _("Ця версія вже поточна.")})
+        f = services.restore_version(f, v, request.user)
+        audit(request, "file.version_restored", target=str(f.pk), version=v.number, new_version=f.content_version)
+        return Response(FileSerializer(f).data)
+
+
+# ═══════════════════════════ ZIP-архіви ═══════════════════════════
+
+
+def _readable_folder(user, pk) -> Folder:
+    """Власна папка (не в кошику) або доступна через спільний доступ (лише читання)."""
+    folder = Folder.objects.filter(pk=pk, deleted_at__isnull=True).first()
+    if folder is None:
+        raise NotFound(_("Папку не знайдено."))
+    if folder.owner_id == user.pk:
+        if services.is_in_trash(folder):
+            raise NotFound(_("Папку не знайдено."))
+    elif services.shared_folder_root(user, folder) is None:
+        raise NotFound(_("Папку не знайдено."))
+    return folder
+
+
+def _zip_audit(request, plan, target):
+    audit(
+        request,
+        "files.zip_downloaded",
+        target=target,
+        files=sum(1 for e in plan.entries if e.file is not None),
+        bytes=plan.total_bytes,
+        skipped=len(plan.skipped),
+    )
+
+
+def _zip_check(plan):
+    """?check=1 — лише перевірка лімітів і підсумок (UI показує помилку до початку завантаження)."""
+    return Response(
+        {
+            "files": sum(1 for e in plan.entries if e.file is not None),
+            "bytes": plan.total_bytes,
+            "skipped": len(plan.skipped),
+        }
+    )
+
+
+class FolderZipView(APIView):
+    def get(self, request, pk):
+        folder = _readable_folder(request.user, pk)
+        plan = zipstream.build_plan(folders=[folder])
+        if request.query_params.get("check"):
+            return _zip_check(plan)
+        _zip_audit(request, plan, str(folder.pk))
+        return zipstream.zip_response(plan, f"{zipstream.safe_component(folder.name)}.zip")
+
+
+class SelectionZipView(APIView):
+    """GET /api/files/zip/?file=<id>&folder=<id>… — вибрані елементи одним архівом."""
+
+    MAX_ITEMS = 500
+
+    def get(self, request):
+        file_ids = request.query_params.getlist("file")
+        folder_ids = request.query_params.getlist("folder")
+        if not file_ids and not folder_ids:
+            raise ValidationError({"detail": _("Нічого не вибрано.")})
+        if len(file_ids) + len(folder_ids) > self.MAX_ITEMS:
+            raise ValidationError({"detail": _("Забагато елементів (максимум %(n)s).") % {"n": self.MAX_ITEMS}})
+        try:
+            folders = [_readable_folder(request.user, pk) for pk in dict.fromkeys(folder_ids)]
+            files = []
+            for pk in dict.fromkeys(file_ids):
+                f = services.get_readable_file(request.user, pk)
+                if f.deleted_at is not None or f.status == File.Status.UPLOADING:
+                    raise NotFound(_("Файл не знайдено."))
+                files.append(f)
+        except (ValueError, DjangoValidationError):
+            raise NotFound()
+        plan = zipstream.build_plan(folders=folders, files=files)
+        if request.query_params.get("check"):
+            return _zip_check(plan)
+        name = f"{zipstream.safe_component(folders[0].name)}.zip" if len(folders) == 1 and not files else "files.zip"
+        _zip_audit(request, plan, "selection")
+        return zipstream.zip_response(plan, name)
 
 
 # ═══════════════════════════ Кошик ═══════════════════════════
