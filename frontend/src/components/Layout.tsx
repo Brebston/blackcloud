@@ -9,6 +9,7 @@ import type { TKey } from "../i18n";
 import { applyAppearance, resolvedScheme } from "../lib/appearance";
 import { formatDate } from "../lib/format";
 import Icon from "./Icon";
+import MobileNav from "./MobileNav";
 import QuotaBar from "./QuotaBar";
 import { useToast } from "./Toast";
 
@@ -29,7 +30,6 @@ export default function Layout({ children }: { children: ReactNode }) {
   const toast = useToast();
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [showNotif, setShowNotif] = useState(false);
-  const [navOpen, setNavOpen] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
   const userMenuRef = useRef<HTMLDivElement>(null);
   const notifRef = useRef<HTMLDivElement>(null);
@@ -90,21 +90,21 @@ export default function Layout({ children }: { children: ReactNode }) {
   const isDark = resolvedScheme(user.preferences.theme) === "dark";
 
   return (
-    <div className={`app ${navOpen ? "nav-open" : ""}`}>
+    <div className="app">
       <aside className="sidebar">
-        <Link to="/files" className="brand" onClick={() => setNavOpen(false)}>
+        <Link to="/files" className="brand">
           <Icon name="cloud" size={22} />
           <span>BlackCloud</span>
         </Link>
         <nav>
           {NAV.map((item) => (
-            <NavLink key={item.to} to={item.to} className="nav-item" onClick={() => setNavOpen(false)}>
+            <NavLink key={item.to} to={item.to} className="nav-item">
               <Icon name={item.icon} />
               <span>{t(item.label)}</span>
             </NavLink>
           ))}
           {user.is_staff && (
-            <NavLink to="/admin" className="nav-item" onClick={() => setNavOpen(false)}>
+            <NavLink to="/admin" className="nav-item">
               <Icon name="admin" />
               <span>{t("nav.admin")}</span>
             </NavLink>
@@ -117,9 +117,11 @@ export default function Layout({ children }: { children: ReactNode }) {
 
       <div className="main">
         <header className="topbar">
-          <button className="icon-btn mobile-only" onClick={() => setNavOpen(!navOpen)} aria-label={t("nav.menu")}>
-            <Icon name="menu" />
-          </button>
+          {/* На телефоні замість бічного меню — нижня панель вкладок (MobileNav) */}
+          <Link to="/files" className="brand topbar-brand mobile-only" aria-label="BlackCloud">
+            <Icon name="cloud" size={22} />
+            <span>BlackCloud</span>
+          </Link>
           <div className="topbar-spacer" />
           {user.has_2fa ? (
             <span className="pill pill-success" title={t("top.2faOn")}>
@@ -132,7 +134,7 @@ export default function Layout({ children }: { children: ReactNode }) {
           )}
           <LanguageSwitcher className="desktop-only" />
           <button
-            className="icon-btn"
+            className="icon-btn desktop-only"
             onClick={toggleTheme}
             aria-label={isDark ? t("top.lightTheme") : t("top.darkTheme")}
             title={isDark ? t("top.lightTheme") : t("top.darkTheme")}
@@ -231,6 +233,15 @@ export default function Layout({ children }: { children: ReactNode }) {
           </div>
         )}
         <main className="content">{children}</main>
+        <MobileNav
+          isStaff={user.is_staff}
+          isDark={isDark}
+          notifications={notifications}
+          unread={unread}
+          onToggleTheme={toggleTheme}
+          onMarkAll={markAll}
+          onLogout={doLogout}
+        />
       </div>
     </div>
   );

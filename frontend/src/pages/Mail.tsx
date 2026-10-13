@@ -4,10 +4,14 @@ import { api, del, errorText, get, patch, post } from "../api/client";
 import type { MailFolder, MailMessage, MailSummary } from "../api/types";
 import Icon from "../components/Icon";
 import Modal from "../components/Modal";
+import PullToRefresh from "../components/PullToRefresh";
 import RichEditor, { type RichEditorHandle } from "../components/RichEditor";
+import SwipeRow from "../components/SwipeRow";
 import { useToast } from "../components/Toast";
+import { useIsMobile } from "../hooks/useIsMobile";
 import { useT } from "../i18n";
 import type { TFunc, TKey } from "../i18n";
+import { setBadge } from "../lib/badges";
 import { cleanHtml, textToHtml } from "../lib/htmlClean";
 import { formatBytes, formatDate, senderName } from "../lib/format";
 
@@ -157,6 +161,7 @@ export default function MailPage() {
   const t = useT();
   const location = useLocation();
   const navigate = useNavigate();
+  const mobile = useIsMobile();
   const [mailboxes, setMailboxes] = useState<MailboxInfo[]>([]);
   const [mailbox, setMailbox] = useState<MailboxInfo | null>(null);
   const [unavailable, setUnavailable] = useState("");
@@ -271,6 +276,10 @@ export default function MailPage() {
       document.title = document.title.replace(/^\(\d+\) /, "");
     };
   }, [inboxUnseen]);
+  // Значок на вкладці «Пошта» нижньої панелі (мобільна версія)
+  useEffect(() => {
+    if (folders.length) setBadge("mail", inboxUnseen);
+  }, [inboxUnseen, folders.length]);
 
   useEffect(() => {
     get<MailboxInfo[]>("/api/mail/mailboxes/")
@@ -476,6 +485,21 @@ export default function MailPage() {
     }
   };
 
+  // Свайп у списку (телефон): ліворуч — у кошик (як кнопка «Видалити»), праворуч — в архів (якщо є тека \Archive)
+  const archiveFolder = folders.find((f) => f.special === "\\Archive")?.name;
+  const swipeAction = async (m: MailSummary, kind: "delete" | "archive") => {
+    setList((l) => l && { ...l, total: Math.max(0, l.total - 1), results: l.results.filter((x) => x.uid !== m.uid) });
+    try {
+      if (kind === "delete") await del(withBox(`/api/mail/messages/${m.uid}/?folder=${encodeURIComponent(folder)}`));
+      else await patch(withBox(`/api/mail/messages/${m.uid}/`), { folder, move_to: archiveFolder });
+      toast(kind === "delete" ? t("mail.deleted") : t("mobile.archived"), "success");
+      loadFolders().catch(() => {});
+    } catch (e) {
+      toast(errorText(e), "error");
+      loadList(true);
+    }
+  };
+
   const reply = (all: boolean) => {
     if (!open) return;
     setCompose({
@@ -570,6 +594,7 @@ export default function MailPage() {
         </button>
       </div>
       <div className="mail-list" ref={listRef}>
+        <PullToRefresh enabled={mobile} onRefresh={() => Promise.all([loadList(), loadFolders().catch(() => {})])}>
         {loading && !list && <div className="empty-small">{t("common.loading")}</div>}
         {list && list.results.length === 0 && (
           <div className="empty">
@@ -578,7 +603,16 @@ export default function MailPage() {
           </div>
         )}
         {list?.results.map((m) => (
-          <div key={m.uid} className={`mail-row ${m.seen ? "" : "unread"}`}>
+          <SwipeRow
+            key={m.uid}
+            className={`mail-row ${m.seen ? "" : "unread"}`}
+            left={mobile ? { icon: "trash", label: t("common.delete"), tone: "swipe-danger", run: () => swipeAction(m, "delete") } : undefined}
+            right={
+              mobile && archiveFolder && archiveFolder !== folder
+                ? { icon: "archive", label: t("mobile.archive"), tone: "swipe-archive", run: () => swipeAction(m, "archive") }
+                : undefined
+            }
+          >
             <button
               className={`mail-star ${m.flagged ? "on" : ""}`}
               aria-pressed={m.flagged}
@@ -602,8 +636,9 @@ export default function MailPage() {
                 {formatDate(m.date, isToday(m.date))}
               </span>
             </button>
-          </div>
+          </SwipeRow>
         ))}
+        </PullToRefresh>
       </div>
     </>
   );
@@ -864,7 +899,11 @@ function ComposeDialog({
   onSent: (result: SendResult) => void;
 }) {
   const t = useT();
+  const mobile = useIsMobile();
   const editor = useRef<RichEditorHandle>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const cameraRef = useRef<HTMLInputElement>(null);
   const [form, setForm] = useState({
     to: init.to || "",
     cc: init.cc || "",
@@ -911,6 +950,16 @@ function ComposeDialog({
       .catch(() => {});
     return () => window.clearTimeout(timer.current);
   }, []);
+
+  // Меню «⋯» (мобільна версія) закривається дотиком поза ним
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onDown = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [menuOpen]);
 
   const replyFields = (data: FormData) => {
     if (init.in_reply_to) data.append("in_reply_to", init.in_reply_to);
@@ -1044,8 +1093,189 @@ function ComposeDialog({
   };
   const initialHtml = init.html ?? `<p></p>${init.quoteHtml ? `<p></p>${init.quoteHtml}` : ""}`;
 
+  const addFiles = (list: FileList | null) => {
+    if (list) {
+      const picked = Array.from(list as FileList);
+      setFiles((cur) => [...cur, ...picked].slice(0, 20 - kept.length));
+    }
+    touch();
+  };
+  // camera — одразу камера телефону (capture), інакше звичайний вибір файлів
+  const attachInput = (camera = false) => (
+    <input
+      ref={camera ? cameraRef : undefined}
+      type="file"
+      multiple={!camera}
+      hidden
+      disabled={confidential}
+      accept={camera ? "image/*" : undefined}
+      capture={camera ? "environment" : undefined}
+      onChange={(e) => {
+        addFiles(e.target.files);
+        e.target.value = "";
+      }}
+    />
+  );
+  const pills = (
+    <>
+      {kept.map((a) => (
+        <span key={`k${a.index}`} className="pill">
+          {a.filename} ({formatBytes(a.size)})
+          <button
+            type="button"
+            className="pill-x"
+            onClick={() => {
+              setKept(kept.filter((x) => x.index !== a.index));
+              touch();
+            }}
+            aria-label={t("common.remove")}
+          >
+            ×
+          </button>
+        </span>
+      ))}
+      {files.map((f, i) => (
+        <span key={i} className="pill">
+          {f.name} ({formatBytes(f.size)})
+          <button
+            type="button"
+            className="pill-x"
+            onClick={() => {
+              setFiles(files.filter((_, j) => j !== i));
+              touch();
+            }}
+            aria-label={t("common.remove")}
+          >
+            ×
+          </button>
+        </span>
+      ))}
+    </>
+  );
+  const signatureSelect = (
+    <select
+      className="select-sm"
+      aria-label={t("compose.signature")}
+      value={signatureId}
+      onChange={(e) => {
+        setSignatureId(e.target.value);
+        editor.current?.setSignature(signatures.find((s) => s.id === e.target.value)?.html || null);
+      }}
+    >
+      <option value="">{t("compose.noSignature")}</option>
+      {signatures.map((s) => (
+        <option key={s.id} value={s.id}>
+          {s.name}
+        </option>
+      ))}
+    </select>
+  );
+
+  // Телефон: повноекранне вікно, як у застосунку Gmail — ✕ ліворуч, вкладення, «⋯» і «Надіслати» вгорі праворуч
+  const headerActions = mobile ? (
+    <>
+      <label
+        className={`icon-btn ${confidential ? "disabled" : ""}`}
+        title={confidential ? t("compose.confNoAttachments") : t("compose.attach")}
+        aria-label={t("compose.attach")}
+      >
+        <Icon name="paperclip" />
+        {attachInput()}
+      </label>
+      {/* Поза меню «⋯»: меню закривається одразу, а поле має дожити до вибору фото */}
+      {attachInput(true)}
+      <div className="dropdown" ref={menuRef}>
+        <button
+          type="button"
+          className={`icon-btn ${menuOpen ? "active" : ""}`}
+          aria-label={t("mobile.moreActions")}
+          title={t("mobile.moreActions")}
+          aria-haspopup="menu"
+          aria-expanded={menuOpen}
+          onClick={() => setMenuOpen(!menuOpen)}
+        >
+          <Icon name="more" />
+        </button>
+        {menuOpen && (
+          <div className="dropdown-menu compose-menu" role="menu">
+            <button
+              type="button"
+              role="menuitem"
+              className={`menu-item ${confidential ? "disabled" : ""}`}
+              disabled={confidential}
+              onClick={() => {
+                cameraRef.current?.click();
+                setMenuOpen(false);
+              }}
+            >
+              <Icon name="camera" size={18} /> {t("mobile.takePhoto")}
+            </button>
+            <button
+              type="button"
+              role="menuitemcheckbox"
+              aria-checked={scheduleOpen}
+              className={`menu-item ${scheduleOpen ? "active" : ""}`}
+              onClick={() => {
+                setScheduleOpen(!scheduleOpen);
+                setMenuOpen(false);
+              }}
+            >
+              <Icon name="clock" size={18} /> {t("compose.schedule")}
+            </button>
+            <button
+              type="button"
+              role="menuitemcheckbox"
+              aria-checked={confidential}
+              className={`menu-item ${confidential ? "active" : ""}`}
+              onClick={() => {
+                setConfidential(!confidential);
+                setMenuOpen(false);
+              }}
+            >
+              <Icon name="lock" size={18} /> {t("compose.confidential")}
+              {confidential && <Icon name="check" size={16} />}
+            </button>
+            <label className="menu-item menu-select">
+              <Icon name="signature" size={18} />
+              {signatureSelect}
+            </label>
+            <div className="menu-sep" />
+            <button
+              type="button"
+              role="menuitem"
+              className="menu-item danger"
+              onClick={() => {
+                setMenuOpen(false);
+                discard();
+              }}
+            >
+              <Icon name="trash" size={18} /> {t("compose.discard")}
+            </button>
+          </div>
+        )}
+      </div>
+      <button
+        type="button"
+        className="icon-btn compose-send"
+        disabled={busy}
+        onClick={() => submit()}
+        aria-label={busy ? t("compose.sending") : t("compose.send")}
+        title={busy ? t("compose.sending") : t("compose.send")}
+      >
+        <Icon name="send" />
+      </button>
+    </>
+  ) : undefined;
+
   return (
-    <Modal title={init.draftUid ? t("compose.draftTitle") : t("compose.title")} onClose={close} wide>
+    <Modal
+      title={init.draftUid ? t("compose.draftTitle") : t("compose.title")}
+      onClose={close}
+      wide
+      fullScreen={mobile}
+      actions={headerActions}
+      className={mobile ? "compose-full" : undefined}
+    >
       <form
         className="stack compose"
         onSubmit={(e) => {
@@ -1053,8 +1283,8 @@ function ComposeDialog({
           submit();
         }}
       >
-        <div className="row-between small muted">
-          <span>
+        <div className="row-between small muted compose-from">
+          <span className="truncate">
             {t("compose.from")}: {mailbox.display_name ? `${mailbox.display_name} <${mailbox.address}>` : mailbox.address}
           </span>
           <span className={`draft-state ${saveState === "error" ? "text-danger" : ""}`} aria-live="polite">
@@ -1064,7 +1294,14 @@ function ComposeDialog({
           </span>
         </div>
         <div className="row gap">
-          <input className="grow" placeholder={t("compose.to")} value={form.to} onChange={set("to")} autoFocus={!init.to} />
+          <input
+            className="grow"
+            inputMode="email"
+            placeholder={t("compose.to")}
+            value={form.to}
+            onChange={set("to")}
+            autoFocus={!init.to}
+          />
           {!showCc && (
             <button type="button" className="link-btn" onClick={() => setShowCc(true)}>
               {t("mail.cc")}
@@ -1073,78 +1310,25 @@ function ComposeDialog({
         </div>
         {showCc && (
           <>
-            <input placeholder={t("mail.cc")} value={form.cc} onChange={set("cc")} />
-            <input placeholder={t("compose.bcc")} value={form.bcc} onChange={set("bcc")} />
+            <input placeholder={t("mail.cc")} value={form.cc} onChange={set("cc")} inputMode="email" />
+            <input placeholder={t("compose.bcc")} value={form.bcc} onChange={set("bcc")} inputMode="email" />
           </>
         )}
         <input placeholder={t("mail.subject")} value={form.subject} onChange={set("subject")} maxLength={300} />
-        <RichEditor ref={editor} initialHtml={initialHtml} onError={setError} onChange={touch} autoFocus={!!init.to} />
+        <RichEditor ref={editor} initialHtml={initialHtml} onError={setError} onChange={touch} autoFocus={!!init.to} compactToolbar={mobile} />
+        {mobile ? (
+          (kept.length > 0 || files.length > 0) && <div className="row gap-sm wrap compose-pills">{pills}</div>
+        ) : (
         <div className="row gap wrap">
           <label className={`btn btn-sm ${confidential ? "disabled" : ""}`} title={confidential ? t("compose.confNoAttachments") : undefined}>
             <Icon name="paperclip" size={14} /> {t("compose.attach")}
-            <input
-              type="file"
-              multiple
-              hidden
-              disabled={confidential}
-              onChange={(e) => {
-                if (e.target.files) setFiles([...files, ...Array.from(e.target.files as FileList)].slice(0, 20 - kept.length));
-                e.target.value = "";
-                touch();
-              }}
-            />
+            {attachInput()}
           </label>
-          {kept.map((a) => (
-            <span key={`k${a.index}`} className="pill">
-              {a.filename} ({formatBytes(a.size)})
-              <button
-                type="button"
-                className="pill-x"
-                onClick={() => {
-                  setKept(kept.filter((x) => x.index !== a.index));
-                  touch();
-                }}
-                aria-label={t("common.remove")}
-              >
-                ×
-              </button>
-            </span>
-          ))}
-          {files.map((f, i) => (
-            <span key={i} className="pill">
-              {f.name} ({formatBytes(f.size)})
-              <button
-                type="button"
-                className="pill-x"
-                onClick={() => {
-                  setFiles(files.filter((_, j) => j !== i));
-                  touch();
-                }}
-                aria-label={t("common.remove")}
-              >
-                ×
-              </button>
-            </span>
-          ))}
+          {pills}
           <span className="grow" />
           <label className="row gap-sm small">
             <Icon name="signature" size={14} />
-            <select
-              className="select-sm"
-              aria-label={t("compose.signature")}
-              value={signatureId}
-              onChange={(e) => {
-                setSignatureId(e.target.value);
-                editor.current?.setSignature(signatures.find((s) => s.id === e.target.value)?.html || null);
-              }}
-            >
-              <option value="">{t("compose.noSignature")}</option>
-              {signatures.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.name}
-                </option>
-              ))}
-            </select>
+            {signatureSelect}
           </label>
           <button
             type="button"
@@ -1155,6 +1339,7 @@ function ComposeDialog({
             <Icon name="lock" size={14} /> {t("compose.confidential")}
           </button>
         </div>
+        )}
         {confidential && (
           <div className="banner banner-info stack small">
             <div className="row gap wrap">
@@ -1206,6 +1391,7 @@ function ComposeDialog({
           </div>
         )}
         {error && <div className="form-error">{error}</div>}
+        {!mobile && (
         <div className="modal-actions">
           <button type="button" className="btn btn-danger" onClick={discard} title={t("compose.discard")}>
             <Icon name="trash" size={16} />
@@ -1227,6 +1413,7 @@ function ComposeDialog({
             <Icon name="send" size={16} /> {busy ? t("compose.sending") : t("compose.send")}
           </button>
         </div>
+        )}
       </form>
     </Modal>
   );

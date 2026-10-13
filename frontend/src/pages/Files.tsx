@@ -5,11 +5,14 @@ import type { BrowseResult, FileItem, Folder } from "../api/types";
 import FileViewer from "../components/FileViewer";
 import Icon from "../components/Icon";
 import Modal from "../components/Modal";
+import PullToRefresh from "../components/PullToRefresh";
 import ShareDialog from "../components/ShareDialog";
+import ShareImportDialog from "../components/ShareImportDialog";
 import VersionsDialog from "../components/VersionsDialog";
 import { useToast } from "../components/Toast";
 import { useAuth } from "../hooks/useAuth";
 import { useEvents } from "../hooks/useEvents";
+import { useIsMobile } from "../hooks/useIsMobile";
 import { useT } from "../i18n";
 import type { TFunc } from "../i18n";
 import { fileIcon, formatBytes, formatDate } from "../lib/format";
@@ -64,6 +67,9 @@ type Dialog =
 export default function FilesPage() {
   const [params, setParams] = useSearchParams();
   const folderId = params.get("folder") || "root";
+  // ?share=<id> — дані з меню «Поділитися» Android (див. public/sw.js, lib/shareInbox.ts)
+  const shareId = params.get("share");
+  const mobile = useIsMobile();
   const toast = useToast();
   const t = useT();
   const { user, refresh: refreshUser } = useAuth();
@@ -82,6 +88,8 @@ export default function FilesPage() {
   const versionInputRef = useRef<HTMLInputElement>(null);
   const [versionTarget, setVersionTarget] = useState<FileItem | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  // Телефон: дії з файлом/текою — у нижній шторці замість ряду дрібних іконок
+  const [actionSheet, setActionSheet] = useState<{ file?: FileItem; folder?: Folder } | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -229,7 +237,15 @@ export default function FilesPage() {
     }
   };
 
-  const fileActions = (f: FileItem) => (
+  const moreButton = (target: { file?: FileItem; folder?: Folder }, name: string) => (
+    <div className="row-actions">
+      <button className="icon-btn" title={t("mobile.actionsFor", { name })} aria-label={t("mobile.actionsFor", { name })} onClick={() => setActionSheet(target)}>
+        <Icon name="more" />
+      </button>
+    </div>
+  );
+
+  const fileActions = (f: FileItem) => mobile ? moreButton({ file: f }, f.name) : (
     <div className="row-actions">
       {f.downloadable && (
         <a className="icon-btn" title={t("files.download")} href={downloadUrl(f)}>
@@ -319,12 +335,26 @@ export default function FilesPage() {
           </div>
           {data?.writable && (
             <>
-              <button className="btn" onClick={() => setDialog({ kind: "newFolder" })}>
-                <Icon name="plus" size={16} /> {t("files.folder")}
+              <button className="btn" onClick={() => setDialog({ kind: "newFolder" })} title={t("files.newFolder")} aria-label={t("files.newFolder")}>
+                <Icon name="folderPlus" size={16} /> <span className="hide-narrow">{t("files.folder")}</span>
               </button>
               <button className="btn btn-primary" onClick={() => inputRef.current?.click()}>
                 <Icon name="upload" size={16} /> {t("files.upload")}
               </button>
+              {/* Телефон: одразу камера (звичайний вибір файлів — кнопка «Завантажити») */}
+              <label className="btn mobile-only" title={t("mobile.takePhoto")} aria-label={t("mobile.takePhoto")}>
+                <Icon name="camera" size={16} />
+                <input
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  hidden
+                  onChange={(e) => {
+                    if (e.target.files) startUploads(e.target.files);
+                    e.target.value = "";
+                  }}
+                />
+              </label>
               <input
                 ref={inputRef}
                 type="file"
@@ -392,6 +422,7 @@ export default function FilesPage() {
         </div>
       )}
 
+      <PullToRefresh enabled={mobile} onRefresh={load}>
       {viewMode === "grid" ? (
         <div className="file-grid">
           {data?.folder && !searchResults && (
@@ -464,6 +495,7 @@ export default function FilesPage() {
                 <td className="col-size muted">—</td>
                 <td className="col-date muted">{formatDate(f.updated_at)}</td>
                 <td className="col-actions">
+                  {mobile ? moreButton({ folder: f }, f.name) : (
                   <div className="row-actions">
                     <button className="icon-btn" title={t("files2.zipFolder")} aria-label={t("files2.zipFolder")} onClick={() => downloadZip(`/api/files/folders/${f.id}/zip/`)}>
                       <Icon name="archive" size={16} />
@@ -485,6 +517,7 @@ export default function FilesPage() {
                     </>
                     )}
                   </div>
+                  )}
                 </td>
               </tr>
             ))}
@@ -521,6 +554,7 @@ export default function FilesPage() {
         </table>
       </div>
       )}
+      </PullToRefresh>
 
       {dialog?.kind === "newFolder" && (
         <NameDialog
@@ -562,6 +596,104 @@ export default function FilesPage() {
           officeEnabled={officeEnabled}
           onIndex={setViewerIndex}
           onClose={() => setViewerIndex(null)}
+        />
+      )}
+      {actionSheet && (
+        <Modal title={actionSheet.file?.name || actionSheet.folder?.name || ""} onClose={() => setActionSheet(null)}>
+          <div className="action-sheet">
+            {actionSheet.file && (() => {
+              const f = actionSheet.file;
+              const run = (fn: () => void) => () => {
+                setActionSheet(null);
+                fn();
+              };
+              return (
+                <>
+                  {f.downloadable && (
+                    <a className="menu-item" href={downloadUrl(f)} onClick={() => setActionSheet(null)}>
+                      <Icon name="download" /> {t("files.download")}
+                    </a>
+                  )}
+                  {writable && (
+                    <>
+                      <button className="menu-item" onClick={run(() => setDialog({ kind: "share", type: "file", id: f.id, name: f.name, downloadable: f.downloadable }))}>
+                        <Icon name="share" /> {t("files.share")}
+                      </button>
+                      <button className="menu-item" onClick={run(() => setDialog({ kind: "rename", type: "file", id: f.id, name: f.name }))}>
+                        <Icon name="edit" /> {t("files.rename")}
+                      </button>
+                      <button className="menu-item" onClick={run(() => setDialog({ kind: "move", type: "file", id: f.id, name: f.name }))}>
+                        <Icon name="move" /> {t("files.move")}
+                      </button>
+                      <button className="menu-item" onClick={run(() => setDialog({ kind: "versions", file: f }))}>
+                        <Icon name="clock" /> {t("files2.versions")}
+                      </button>
+                      <button
+                        className="menu-item"
+                        onClick={run(() => {
+                          setVersionTarget(f);
+                          versionInputRef.current?.click();
+                        })}
+                      >
+                        <Icon name="upload" /> {t("files2.uploadVersion")}
+                      </button>
+                      <button className="menu-item danger" onClick={run(() => remove("file", f.id, f.name))}>
+                        <Icon name="trash" /> {t("files.toTrash")}
+                      </button>
+                    </>
+                  )}
+                  <button className="menu-item" onClick={run(() => setDialog({ kind: "info", file: f }))}>
+                    <Icon name="file" /> {t("mobile.details")} · {formatBytes(f.size)}
+                  </button>
+                </>
+              );
+            })()}
+            {actionSheet.folder && (() => {
+              const f = actionSheet.folder;
+              const run = (fn: () => void) => () => {
+                setActionSheet(null);
+                fn();
+              };
+              return (
+                <>
+                  <button className="menu-item" onClick={run(() => openFolder(f.id))}>
+                    <Icon name="folder" /> {t("mobile.open")}
+                  </button>
+                  <button className="menu-item" onClick={run(() => downloadZip(`/api/files/folders/${f.id}/zip/`))}>
+                    <Icon name="archive" /> {t("files2.zipFolder")}
+                  </button>
+                  {writable && (
+                    <>
+                      <button className="menu-item" onClick={run(() => setDialog({ kind: "share", type: "folder", id: f.id, name: f.name }))}>
+                        <Icon name="share" /> {t("files.share")}
+                      </button>
+                      <button className="menu-item" onClick={run(() => setDialog({ kind: "rename", type: "folder", id: f.id, name: f.name }))}>
+                        <Icon name="edit" /> {t("files.rename")}
+                      </button>
+                      <button className="menu-item" onClick={run(() => setDialog({ kind: "move", type: "folder", id: f.id, name: f.name }))}>
+                        <Icon name="move" /> {t("files.move")}
+                      </button>
+                      <button className="menu-item danger" onClick={run(() => remove("folder", f.id, f.name))}>
+                        <Icon name="trash" /> {t("files.toTrash")}
+                      </button>
+                    </>
+                  )}
+                </>
+              );
+            })()}
+          </div>
+        </Modal>
+      )}
+      {shareId && (
+        <ShareImportDialog
+          shareId={shareId}
+          initialFolder={folderId === "root" ? null : folderId}
+          onClose={() => setParams(folderId === "root" ? {} : { folder: folderId })}
+          onDone={(target) => {
+            setParams(target ? { folder: target } : {});
+            load();
+            refreshUser();
+          }}
         />
       )}
       {dialog?.kind === "info" && <InfoDialog file={dialog.file} onClose={() => setDialog(null)} />}

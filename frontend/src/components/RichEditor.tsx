@@ -76,6 +76,25 @@ const EMPTY_STATE = {
   canRedo: false,
 };
 
+/** Великі фото (камера телефону) зменшуємо до 1920px по більшій стороні — інакше лист швидко впирається в ліміт. */
+async function shrinkImage(file: File): Promise<File> {
+  if (file.size <= 1.5 * 1024 * 1024 || file.type === "image/gif" || typeof createImageBitmap !== "function") return file;
+  try {
+    const bmp = await createImageBitmap(file);
+    const scale = Math.min(1, 1920 / Math.max(bmp.width, bmp.height));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.round(bmp.width * scale);
+    canvas.height = Math.round(bmp.height * scale);
+    canvas.getContext("2d")?.drawImage(bmp, 0, 0, canvas.width, canvas.height);
+    bmp.close();
+    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.85));
+    if (!blob || blob.size >= file.size) return file;
+    return new File([blob], file.name.replace(/\.[^.]+$/, "") + ".jpg", { type: "image/jpeg" });
+  } catch {
+    return file;
+  }
+}
+
 function readAsDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const r = new FileReader();
@@ -94,8 +113,10 @@ const RichEditor = forwardRef<
     onChange?: () => void;
     compact?: boolean;
     autoFocus?: boolean;
+    /** Мобільний режим: лише основні кнопки (B, I, U, список, посилання, фото, камера, емоджі) і «Ще». */
+    compactToolbar?: boolean;
   }
->(function RichEditor({ initialHtml = "", placeholder, onError, onChange, compact, autoFocus }, ref) {
+>(function RichEditor({ initialHtml = "", placeholder, onError, onChange, compact, autoFocus, compactToolbar }, ref) {
   const t = useT();
   const editorRef = useRef<Editor | null>(null);
   const onChangeRef = useRef(onChange);
@@ -104,10 +125,12 @@ const RichEditor = forwardRef<
   onErrorRef.current = onError;
   const [panel, setPanel] = useState<"" | "link" | "color" | "emoji">("");
   const [linkValue, setLinkValue] = useState("");
+  const [fullToolbar, setFullToolbar] = useState(false);
 
   const insertImages = useCallback(
-    async (files: File[]) => {
-      for (const f of files) {
+    async (picked: File[]) => {
+      for (const original of picked) {
+        const f = IMAGE_TYPES.includes(original.type) ? await shrinkImage(original) : original;
         if (!IMAGE_TYPES.includes(f.type)) {
           onErrorRef.current?.(t("editor.imageType"));
           continue;
@@ -287,8 +310,78 @@ const RichEditor = forwardRef<
     </button>
   );
 
+  const imageInput = (camera: boolean) => (
+    <label
+      className="rte-btn"
+      title={t(camera ? "mobile.takePhoto" : "editor.image")}
+      aria-label={t(camera ? "mobile.takePhoto" : "editor.image")}
+    >
+      <Icon name={camera ? "camera" : "image"} size={16} />
+      <input
+        type="file"
+        accept={camera ? "image/*" : IMAGE_TYPES.join(",")}
+        capture={camera ? "environment" : undefined}
+        multiple={!camera}
+        hidden
+        onChange={(e) => {
+          const files = Array.from((e.target.files || []) as FileList);
+          e.target.value = "";
+          insertImages(files);
+        }}
+      />
+    </label>
+  );
+  const marks = (
+    <>
+      {btn("editor.bold", state.bold, () => chain().toggleBold().run(), <b>B</b>)}
+      {btn("editor.italic", state.italic, () => chain().toggleItalic().run(), <i>I</i>)}
+      {btn("editor.underline", state.underline, () => chain().toggleUnderline().run(), <u>U</u>)}
+    </>
+  );
+  const linkBtn = btn(
+    "editor.link",
+    state.link || panel === "link",
+    () => {
+      const { from, to } = editor.state.selection;
+      setLinkValue(String(editor.getAttributes("link").href || editor.state.doc.textBetween(from, to, " ").trim()));
+      setPanel(panel === "link" ? "" : "link");
+    },
+    <Icon name="link" size={16} />,
+  );
+  const unlinkBtn = state.link && btn("editor.unlink", false, () => chain().extendMarkRange("link").unsetLink().run(), <Icon name="x" size={14} />);
+  const bulletsBtn = btn("editor.bullets", state.bullet, () => chain().toggleBulletList().run(), <Icon name="list" size={16} />);
+  const emojiBtn = (
+    <span className="rte-emoji-anchor">
+      {btn("editor.emoji", panel === "emoji", () => setPanel(panel === "emoji" ? "" : "emoji"), <Icon name="smile" size={16} />)}
+      {panel === "emoji" && (
+        <EmojiPicker className="rte-emoji" onClose={() => setPanel("")} onPick={(emoji) => chain().insertContent(emoji).run()} />
+      )}
+    </span>
+  );
+  const moreBtn =
+    compactToolbar &&
+    btn(
+      fullToolbar ? "mobile.lessFormatting" : "mobile.moreFormatting",
+      fullToolbar,
+      () => setFullToolbar(!fullToolbar),
+      <Icon name={fullToolbar ? "chevronDown" : "more"} size={16} />,
+    );
+
   return (
-    <div className={`rte ${compact ? "rte-compact" : ""}`}>
+    <div className={`rte ${compact ? "rte-compact" : ""} ${compactToolbar ? "rte-mobile" : ""}`}>
+      {compactToolbar && !fullToolbar ? (
+        <div className="rte-toolbar" role="toolbar" aria-label={t("editor.toolbar")}>
+          {marks}
+          {bulletsBtn}
+          {linkBtn}
+          {unlinkBtn}
+          {imageInput(false)}
+          {imageInput(true)}
+          {emojiBtn}
+          <span className="grow" />
+          {moreBtn}
+        </div>
+      ) : (
       <div className="rte-toolbar" role="toolbar" aria-label={t("editor.toolbar")}>
         {btn("editor.undo", false, () => chain().undo().run(), <Icon name="undo" size={16} />, !state.canUndo)}
         {btn("editor.redo", false, () => chain().redo().run(), <Icon name="redo" size={16} />, !state.canRedo)}
@@ -324,9 +417,7 @@ const RichEditor = forwardRef<
           ))}
         </select>
         <span className="rte-sep" />
-        {btn("editor.bold", state.bold, () => chain().toggleBold().run(), <b>B</b>)}
-        {btn("editor.italic", state.italic, () => chain().toggleItalic().run(), <i>I</i>)}
-        {btn("editor.underline", state.underline, () => chain().toggleUnderline().run(), <u>U</u>)}
+        {marks}
         {btn("editor.strike", state.strike, () => chain().toggleStrike().run(), <s>S</s>)}
         {btn(
           "editor.color",
@@ -341,35 +432,14 @@ const RichEditor = forwardRef<
         {btn("editor.alignCenter", state.align === "center", () => chain().setAlign("center").run(), <Icon name="alignCenter" size={16} />)}
         {btn("editor.alignRight", state.align === "right", () => chain().setAlign("right").run(), <Icon name="alignRight" size={16} />)}
         <span className="rte-sep" />
-        {btn("editor.bullets", state.bullet, () => chain().toggleBulletList().run(), <Icon name="list" size={16} />)}
+        {bulletsBtn}
         {btn("editor.numbers", state.ordered, () => chain().toggleOrderedList().run(), <Icon name="listOl" size={16} />)}
         {btn("editor.quote", state.quote, () => chain().toggleBlockquote().run(), <Icon name="quote" size={16} />)}
         <span className="rte-sep" />
-        {btn(
-          "editor.link",
-          state.link || panel === "link",
-          () => {
-            const { from, to } = editor.state.selection;
-            setLinkValue(String(editor.getAttributes("link").href || editor.state.doc.textBetween(from, to, " ").trim()));
-            setPanel(panel === "link" ? "" : "link");
-          },
-          <Icon name="link" size={16} />,
-        )}
-        {state.link && btn("editor.unlink", false, () => chain().extendMarkRange("link").unsetLink().run(), <Icon name="x" size={14} />)}
-        <label className="rte-btn" title={t("editor.image")} aria-label={t("editor.image")}>
-          <Icon name="image" size={16} />
-          <input
-            type="file"
-            accept={IMAGE_TYPES.join(",")}
-            multiple
-            hidden
-            onChange={(e) => {
-              const files = Array.from((e.target.files || []) as FileList);
-              e.target.value = "";
-              insertImages(files);
-            }}
-          />
-        </label>
+        {linkBtn}
+        {unlinkBtn}
+        {imageInput(false)}
+        {compactToolbar && imageInput(true)}
         {btn(
           "editor.table",
           state.table,
@@ -377,14 +447,11 @@ const RichEditor = forwardRef<
           <Icon name="table" size={16} />,
           state.table,
         )}
-        <span className="rte-emoji-anchor">
-          {btn("editor.emoji", panel === "emoji", () => setPanel(panel === "emoji" ? "" : "emoji"), <Icon name="smile" size={16} />)}
-          {panel === "emoji" && (
-            <EmojiPicker className="rte-emoji" onClose={() => setPanel("")} onPick={(emoji) => chain().insertContent(emoji).run()} />
-          )}
-        </span>
+        {emojiBtn}
         {btn("editor.clear", false, () => chain().unsetAllMarks().setAlign(null).run(), <Icon name="eraser" size={16} />)}
+        {moreBtn}
       </div>
+      )}
 
       {panel === "link" && (
         <div className="rte-linkbar">
