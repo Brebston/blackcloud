@@ -21,6 +21,18 @@ case "${1:-web}" in
       --no-server-header \
       --timeout-keep-alive 30
     ;;
+  dav)
+    # Окремий процес для WebDAV (/dav/): масове копіювання з Finder/Windows навантажує
+    # лише його і не забирає воркери вебінтерфейсу (вхід, API).
+    python manage.py check --deploy --fail-level ERROR
+    exec uvicorn config.asgi:application \
+      --host 0.0.0.0 --port 8000 \
+      --workers "${DAV_WORKERS:-2}" \
+      --proxy-headers --forwarded-allow-ips "${TRUSTED_PROXY_IP:-172.31.250.2}" \
+      --no-access-log \
+      --no-server-header \
+      --timeout-keep-alive 30
+    ;;
   worker)
     exec celery -A config worker -l INFO --concurrency "${WORKER_CONCURRENCY:-2}" -Q default,scan
     ;;

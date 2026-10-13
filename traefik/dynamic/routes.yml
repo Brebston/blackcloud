@@ -30,7 +30,8 @@ http:
     dav:
       rule: 'Host(`{{ $domain }}`) && (Path(`/dav`) || PathPrefix(`/dav/`))'
       entryPoints: [websecure]
-      service: backend
+      # Окремий сервіс dav: навантаження від WebDAV не впливає на вебінтерфейс
+      service: dav
       middlewares: [security-headers, api-csp, dav-ratelimit]
       priority: 120
       tls:
@@ -118,13 +119,17 @@ http:
         {{ if $resolver }}certResolver: {{ $resolver }}{{ end }}
 
   services:
+    # Без healthCheck у Traefik: сервер лише один, і одна повільна відповідь /api/health/
+    # (під навантаженням) вимикала його повністю — «no available server» (503) для всіх.
+    # Стан контейнерів і так перевіряє Docker healthcheck (5 спроб) та моніторинг.
     backend:
       loadBalancer:
         servers:
           - url: http://backend:8000
-        healthCheck:
-          path: /api/health/
-          interval: 30s
+    dav:
+      loadBalancer:
+        servers:
+          - url: http://dav:8000
     office:
       loadBalancer:
         servers:
@@ -227,11 +232,14 @@ http:
         period: 1m
         burst: 10
 
+    # Finder на кожен файл робить ~10 запитів (PROPFIND, LOCK, порожній PUT, PUT, PROPPATCH,
+    # UNLOCK, плюс службові ._-файли): копіювання кількох сотень фото впиралось у ліміт (429).
+    # Підбір пароля обмежує окреме блокування в apps/dav/auth.py, а не цей ліміт.
     dav-ratelimit:
       rateLimit:
-        average: 1200
+        average: 3000
         period: 1m
-        burst: 600
+        burst: 1500
 
     public-ratelimit:
       rateLimit:

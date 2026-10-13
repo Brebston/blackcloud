@@ -36,6 +36,7 @@ Self-hosted хмара з акцентом на безпеку: файли, ка
 Інтернет ─► Traefik (TLS, HSTS, CSP, rate limit)
               ├─► frontend  (nginx, статичний React SPA)
               ├─► backend   (Django ASGI: REST API + WebSocket; usercontent.DOMAIN — лише перегляд файлів)
+              ├─► dav       (той самий код, окремі процеси лише для /dav/ — WebDAV не забирає воркери веб-інтерфейсу)
               └─► onlyoffice (office.DOMAIN, окремий origin)
                               ├─ PostgreSQL  ─┐
                               ├─ Redis        │  мережа internal
