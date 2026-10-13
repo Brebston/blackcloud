@@ -23,7 +23,7 @@ from django.utils import timezone
 from django.utils.translation import gettext as _
 from rest_framework.exceptions import ValidationError
 
-from . import services
+from . import macmeta, services
 from .models import File, Folder
 
 SKIPPED_NAME = "_skipped.txt"
@@ -100,7 +100,9 @@ class Plan:
         while frontier and depth <= services.MAX_DEPTH:
             depth += 1
             files = (
-                File.objects.filter(owner_id=folder.owner_id, folder_id__in=frontier, deleted_at__isnull=True)
+                macmeta.hide_system(
+                    File.objects.filter(owner_id=folder.owner_id, folder_id__in=frontier, deleted_at__isnull=True)
+                )
                 .exclude(status=File.Status.UPLOADING)
                 .order_by("name")
             )

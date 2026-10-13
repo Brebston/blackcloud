@@ -173,6 +173,7 @@ CELERY_BEAT_SCHEDULE = {
     "purge-expired-trash": {"task": "apps.storage.tasks.purge_expired_trash", "schedule": timedelta(hours=6)},
     "requeue-stuck-scans": {"task": "apps.storage.tasks.requeue_stuck_scans", "schedule": timedelta(minutes=5)},
     "cleanup-stale-uploads": {"task": "apps.storage.tasks.cleanup_stale_uploads", "schedule": timedelta(hours=1)},
+    "cleanup-macos-metadata": {"task": "apps.storage.tasks.cleanup_macos_metadata", "schedule": timedelta(hours=1)},
     "expire-public-links": {"task": "apps.storage.tasks.expire_public_links", "schedule": timedelta(hours=1)},
     "prune-file-versions": {"task": "apps.storage.tasks.prune_file_versions", "schedule": timedelta(hours=24)},
     "event-reminders": {"task": "apps.calendars.tasks.send_due_reminders", "schedule": timedelta(minutes=1)},

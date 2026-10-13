@@ -207,6 +207,42 @@ def purge_expired_trash():
 
 
 @shared_task
+def cleanup_macos_metadata():
+    """Прибирає «осиротілі» AppleDouble-файли (._X без файлу X поруч).
+
+    Вони невидимі, тож без цього накопичувались би, коли X видалили чи перейменували
+    через WebDAV або інший клієнт. Свіжі (< 1 год) не чіпаємо: Finder під час копіювання
+    може створити ._X раніше, ніж X. Якщо X у кошику — супутник іде в кошик разом із ним.
+    """
+    from . import macmeta
+
+    stale = timezone.now() - timedelta(hours=1)
+    candidates = File.objects.filter(
+        name__startswith=macmeta.APPLEDOUBLE_PREFIX, deleted_at__isnull=True, created_at__lt=stale
+    ).select_related("owner")
+    purged = trashed = 0
+    for meta in candidates.iterator():
+        base = meta.name[len(macmeta.APPLEDOUBLE_PREFIX) :]
+        if not base:
+            continue
+        siblings = File.objects.filter(owner_id=meta.owner_id, folder_id=meta.folder_id, name=base)
+        if siblings.filter(deleted_at__isnull=True).exists():
+            continue
+        in_trash = siblings.filter(deleted_at__isnull=False).order_by("-deleted_at").first()
+        if in_trash is not None:
+            File.objects.filter(pk=meta.pk).update(deleted_at=in_trash.deleted_at)
+            trashed += 1
+            continue
+        try:
+            services.purge_file(meta)
+            purged += 1
+        except Exception:
+            logger.exception("purge of orphan AppleDouble %s failed", meta.pk)
+    if purged or trashed:
+        logger.info("macOS metadata cleanup: purged=%s trashed=%s", purged, trashed)
+
+
+@shared_task
 def cleanup_stale_uploads():
     stale = File.objects.filter(status=File.Status.UPLOADING, upload_expires_at__lt=timezone.now())
     for f in stale.select_related("owner").iterator():
