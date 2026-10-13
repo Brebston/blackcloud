@@ -68,12 +68,30 @@ export default function Layout({ children }: { children: ReactNode }) {
     loadNotifications();
   }, [loadNotifications]);
 
+  // file.updated приходить на кожен файл (після завантаження й перевірки антивірусом): при
+  // копіюванні сотень файлів це сотні подій. Оновлюємо дані акаунта (квота) не частіше ніж раз на 5 с.
+  const refreshTimer = useRef<number | null>(null);
+  const scheduleRefresh = useCallback(() => {
+    if (refreshTimer.current !== null) return;
+    refreshTimer.current = window.setTimeout(() => {
+      refreshTimer.current = null;
+      refresh();
+    }, 5000);
+  }, [refresh]);
+  useEffect(
+    () => () => {
+      if (refreshTimer.current !== null) window.clearTimeout(refreshTimer.current);
+    },
+    [],
+  );
+
   useEvents((event, payload) => {
     if (event === "notification") {
       setNotifications((xs) => [{ ...payload, read_at: null }, ...xs].slice(0, 20));
       toast(payload.title, payload.kind === "security" ? "error" : "info");
     }
-    if (event === "file.updated" || event === "avatar.updated") refresh();
+    if (event === "file.updated") scheduleRefresh();
+    if (event === "avatar.updated") refresh();
   });
 
   const unread = notifications.filter((n) => !n.read_at).length;

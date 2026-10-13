@@ -4,6 +4,7 @@ import logging
 
 from celery import shared_task
 from django.conf import settings
+from django.db import transaction
 from django.db.models import Count
 from django.utils import timezone
 from django.utils.translation import gettext_noop
@@ -56,6 +57,33 @@ def _notify_infected(f, detail):
     )
 
 
+def _scan_and_store(f: File, version: int, *, inline: bool = False) -> None:
+    """Перевіряє вміст версії `version` файлу і записує результат. Кидає ScanError.
+
+    inline=True — виклик з веб-процесу: мініатюру не будуємо тут (thumbnailer доступний
+    лише worker-у), а ставимо окреме завдання.
+    """
+    status, detail, sha = _scan_chunks(services.iter_plaintext(f), f.size)
+    updated = File.objects.filter(pk=f.pk, status=File.Status.SCANNING, content_version=version).update(
+        status=status, scan_detail=detail, sha256=sha
+    )
+    if not updated:
+        # Поки йшла перевірка, вміст став архівною версією — результат належить їй
+        FileVersion.objects.filter(file=f, number=version, status=File.Status.SCANNING).update(
+            status=status, scan_detail=detail, sha256=sha
+        )
+    elif status == File.Status.CLEAN and thumbnails.enabled():
+        if inline:
+            file_id = str(f.pk)
+            transaction.on_commit(lambda: generate_thumbnail.delay(file_id))
+        else:
+            f.refresh_from_db()
+            thumbnails.generate(f)
+    push_to_user(f.owner_id, "file.updated", {"id": str(f.pk), "status": status})
+    if status == File.Status.INFECTED:
+        _notify_infected(f, detail)
+
+
 @shared_task(bind=True, max_retries=8, acks_late=True)
 def scan_file(self, file_id: str):
     f = File.objects.select_related("owner").filter(pk=file_id).first()
@@ -65,7 +93,7 @@ def scan_file(self, file_id: str):
     # на новий (неперевірений) вміст — лише на ту версію, яку справді перевірено
     version = f.content_version
     try:
-        status, detail, sha = _scan_chunks(services.iter_plaintext(f), f.size)
+        _scan_and_store(f, version)
     except ScanError as exc:
         logger.warning("scan failed for %s: %s", file_id, exc)
         if self.request.retries >= self.max_retries:
@@ -79,20 +107,33 @@ def scan_file(self, file_id: str):
         logger.info("scan of %s v%s skipped: content gone", file_id, version)
         return
 
-    updated = File.objects.filter(pk=f.pk, status=File.Status.SCANNING, content_version=version).update(
-        status=status, scan_detail=detail, sha256=sha
-    )
-    if not updated:
-        # Поки йшла перевірка, вміст став архівною версією — результат належить їй
-        FileVersion.objects.filter(file=f, number=version, status=File.Status.SCANNING).update(
-            status=status, scan_detail=detail, sha256=sha
-        )
-    elif status == File.Status.CLEAN and thumbnails.enabled():
-        f.refresh_from_db()
+
+def scan_small_file_now(file_id: str) -> None:
+    """Невеликі файли (до SCAN_INLINE_MAX_BYTES) перевіряємо одразу у веб-процесі.
+
+    Finder після запису службового ._-файлу одразу читає його назад; поки файл
+    у черзі антивірусу, GET повертає 403 і Finder перериває копіювання (помилка 100004).
+    Перевірка невеликого файлу триває мілісекунди. Правило не змінюється: файл стає
+    доступним лише після перевірки. Якщо clamd недоступний — звичайна черга.
+    """
+    f = File.objects.select_related("owner").filter(pk=file_id).first()
+    if f is None or f.status != File.Status.SCANNING:
+        return
+    if f.size > settings.SCAN_INLINE_MAX_BYTES:
+        scan_file.delay(file_id)
+        return
+    try:
+        _scan_and_store(f, f.content_version, inline=True)
+    except Exception as exc:  # noqa: BLE001 — будь-яка проблема: перевірку виконає worker
+        logger.warning("inline scan of %s failed, queued: %s", file_id, exc)
+        scan_file.delay(file_id)
+
+
+@shared_task(acks_late=True)
+def generate_thumbnail(file_id: str):
+    f = File.objects.filter(pk=file_id, status=File.Status.CLEAN).first()
+    if f is not None and thumbnails.enabled():
         thumbnails.generate(f)
-    push_to_user(f.owner_id, "file.updated", {"id": str(f.pk), "status": status})
-    if status == File.Status.INFECTED:
-        _notify_infected(f, detail)
 
 
 @shared_task(bind=True, max_retries=8, acks_late=True)
