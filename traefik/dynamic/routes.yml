@@ -15,8 +15,10 @@ http:
         domains:
           - main: '{{ $domain }}'
 
+    # Суворий ліміт — лише на ендпоінти, що перевіряють облікові дані. /api/auth/me і /csrf
+    # SPA викликає часто (оновлення квоти під час завантажень); 429 на них «викидав» з акаунта.
     auth:
-      rule: 'Host(`{{ $domain }}`) && PathPrefix(`/api/auth`)'
+      rule: 'Host(`{{ $domain }}`) && (PathPrefix(`/api/auth/login`) || PathPrefix(`/api/auth/register`))'
       entryPoints: [websecure]
       service: backend
       middlewares: [security-headers, api-csp, auth-ratelimit]

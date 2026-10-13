@@ -1,5 +1,5 @@
 import { createContext, ReactNode, useCallback, useContext, useEffect, useState } from "react";
-import { get, patch, post, resetCsrf } from "../api/client";
+import { ApiError, get, patch, post, resetCsrf } from "../api/client";
 import type { Preferences, User } from "../api/types";
 import { applyAppearance } from "../lib/appearance";
 
@@ -28,8 +28,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const me = await get<{ authenticated: boolean; user?: User }>("/api/auth/me/");
       setUser(me.authenticated && me.user ? me.user : null);
-    } catch {
-      setUser(null);
+    } catch (e) {
+      // Вихід — лише якщо сервер явно сказав «не автентифіковано» (401). Тимчасові помилки
+      // (503 під навантаженням, 429, обрив мережі) не скидають вже відомого користувача.
+      if (e instanceof ApiError && e.status === 401) setUser(null);
     } finally {
       setLoading(false);
     }

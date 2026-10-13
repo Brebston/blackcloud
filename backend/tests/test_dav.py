@@ -549,3 +549,53 @@ def test_django_middleware_chunked_scoped(settings):
     assert mw(make("/api/x", CONTENT_LENGTH=big)).status_code == 413
     assert mw(make("/dav/x", CONTENT_LENGTH=big)).status_code == 200
     assert mw(make("/dav/x", CONTENT_LENGTH=str(settings.MAX_FILE_SIZE + 1))).status_code == 413
+
+
+# ─────────────────────── Миттєва перевірка невеликих файлів ───────────────────────
+
+
+@pytest.mark.django_db
+def test_small_files_scanned_inline_and_readable_at_once(alice, dav, settings, monkeypatch):
+    """Finder читає ._-файл одразу після запису: невеликий файл перевіряється в самому запиті,
+    а великий чекає в черзі worker-а (і до перевірки не віддається — 403)."""
+    from apps.storage import tasks
+
+    queued = []
+    monkeypatch.setattr(tasks.scan_file, "delay", lambda fid: queued.append(fid))  # черга «зайнята»
+    thumbs = []
+    monkeypatch.setattr(tasks.generate_thumbnail, "delay", lambda fid: thumbs.append(fid))
+    settings.SCAN_INLINE_MAX_BYTES = 1024
+
+    assert dav("PUT", "/dav/._IMG_1.HEIC", b"x" * 100).status_code == 201
+    small = File.objects.get(owner=alice, name="._IMG_1.HEIC")
+    assert small.status == File.Status.CLEAN and small.sha256
+    r = dav("GET", "/dav/._IMG_1.HEIC")
+    assert r.status_code == 200 and body(r) == b"x" * 100
+    assert queued == []
+
+    assert dav("PUT", "/dav/big.bin", b"y" * 2048).status_code == 201
+    big = File.objects.get(owner=alice, name="big.bin")
+    assert big.status == File.Status.SCANNING
+    assert queued == [str(big.pk)]
+    assert dav("GET", "/dav/big.bin").status_code == 403
+
+
+@pytest.mark.django_db
+def test_inline_scan_falls_back_to_queue_when_clamd_down(alice, dav, settings, monkeypatch):
+    from apps.storage import tasks
+    from apps.storage.scanner import ScanError
+
+    queued = []
+    monkeypatch.setattr(tasks.scan_file, "delay", lambda fid: queued.append(fid))
+
+    def down(*a, **kw):
+        raise ScanError("clamd недоступний")
+
+    monkeypatch.setattr(tasks, "_scan_chunks", down)
+    settings.SCAN_INLINE_MAX_BYTES = 1024
+
+    assert dav("PUT", "/dav/note.txt", b"hello").status_code == 201
+    f = File.objects.get(owner=alice, name="note.txt")
+    assert f.status == File.Status.SCANNING  # без перевірки — недоступний
+    assert queued == [str(f.pk)]
+    assert dav("GET", "/dav/note.txt").status_code == 403

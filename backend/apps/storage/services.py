@@ -231,10 +231,18 @@ def complete_upload(f: File) -> File:
     if updated != 1:
         raise ValidationError({"detail": _("Конфлікт завантаження.")})
     f.refresh_from_db()
-    from .tasks import scan_file
-
-    transaction.on_commit(lambda: scan_file.delay(str(f.pk)))
+    _schedule_scan(str(f.pk))
     return f
+
+
+def _schedule_scan(file_id: str) -> None:
+    """Після коміту: невеликий файл — перевірка одразу, решта — черга worker-а."""
+    from .tasks import scan_file, scan_small_file_now
+
+    if settings.SCAN_INLINE_MAX_BYTES > 0:
+        transaction.on_commit(lambda: scan_small_file_now(file_id))
+    else:
+        transaction.on_commit(lambda: scan_file.delay(file_id))
 
 
 # ─────────────────────────── Читання ───────────────────────────
@@ -425,11 +433,10 @@ def _swap_in(f: File, *, number, size, wrapped, key_version, chunk_size, chunks,
 
 
 def _after_swap(f: File, drop: list[str], archived) -> None:
-    from .tasks import scan_file, scan_version
+    from .tasks import scan_version
 
     _delete_objects_on_commit(drop)
-    file_id = str(f.pk)
-    transaction.on_commit(lambda: scan_file.delay(file_id))
+    _schedule_scan(str(f.pk))
     if archived is not None and archived.status == File.Status.SCANNING:
         # Попередня версія ще не встигла пройти антивірус — перевіряємо її окремо
         version_id = str(archived.pk)

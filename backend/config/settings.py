@@ -126,7 +126,12 @@ else:
             "PASSWORD": _db_password,
             "HOST": env("POSTGRES_HOST", "postgres"),
             "PORT": env("POSTGRES_PORT", "5432"),
-            "CONN_MAX_AGE": 60,
+            # Під ASGI (uvicorn) Django виконує синхронний код кожного запиту в окремому потоці,
+            # тож «постійні» з'єднання (CONN_MAX_AGE > 0) не перевикористовуються, а накопичуються:
+            # масове копіювання через WebDAV вичерпувало max_connections PostgreSQL
+            # («remaining connection slots are reserved…» → 500). Тому за замовчуванням 0 —
+            # з'єднання закривається наприкінці кожного запиту (рекомендація Django для ASGI).
+            "CONN_MAX_AGE": env_int("DB_CONN_MAX_AGE", 0),
             "CONN_HEALTH_CHECKS": True,
             "OPTIONS": {"connect_timeout": 5},
         }
@@ -339,6 +344,9 @@ CLAMAV_HOST = env("CLAMAV_HOST", "clamav")
 CLAMAV_PORT = env_int("CLAMAV_PORT", 3310)
 CLAMAV_MAX_STREAM = env_int("CLAMAV_MAX_STREAM_MB", 2000) * 1024 * 1024
 CLAMAV_ENABLED = not TESTING and env_bool("CLAMAV_ENABLED", True)
+# Файли до цього розміру перевіряються одразу в запиті (WebDAV/Finder читає службові ._-файли
+# одразу після запису). 0 — лише черга worker-а. У тестах типово вимкнено.
+SCAN_INLINE_MAX_BYTES = env_int("SCAN_INLINE_MAX_KB", 0 if TESTING else 1024) * 1024
 
 # ─── Онлайн-редактор документів (ONLYOFFICE) ───
 OFFICE_ENABLED = env_bool("OFFICE_ENABLED", False)
