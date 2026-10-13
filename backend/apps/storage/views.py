@@ -19,7 +19,7 @@ from apps.core.audit import audit
 from apps.core.realtime import alert_staff, notify
 from apps.core.tickets import consume_ticket, issue_ticket, peek_ticket
 
-from . import services, zipstream
+from . import macmeta, services, zipstream
 from .models import File, FileVersion, Folder, PublicLink, Share
 from .serializers import (
     CreateFolderSerializer,
@@ -40,7 +40,8 @@ User = get_user_model()
 
 
 def _visible_files(qs):
-    return qs.filter(deleted_at__isnull=True).exclude(status=File.Status.UPLOADING)
+    # Службові файли macOS (._*, .DS_Store) потрібні лише Finder через WebDAV
+    return macmeta.hide_system(qs.filter(deleted_at__isnull=True).exclude(status=File.Status.UPLOADING))
 
 
 class OctetStreamParser(BaseParser):
@@ -207,6 +208,7 @@ class FileDetailView(APIView):
         ser = RenameMoveSerializer(data=request.data)
         ser.is_valid(raise_exception=True)
         d = ser.validated_data
+        old_folder_id, old_name = f.folder_id, f.name
         with transaction.atomic():
             if "target" in d:
                 f.folder = services.get_own_folder(request.user, d["target"])
@@ -214,6 +216,7 @@ class FileDetailView(APIView):
                 f.name = services.clean_name(d["name"])
             f.name = services.unique_name(request.user, f.folder, f.name, exclude_file=f)
             f.save(update_fields=["folder", "name", "updated_at"])
+            macmeta.move_companion(f.owner_id, old_folder_id, old_name, f.folder_id, f.name)
         audit(request, "file.updated", target=str(f.pk))
         return Response(FileSerializer(f).data)
 
@@ -224,6 +227,7 @@ class FileDetailView(APIView):
         else:
             f.deleted_at = timezone.now()
             f.save(update_fields=["deleted_at"])
+            macmeta.trash_companion(f.owner_id, f.folder_id, f.name, f.deleted_at)
         audit(request, "file.trashed", target=str(f.pk))
         return Response(status=204)
 
@@ -508,7 +512,7 @@ class TrashView(APIView):
     def get(self, request):
         user = request.user
         folders = Folder.objects.filter(owner=user, deleted_at__isnull=False).order_by("-deleted_at")
-        files = File.objects.filter(owner=user, deleted_at__isnull=False).order_by("-deleted_at")
+        files = macmeta.hide_system(File.objects.filter(owner=user, deleted_at__isnull=False)).order_by("-deleted_at")
         return Response(
             {
                 "retention_days": settings.TRASH_RETENTION.days,
@@ -548,6 +552,8 @@ class TrashActionView(APIView):
 
         kind, obj = self._get(request)
         if op == "restore":
+            old_parent_id = obj.folder_id if kind == "file" else None
+            old_name, old_deleted_at = obj.name, obj.deleted_at
             with transaction.atomic():
                 parent = obj.folder if kind == "file" else obj.parent
                 if parent is not None and services.is_in_trash(parent):
@@ -562,10 +568,14 @@ class TrashActionView(APIView):
                 )
                 obj.deleted_at = None
                 obj.save()
+                if kind == "file":
+                    macmeta.restore_companion(obj, old_parent_id, old_name, old_deleted_at)
             audit(request, f"{kind}.restored", target=str(obj.pk))
             return Response({"status": "ok"})
         if op == "purge":
             if kind == "file":
+                for companion in macmeta.trashed_companions(obj).select_related("owner"):
+                    services.purge_file(companion)
                 services.purge_file(obj)
             else:
                 services.purge_folder(obj)
