@@ -1,8 +1,9 @@
-/* Service worker BlackCloud: Web Push і мінімальний офлайн-режим (лише оболонка застосунку).
+/* Service worker BlackCloud: Web Push, мінімальний офлайн-режим (лише оболонка застосунку)
+   і «Поділитися → BlackCloud» (Web Share Target, Android).
    API (/api/), WebDAV і адмінка ніколи не кешуються. */
 "use strict";
 
-const VERSION = "v1";
+const VERSION = "v2";
 const SHELL_CACHE = `bc-shell-${VERSION}`;
 const ASSETS_CACHE = `bc-assets-${VERSION}`;
 const MAX_ASSETS = 80;
@@ -17,6 +18,7 @@ self.addEventListener("activate", (event) => {
     caches
       .keys()
       .then((keys) => Promise.all(keys.filter((k) => k.startsWith("bc-") && k !== SHELL_CACHE && k !== ASSETS_CACHE).map((k) => caches.delete(k))))
+      .then(() => purgeShares().catch(() => undefined))
       .then(() => self.clients.claim()),
   );
 });
@@ -34,9 +36,13 @@ async function trimAssets() {
 
 self.addEventListener("fetch", (event) => {
   const request = event.request;
-  if (request.method !== "GET") return;
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return;
+  if (request.method === "POST" && url.pathname === SHARE_PATH) {
+    event.respondWith(handleShare(request));
+    return;
+  }
+  if (request.method !== "GET") return;
 
   // Хешовані бандли незмінні: спершу кеш
   if (url.pathname.startsWith("/assets/")) {
@@ -67,6 +73,91 @@ self.addEventListener("fetch", (event) => {
     );
   }
 });
+
+// ─────────────── Поділитися → BlackCloud (Web Share Target) ───────────────
+// Android передає файли/текст POST-запитом на /share-target (manifest.webmanifest → share_target).
+// Дані кладемо в IndexedDB під одноразовим id (сторінка /files?share=<id> читає й видаляє їх після
+// завантаження, див. src/lib/shareInbox.ts); усе старше за годину видаляється. Нічого не йде на сервер,
+// поки користувач не підтвердить збереження у вже відкритій сесії.
+
+const SHARE_PATH = "/share-target";
+const SHARE_DB = "bc-share";
+const SHARE_STORE = "shares";
+const SHARE_MAX_AGE_MS = 60 * 60 * 1000;
+const SHARE_MAX_FILES = 100;
+
+function openShareDb() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(SHARE_DB, 1);
+    req.onupgradeneeded = () => {
+      if (!req.result.objectStoreNames.contains(SHARE_STORE)) req.result.createObjectStore(SHARE_STORE, { keyPath: "id" });
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function shareTx(mode, fn) {
+  const db = await openShareDb();
+  try {
+    return await new Promise((resolve, reject) => {
+      const tx = db.transaction(SHARE_STORE, mode);
+      const result = fn(tx.objectStore(SHARE_STORE));
+      tx.oncomplete = () => resolve(result && "result" in result ? result.result : undefined);
+      tx.onerror = () => reject(tx.error);
+      tx.onabort = () => reject(tx.error);
+    });
+  } finally {
+    db.close();
+  }
+}
+
+/** Видаляє невикористані дані старші за годину. */
+async function purgeShares(now = Date.now()) {
+  await shareTx("readwrite", (store) => {
+    const req = store.openCursor();
+    req.onsuccess = () => {
+      const cursor = req.result;
+      if (!cursor) return;
+      if (!(now - Number(cursor.value.created) <= SHARE_MAX_AGE_MS)) cursor.delete();
+      cursor.continue();
+    };
+  });
+}
+
+const field = (form, name) => {
+  const v = form.get(name);
+  return typeof v === "string" ? v.slice(0, 100000) : "";
+};
+
+async function handleShare(request) {
+  let target = "/files";
+  try {
+    const form = await request.formData();
+    const files = form
+      .getAll("files")
+      .filter((f) => typeof f === "object" && f !== null && typeof f.size === "number" && f.size > 0)
+      .slice(0, SHARE_MAX_FILES)
+      .map((f) => ({ name: String(f.name || "shared").slice(0, 255), type: String(f.type || ""), blob: f }));
+    const entry = {
+      id: self.crypto.randomUUID(),
+      created: Date.now(),
+      title: field(form, "title"),
+      text: field(form, "text"),
+      url: field(form, "url"),
+      files,
+    };
+    await purgeShares().catch(() => undefined);
+    if (files.length || entry.title || entry.text || entry.url) {
+      await shareTx("readwrite", (store) => store.put(entry));
+      target = `/files?share=${entry.id}`;
+    }
+  } catch (e) {
+    /* непридатні дані — просто відкриваємо «Файли» */
+  }
+  // 303: браузер відкриє сторінку GET-запитом (без повторного надсилання форми)
+  return Response.redirect(new URL(target, self.location.origin).href, 303);
+}
 
 // ─────────────── Push ───────────────
 

@@ -64,6 +64,10 @@ const paths: Record<string, string> = {
   quote: "M6 17h3l2-4V7H5v6h3zM14 17h3l2-4V7h-6v6h3z",
   eraser: "M16 3l5 5-11 11H5l-2-2 13-14zM9 19h11",
   signature: "M3 17c3-6 5-9 6-9s-1 8 1 8 3-5 4-5 0 4 2 4 3-2 5-3M3 21h18",
+  globe: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18",
+  folderPlus: "M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2zM12 10v6M9 13h6",
+  camera: "M4 8h3l2-3h6l2 3h3v11H4zM12 17a4 4 0 1 0 0-8 4 4 0 0 0 0 8z",
+  more: "M5 13a1 1 0 1 0 0-2 1 1 0 0 0 0 2zM12 13a1 1 0 1 0 0-2 1 1 0 0 0 0 2zM19 13a1 1 0 1 0 0-2 1 1 0 0 0 0 2z",
 };
 
 export default function Icon({ name, size = 18, className }: { name: string; size?: number; className?: string }) {

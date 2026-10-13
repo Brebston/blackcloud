@@ -14,6 +14,7 @@ import * as mailui from "./parts/mailui";
 import * as push from "./parts/push";
 import * as files2 from "./parts/files2";
 import * as dav from "./parts/dav";
+import * as mobile from "./parts/mobile";
 
 const uk = {
   "common.language": "Мова",
@@ -370,6 +371,7 @@ const uk = {
   ...push.uk,
   ...files2.uk,
   ...dav.uk,
+  ...mobile.uk,
 };
 
 export default uk;

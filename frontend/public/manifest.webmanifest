@@ -19,5 +19,16 @@
     { "name": "Пошта", "url": "/mail", "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }] },
     { "name": "Чат", "url": "/chat", "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }] },
     { "name": "Календар", "url": "/calendar", "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }] }
-  ]
+  ],
+  "share_target": {
+    "action": "/share-target",
+    "method": "POST",
+    "enctype": "multipart/form-data",
+    "params": {
+      "title": "title",
+      "text": "text",
+      "url": "url",
+      "files": [{ "name": "files", "accept": ["*/*"] }]
+    }
+  }
 }

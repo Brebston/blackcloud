@@ -13,6 +13,7 @@ import * as mailui from "./parts/mailui";
 import * as push from "./parts/push";
 import * as files2 from "./parts/files2";
 import * as dav from "./parts/dav";
+import * as mobile from "./parts/mobile";
 
 
 // Англійський переклад. Тип гарантує, що жоден ключ не пропущено.
@@ -370,6 +371,7 @@ const en: Record<keyof typeof uk, string> = {
   ...push.en,
   ...files2.en,
   ...dav.en,
+  ...mobile.en,
 };
 
 export default en;
