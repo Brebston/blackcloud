@@ -200,9 +200,11 @@ http:
 
     spa-csp:
       headers:
+        # script-src: з піддомену ONLYOFFICE дозволено ЛИШЕ завантажувач api.js
+        # (точний шлях, а не весь хост). Сам редактор працює в iframe (frame-src).
         contentSecurityPolicy: >-
           default-src 'self';
-          script-src 'self' https://{{ $office }};
+          script-src 'self' https://{{ $office }}/web-apps/apps/api/documents/api.js;
           style-src 'self';
           img-src 'self' data: blob: https://{{ $uc }};
           media-src 'self' https://{{ $uc }};
