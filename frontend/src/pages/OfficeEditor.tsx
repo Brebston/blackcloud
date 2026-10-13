@@ -19,7 +19,7 @@ function loadScript(src: string): Promise<void> {
     const existing = document.getElementById(SCRIPT_ID) as HTMLScriptElement | null;
     const s = existing || document.createElement("script");
     s.id = SCRIPT_ID;
-    s.src = src; // https://office.<домен>/... — дозволено в CSP script-src лише цей піддомен
+    s.src = src; // https://office.<домен>/web-apps/apps/api/documents/api.js — CSP script-src дозволяє лише цей файл
     s.async = true;
     s.onload = () => resolve();
     s.onerror = () => reject(new Error(tr("office.serverUnavailable")));

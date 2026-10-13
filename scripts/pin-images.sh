@@ -30,4 +30,10 @@ pin DEBIAN_IMAGE   "debian:bookworm-slim"
 if grep -q '^COMPOSE_PROFILES=.*office' .env; then
   pin OFFICE_IMAGE "onlyoffice/documentserver:9.4.0"
 fi
+if grep -q '^COMPOSE_PROFILES=.*mailcert' .env; then
+  pin CERTDUMPER_IMAGE "ldez/traefik-certs-dumper:v2.11.4"
+fi
+if grep -q '^COMPOSE_PROFILES=.*monitoring' .env; then
+  pin UPTIME_KUMA_IMAGE "louislam/uptime-kuma:1.23.16"
+fi
 echo "Готово. Перезберіть: docker compose build --pull && docker compose up -d"

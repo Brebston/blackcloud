@@ -2,6 +2,8 @@
 #   backend  — Django system check, перевірка відсутніх міграцій, переклади (scripts/i18n.py), pytest
 #   frontend — npm run typecheck і npm run build (frontend/package.json)
 #   compose  — валідність docker-compose.yml (+ dev-оверлей) і синтаксис shell-скриптів
+#   audit    — відомі вразливості в залежностях (pip-audit, npm audit); також щотижня за розкладом,
+#              щоб помітити нові CVE між push-ами (запуск за розкладом не деплоїть — див. deploy.yml)
 # Лінтерів (ruff/eslint) у репозиторії не налаштовано, тому тут їх немає.
 name: CI
 
@@ -10,12 +12,15 @@ on:
     branches: [main, develop]
   pull_request:
   workflow_dispatch:
+  schedule:
+    - cron: "17 5 * * 1" # щопонеділка, 05:17 UTC
 
 permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.ref }}
+  # Запуск за розкладом не скасовує CI для push (від нього залежить автодеплой)
+  group: ci-${{ github.event_name == 'schedule' && 'schedule-' || '' }}${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -37,15 +42,17 @@ jobs:
         with:
           python-version: "3.12" # як у backend/Dockerfile
           cache: pip
-          cache-dependency-path: backend/requirements.txt
+          cache-dependency-path: backend/requirements*
 
       - name: Системні бібліотеки (як у backend/Dockerfile)
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends libmagic1 poppler-utils
 
+      # Як у backend/Dockerfile: точні версії з хешами з requirements.lock, якщо він є
       - name: Залежності
-        run: pip install -r requirements.txt
+        run: |
+          if [ -f requirements.lock ]; then pip install --require-hashes -r requirements.lock; else pip install -r requirements.txt; fi
 
       - name: Django system check
         run: python manage.py check
@@ -107,3 +114,40 @@ jobs:
             echo "sh -n $f"
             sh -n "$f"
           done
+
+  audit:
+    name: Вразливості залежностей (pip-audit, npm audit)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      # Перевіряємо саме те, що встановлюється в образ: requirements.lock (з хешами), якщо він є
+      - name: Python (pip-audit)
+        working-directory: backend
+        run: |
+          python -m pip install --quiet pip-audit
+          if [ -f requirements.lock ]; then
+            pip-audit --require-hashes -r requirements.lock
+          else
+            echo "::warning::backend/requirements.lock немає — перевіряю requirements.txt (виконайте make lock)"
+            pip-audit -r requirements.txt
+          fi
+
+      # npm audit потребує lock-файла; без нього тимчасово будуємо його (скрипти пакетів не виконуються)
+      - name: JavaScript (npm audit, high і вище)
+        working-directory: frontend
+        run: |
+          if [ ! -f package-lock.json ]; then
+            echo "::warning::frontend/package-lock.json немає — будую тимчасовий (виконайте make lock)"
+            npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+          fi
+          npm audit --omit=dev --audit-level=high

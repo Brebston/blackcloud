@@ -87,5 +87,7 @@ scan:
 
 audit:
 	docker run --rm -v ./backend:/src -w /src python:3.12-slim-bookworm sh -c \
-	  "pip install -q pip-audit && pip-audit -r requirements.txt"
-	docker run --rm -v ./frontend:/app -w /app node:22-alpine sh -c "npm audit --omit=dev || true"
+	  "pip install -q pip-audit && if [ -f requirements.lock ]; then pip-audit --require-hashes -r requirements.lock; else pip-audit -r requirements.txt; fi"
+	# Без «|| true»: знайдені вразливості (high і вище) зупиняють перевірку. npm audit потребує package-lock.json (make lock)
+	docker run --rm -v ./frontend:/app -w /app node:22-alpine sh -c \
+	  "[ -f package-lock.json ] || { echo 'Немає package-lock.json — спершу виконайте make lock'; exit 1; }; npm audit --omit=dev --audit-level=high"

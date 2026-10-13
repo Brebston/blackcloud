@@ -21,6 +21,7 @@ from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 
 from apps.core.audit import audit, client_ip
+from apps.core.authentication import EnforceCsrfMixin
 from apps.core.models import AuditLog
 from apps.core.permissions import IsStaffWith2FA
 from apps.core.realtime import alert_staff, close_session_sockets, close_user_sockets, notify
@@ -155,7 +156,7 @@ class MeView(APIView):
         return Response({"authenticated": True, "user": data})
 
 
-class LoginView(APIView):
+class LoginView(EnforceCsrfMixin, APIView):
     permission_classes = [AllowAny]
     throttle_classes = [ScopedRateThrottle]
     throttle_scope = "login"
@@ -198,7 +199,7 @@ class LoginView(APIView):
         return Response({"status": "ok"})
 
 
-class LoginTwoFactorView(APIView):
+class LoginTwoFactorView(EnforceCsrfMixin, APIView):
     permission_classes = [AllowAny]
     throttle_classes = [ScopedRateThrottle]
     throttle_scope = "two_factor"
@@ -240,7 +241,7 @@ class LoginTwoFactorView(APIView):
         return Response({"status": "ok"})
 
 
-class LogoutView(APIView):
+class LogoutView(EnforceCsrfMixin, APIView):
     permission_classes = [AllowAny]
 
     def post(self, request):
@@ -252,7 +253,7 @@ class LogoutView(APIView):
         return Response({"status": "ok"})
 
 
-class RegisterView(APIView):
+class RegisterView(EnforceCsrfMixin, APIView):
     permission_classes = [AllowAny]
     throttle_classes = [ScopedRateThrottle]
     throttle_scope = "register"
