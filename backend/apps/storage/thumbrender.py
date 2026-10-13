@@ -13,6 +13,7 @@ import tempfile
 import warnings
 
 THUMB_SIZE = 480
+AVATAR_SIZE = 256
 MAX_PIXELS = 40_000_000
 MAX_INPUT_BYTES = 100 * 1024 * 1024
 MAX_OUTPUT_BYTES = 2 * 1024 * 1024
@@ -56,6 +57,26 @@ def render_image(data: bytes) -> bytes:
             return _to_webp(img.copy())
 
 
+def render_avatar(data: bytes) -> bytes:
+    """Фото профілю: квадрат AVATAR_SIZE×AVATAR_SIZE (центральна частина), WebP без EXIF."""
+    Image, ImageOps = _pil()
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", Image.DecompressionBombWarning)
+        with Image.open(io.BytesIO(data)) as img:
+            width, height = img.size
+            if width * height > MAX_PIXELS:
+                raise ValueError("image too large")
+            img.seek(0)
+            img.load()
+            image = ImageOps.exif_transpose(img.copy())
+    if image.mode not in ("RGB", "RGBA"):
+        image = image.convert("RGBA" if "A" in image.getbands() else "RGB")
+    image = ImageOps.fit(image, (AVATAR_SIZE, AVATAR_SIZE), method=Image.Resampling.LANCZOS)
+    out = io.BytesIO()
+    image.save(out, format="WEBP", quality=85, method=4)  # нове зображення — метадані не переносяться
+    return out.getvalue()
+
+
 def render_pdf(data: bytes) -> bytes:
     Image, _ = _pil()
     with tempfile.TemporaryDirectory(prefix="bc-thumb-") as tmp:
@@ -84,6 +105,8 @@ def render(kind: str, data: bytes) -> bytes:
         out = render_pdf(data)
     elif kind == "image":
         out = render_image(data)
+    elif kind == "avatar":
+        out = render_avatar(data)
     else:
         raise ValueError("unknown kind")
     if not is_webp(out):

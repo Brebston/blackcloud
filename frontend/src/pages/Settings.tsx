@@ -2,6 +2,8 @@ import { FormEvent, useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { del, errorText, get, patch, post } from "../api/client";
 import type { Preferences } from "../api/types";
+import AvatarSettings from "../components/AvatarSettings";
+import BlockedSendersSettings from "../components/BlockedSendersSettings";
 import DavSettings from "../components/DavSettings";
 import Icon from "../components/Icon";
 import PushSettings from "../components/PushSettings";
@@ -40,6 +42,7 @@ export default function SettingsPage() {
       </div>
       {tab === "profile" && (
         <>
+          <AvatarSettings />
           <AppearanceCard />
           <PushSettings />
           <ProfileTab />
@@ -47,7 +50,12 @@ export default function SettingsPage() {
       )}
       {tab === "security" && <SecurityTab />}
       {tab === "sessions" && <SessionsTab />}
-      {tab === "mail" && <MailClientTab />}
+      {tab === "mail" && (
+        <>
+          <MailClientTab />
+          <BlockedSendersSettings />
+        </>
+      )}
       {tab === "dav" && <DavSettings />}
       {tab === "activity" && <ActivityTab />}
     </div>

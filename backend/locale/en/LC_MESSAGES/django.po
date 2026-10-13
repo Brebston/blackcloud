@@ -9,149 +9,175 @@ msgstr ""
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: nplurals=2; plural=(n != 1);\n"
 
+#: apps/accounts/avatars.py:109
+msgid "Виберіть зображення."
+msgstr "Choose an image."
+
+#: apps/accounts/avatars.py:111
+#: apps/accounts/avatars.py:114
+msgid "Фото завелике (максимум 5 МБ)."
+msgstr "The photo is too large (5 MB max)."
+
+#: apps/accounts/avatars.py:119
+msgid "Підтримуються лише PNG, JPEG, WebP і HEIC."
+msgstr "Only PNG, JPEG, WebP and HEIC are supported."
+
+#: apps/accounts/avatars.py:175
+#, python-format
+msgid "Максимум %(n)s адрес."
+msgstr "At most %(n)s addresses."
+
 #: apps/accounts/models.py:17
 msgid "Ім'я користувача: 3–40 символів, малі латинські літери, цифри, '.', '_', '-'."
 msgstr "Username: 3–40 characters, lowercase Latin letters, digits, '.', '_', '-'."
 
-#: apps/accounts/serializers.py:101
+#: apps/accounts/serializers.py:103
 msgid "Цей email вже використовується."
 msgstr "This email is already in use."
 
-#: apps/accounts/serializers.py:49
+#: apps/accounts/serializers.py:51
 msgid "Невідомий часовий пояс."
 msgstr "Unknown time zone."
 
-#: apps/accounts/serializers.py:93
+#: apps/accounts/serializers.py:95
 msgid "Це ім'я зарезервоване."
 msgstr "This name is reserved."
 
-#: apps/accounts/serializers.py:95
+#: apps/accounts/serializers.py:97
 msgid "Це ім'я вже зайняте."
 msgstr "This name is already taken."
 
-#: apps/accounts/views.py:111
+#: apps/accounts/views.py:112
 msgid "Новий вхід в акаунт"
 msgstr "New sign-in to your account"
 
-#: apps/accounts/views.py:112
+#: apps/accounts/views.py:113
 #, python-format
 msgid "Вхід з IP %(ip)s. Якщо це не ви — змініть пароль."
 msgstr "Sign-in from IP %(ip)s. If this wasn't you, change your password."
 
-#: apps/accounts/views.py:123
+#: apps/accounts/views.py:124
 #: apps/dav/views.py:174
-#: apps/mail/views.py:413
+#: apps/mail/views.py:508
 msgid "Забагато невдалих спроб. Спробуйте пізніше."
 msgstr "Too many failed attempts. Try again later."
 
-#: apps/accounts/views.py:127
+#: apps/accounts/views.py:128
 #: apps/storage/views.py:771
 msgid "Невірний пароль."
 msgstr "Incorrect password."
 
-#: apps/accounts/views.py:171
+#: apps/accounts/views.py:172
 msgid "Забагато невдалих спроб. Спробуйте через 15 хвилин."
 msgstr "Too many failed attempts. Try again in 15 minutes."
 
-#: apps/accounts/views.py:209
+#: apps/accounts/views.py:210
 msgid "Сесія входу завершилась. Увійдіть знову."
 msgstr "The sign-in session has expired. Please sign in again."
 
-#: apps/accounts/views.py:212
+#: apps/accounts/views.py:213
 msgid "Забагато спроб. Увійдіть знову."
 msgstr "Too many attempts. Please sign in again."
 
-#: apps/accounts/views.py:223
-#: apps/accounts/views.py:188
+#: apps/accounts/views.py:224
+#: apps/accounts/views.py:189
 msgid "Забагато невдалих кодів. Спробуйте пізніше."
 msgstr "Too many failed codes. Try again later."
 
-#: apps/accounts/views.py:231
-#: apps/accounts/views.py:365
+#: apps/accounts/views.py:232
+#: apps/accounts/views.py:366
 msgid "Невірний код."
 msgstr "Invalid code."
 
-#: apps/accounts/views.py:268
+#: apps/accounts/views.py:269
 msgid "Запрошення недійсне або прострочене."
 msgstr "The invitation is invalid or expired."
 
-#: apps/accounts/views.py:270
+#: apps/accounts/views.py:271
 msgid "Запрошення видане на іншу адресу."
 msgstr "This invitation was issued to a different address."
 
-#: apps/accounts/views.py:272
+#: apps/accounts/views.py:273
 msgid "Реєстрація можлива лише за запрошенням."
 msgstr "Registration is by invitation only."
 
-#: apps/accounts/views.py:284
+#: apps/accounts/views.py:285
 msgid "Запрошення вже використано."
 msgstr "This invitation has already been used."
 
-#: apps/accounts/views.py:339
+#: apps/accounts/views.py:340
 msgid "2FA вже увімкнено. Спочатку вимкніть її."
 msgstr "2FA is already enabled. Disable it first."
 
-#: apps/accounts/views.py:352
+#: apps/accounts/views.py:353
 msgid "Невірний код. Перевірте час на телефоні."
 msgstr "Invalid code. Check the time on your phone."
 
-#: apps/accounts/views.py:369
+#: apps/accounts/views.py:370
 msgid "Двофакторну автентифікацію вимкнено"
 msgstr "Two-factor authentication disabled"
 
-#: apps/accounts/views.py:379
+#: apps/accounts/views.py:380
 msgid "Спочатку увімкніть 2FA."
 msgstr "Enable 2FA first."
 
-#: apps/accounts/views.py:415
+#: apps/accounts/views.py:435
 msgid "Невірний ідентифікатор."
 msgstr "Invalid identifier."
 
-#: apps/accounts/views.py:489
+#: apps/accounts/views.py:509
 msgid "Керувати адміністраторами може лише суперкористувач."
 msgstr "Only a superuser can manage administrators."
 
-#: apps/accounts/views.py:495
+#: apps/accounts/views.py:515
 msgid "Не можна деактивувати себе."
 msgstr "You cannot deactivate yourself."
 
-#: apps/accounts/views.py:497
+#: apps/accounts/views.py:517
 msgid "Лише суперкористувач може змінювати права адміністратора."
 msgstr "Only a superuser can change administrator rights."
 
-#: apps/accounts/views.py:51
+#: apps/accounts/views.py:52
 msgid "Невірний логін або пароль."
 msgstr "Invalid username or password."
 
-#: apps/accounts/views.py:512
+#: apps/accounts/views.py:531
+msgid "Не можна заблокувати себе."
+msgstr "You can't block yourself."
+
+#: apps/accounts/views.py:537
+msgid "Вкажіть причину блокування."
+msgstr "Enter a reason for blocking."
+
+#: apps/accounts/views.py:566
 msgid "Лише суперкористувач може створювати адміністраторів."
 msgstr "Only a superuser can create administrators."
 
-#: apps/accounts/views.py:522
+#: apps/accounts/views.py:576
 msgid "Використайте власні налаштування безпеки."
 msgstr "Use your own security settings."
 
-#: apps/accounts/views.py:531
+#: apps/accounts/views.py:585
 msgid "Адміністратор скинув вашу 2FA"
 msgstr "An administrator reset your 2FA"
 
-#: apps/accounts/views.py:532
+#: apps/accounts/views.py:586
 msgid "Увімкніть її знову в налаштуваннях безпеки."
 msgstr "Turn it back on in your security settings."
 
-#: apps/accounts/views.py:80
+#: apps/accounts/views.py:81
 msgid "Хтось підбирає код 2FA до вашого акаунта"
 msgstr "Someone is trying to guess the 2FA code for your account"
 
-#: apps/accounts/views.py:81
+#: apps/accounts/views.py:82
 msgid "Пароль введено правильно, але код — ні. Вхід тимчасово заблоковано. Змініть пароль."
 msgstr "The password was correct but the code was not. Sign-in is temporarily blocked. Change your password."
 
-#: apps/accounts/views.py:85
+#: apps/accounts/views.py:86
 msgid "Підбір 2FA"
 msgstr "2FA brute force"
 
-#: apps/accounts/views.py:86
+#: apps/accounts/views.py:87
 #, python-format
 msgid "Акаунт %(username)s: %(count)s невдалих кодів за годину."
 msgstr "Account %(username)s: %(count)s failed codes in an hour."
@@ -248,7 +274,7 @@ msgstr "You can't delete your last calendar."
 
 #: apps/calendars/views.py:80
 #: apps/chat/views.py:270
-#: apps/mail/views_admin.py:96
+#: apps/mail/views_admin.py:105
 msgid "Користувача не знайдено."
 msgstr "User not found."
 
@@ -257,11 +283,11 @@ msgstr "User not found."
 msgid "%(user)s поділився календарем"
 msgstr "%(user)s shared a calendar with you"
 
-#: apps/chat/serializers.py:104
+#: apps/chat/serializers.py:109
 msgid "Порожнє повідомлення."
 msgstr "Message is empty."
 
-#: apps/chat/serializers.py:77
+#: apps/chat/serializers.py:82
 msgid "Нотатки"
 msgstr "Notes"
 
@@ -515,101 +541,142 @@ msgid "Теку не знайдено."
 msgstr "Folder not found."
 
 #: apps/mail/imap.py:195
-#: apps/push/mailwatch.py:90
+#: apps/push/mailwatch.py:96
 msgid "(без теми)"
 msgstr "(no subject)"
-
-#: apps/mail/imap.py:254
-msgid "Лист не знайдено."
-msgstr "Message not found."
-
-#: apps/mail/imap.py:338
-msgid "Вкладення не знайдено."
-msgstr "Attachment not found."
-
-#: apps/mail/imap.py:347
-msgid "Невідомий прапорець."
-msgstr "Unknown flag."
 
 #: apps/mail/imap.py:35
 msgid "Поштовий сервер тимчасово недоступний."
 msgstr "Mail server is temporarily unavailable."
 
-#: apps/mail/imap.py:359
+#: apps/mail/imap.py:354
+#: apps/mail/imap.py:391
+msgid "Лист не знайдено."
+msgstr "Message not found."
+
+#: apps/mail/imap.py:448
+msgid "Вкладення не знайдено."
+msgstr "Attachment not found."
+
+#: apps/mail/imap.py:457
+msgid "Невідомий прапорець."
+msgstr "Unknown flag."
+
+#: apps/mail/imap.py:469
 msgid "Не вдалося перемістити лист."
 msgstr "Couldn't move the message."
 
-#: apps/mail/imap.py:383
+#: apps/mail/imap.py:493
+msgid "Не вибрано жодного листа."
+msgstr "No messages selected."
+
+#: apps/mail/imap.py:495
+#, python-format
+msgid "Максимум %(n)s листів за раз."
+msgstr "At most %(n)s messages at a time."
+
+#: apps/mail/imap.py:505
+msgid "Невідома дія."
+msgstr "Unknown action."
+
+#: apps/mail/imap.py:538
+msgid "Теки «Архів» немає."
+msgstr "There is no Archive folder."
+
+#: apps/mail/imap.py:542
+msgid "Вкажіть теку."
+msgstr "Specify a folder."
+
+#: apps/mail/imap.py:544
+msgid "Листи вже в цій теці."
+msgstr "The messages are already in this folder."
+
+#: apps/mail/imap.py:548
+msgid "Не вдалося перемістити листи."
+msgstr "Could not move the messages."
+
+#: apps/mail/imap.py:567
+#: apps/mail/imap.py:577
+msgid "Невірна адреса."
+msgstr "Invalid address."
+
+#: apps/mail/imap.py:571
+msgid "Невірний домен."
+msgstr "Invalid domain."
+
+#: apps/mail/imap.py:649
 msgid "Недопустимі символи."
 msgstr "Invalid characters."
 
-#: apps/mail/imap.py:389
+#: apps/mail/imap.py:655
 #, python-format
 msgid "Невірна адреса: %(address)s"
 msgstr "Invalid address: %(address)s"
 
-#: apps/mail/imap.py:412
+#: apps/mail/imap.py:678
 msgid "Вкажіть хоча б одного отримувача."
 msgstr "Add at least one recipient."
 
-#: apps/mail/imap.py:414
+#: apps/mail/imap.py:680
 #, python-format
 msgid "Максимум %(n)s отримувачів."
 msgstr "Maximum %(n)s recipients."
 
-#: apps/mail/imap.py:420
+#: apps/mail/imap.py:686
 msgid "Лист завеликий."
 msgstr "Message is too large."
 
-#: apps/mail/imap.py:445
+#: apps/mail/imap.py:711
 msgid "У конфіденційному режимі вкладення не підтримуються."
 msgstr "Attachments aren't supported in confidential mode."
 
-#: apps/mail/imap.py:464
+#: apps/mail/imap.py:730
 msgid "Невірне або завелике вбудоване зображення."
 msgstr "Invalid or oversized inline image."
 
-#: apps/mail/imap.py:467
+#: apps/mail/imap.py:733
 msgid "Зображення в листі завеликі (максимум 15 МБ разом)."
 msgstr "Images in the message are too large (15 MB max in total)."
 
-#: apps/mail/imap.py:481
+#: apps/mail/imap.py:747
 msgid "Вкладення завеликі (максимум 15 МБ разом)."
 msgstr "Attachments are too large (15 MB max in total)."
 
-#: apps/mail/imap.py:500
+#: apps/mail/imap.py:75
+#: apps/mail/views.py:132
+msgid "Невірна назва теки."
+msgstr "Invalid folder name."
+
+#: apps/mail/imap.py:766
 #, python-format
 msgid "Не вдалося надіслати: %(error)s"
 msgstr "Couldn't send: %(error)s"
 
-#: apps/mail/imap.py:544
+#: apps/mail/imap.py:810
 msgid "Невірний час надсилання."
 msgstr "Invalid send time."
 
-#: apps/mail/imap.py:547
+#: apps/mail/imap.py:813
 msgid "Час надсилання має бути в майбутньому."
 msgstr "The send time must be in the future."
 
-#: apps/mail/imap.py:549
+#: apps/mail/imap.py:815
 msgid "Запланувати можна щонайбільше на рік уперед."
 msgstr "You can schedule up to one year ahead."
 
-#: apps/mail/imap.py:563
+#: apps/mail/imap.py:82
+#: apps/mail/imap.py:498
+msgid "Невірний UID."
+msgstr "Invalid UID."
+
+#: apps/mail/imap.py:829
 #, python-format
 msgid "Забагато запланованих листів (максимум %(n)s)."
 msgstr "Too many scheduled emails (maximum %(n)s)."
 
-#: apps/mail/imap.py:611
+#: apps/mail/imap.py:877
 msgid "Скриньку вимкнено."
 msgstr "The mailbox is disabled."
-
-#: apps/mail/imap.py:75
-msgid "Невірна назва теки."
-msgstr "Invalid folder name."
-
-#: apps/mail/imap.py:82
-msgid "Невірний UID."
-msgstr "Invalid UID."
 
 #: apps/mail/imap.py:92
 msgid "Веб-пошту не налаштовано (немає master-пароля Dovecot)."
@@ -632,68 +699,107 @@ msgstr "Scheduled email not sent"
 msgid "«%(subject)s»: спробуйте надіслати його ще раз."
 msgstr "“%(subject)s”: please try sending it again."
 
-#: apps/mail/views.py:194
+#: apps/mail/views.py:217
 #, python-format
 msgid "Максимум %(n)s вкладень."
 msgstr "Maximum %(n)s attachments."
 
-#: apps/mail/views.py:289
+#: apps/mail/views.py:312
 msgid "Запланований лист не знайдено або його вже надіслано."
 msgstr "Scheduled email not found or already sent."
 
-#: apps/mail/views.py:310
+#: apps/mail/views.py:333
 msgid "Підпис завеликий (максимум ~200 КБ разом із зображеннями)."
 msgstr "Signature is too large (~200 KB max including images)."
 
-#: apps/mail/views.py:325
+#: apps/mail/views.py:348
 #, python-format
 msgid "Максимум %(n)s підписів."
 msgstr "Maximum %(n)s signatures."
 
-#: apps/mail/views.py:393
-msgid "Лист недоступний."
-msgstr "Message is unavailable."
+#: apps/mail/views.py:410
+#, python-format
+msgid "Максимум %(n)s адрес за раз."
+msgstr "At most %(n)s addresses at a time."
 
-#: apps/mail/views.py:396
-msgid "Лист недоступний: термін дії минув або відправник відкликав доступ."
-msgstr "Message is unavailable: it has expired or the sender revoked access."
+#: apps/mail/views.py:417
+msgid "Не можна заблокувати власну адресу або домен."
+msgstr "You cannot block your own address or domain."
 
-#: apps/mail/views.py:420
-msgid "Невірний код доступу."
-msgstr "Incorrect passcode."
+#: apps/mail/views.py:423
+#, python-format
+msgid "Максимум %(n)s заблокованих адрес."
+msgstr "At most %(n)s blocked addresses."
 
-#: apps/mail/views.py:43
+#: apps/mail/views.py:46
 msgid "Поштову скриньку не знайдено. Зверніться до адміністратора."
 msgstr "Mailbox not found. Contact your administrator."
 
-#: apps/mail/views.py:54
+#: apps/mail/views.py:488
+msgid "Лист недоступний."
+msgstr "Message is unavailable."
+
+#: apps/mail/views.py:491
+msgid "Лист недоступний: термін дії минув або відправник відкликав доступ."
+msgstr "Message is unavailable: it has expired or the sender revoked access."
+
+#: apps/mail/views.py:515
+msgid "Невірний код доступу."
+msgstr "Incorrect passcode."
+
+#: apps/mail/views.py:57
 msgid "Задовга назва теки."
 msgstr "Folder name is too long."
 
-#: apps/mail/views_admin.py:103
-#: apps/mail/views_admin.py:136
-msgid "Ця адреса вже зайнята скринькою або псевдонімом."
-msgstr "This address is already used by a mailbox or alias."
-
-#: apps/mail/views_admin.py:114
-#: apps/mail/views_admin.py:147
-msgid "Ця адреса вже зайнята."
-msgstr "This address is already taken."
-
-#: apps/mail/views_admin.py:30
-msgid "Скриньками адміністраторів керує лише суперкористувач."
-msgstr "Only a superuser can manage administrators' mailboxes."
-
-#: apps/mail/views_admin.py:60
-msgid "Невідомий або вимкнений поштовий домен."
-msgstr "Unknown or disabled mail domain."
-
-#: apps/mail/views_admin.py:99
+#: apps/mail/views_admin.py:108
 #, python-format
 msgid "Максимум %(n)s скриньок на користувача."
 msgstr "Maximum %(n)s mailboxes per user."
 
-#: apps/push/mailwatch.py:89
+#: apps/mail/views_admin.py:112
+#: apps/mail/views_admin.py:287
+msgid "Ця адреса вже зайнята скринькою або псевдонімом."
+msgstr "This address is already used by a mailbox or alias."
+
+#: apps/mail/views_admin.py:123
+#: apps/mail/views_admin.py:298
+msgid "Ця адреса вже зайнята."
+msgstr "This address is already taken."
+
+#: apps/mail/views_admin.py:212
+msgid "Службові скриньки видаляє лише суперкористувач."
+msgstr "Only a superuser can delete service mailboxes."
+
+#: apps/mail/views_admin.py:218
+msgid "Введіть адресу скриньки для підтвердження."
+msgstr "Type the mailbox address to confirm."
+
+#: apps/mail/views_admin.py:220
+msgid "Примусове видалення доступне лише суперкористувачу."
+msgstr "Only a superuser can force deletion."
+
+#: apps/mail/views_admin.py:236
+msgid "Не вдалося стерти листи через IMAP — скриньку не видалено. Спробуйте пізніше."
+msgstr "Couldn't erase the messages via IMAP — the mailbox was not deleted. Try again later."
+
+#: apps/mail/views_admin.py:266
+msgid "Поштову скриньку видалено"
+msgstr "Mailbox deleted"
+
+#: apps/mail/views_admin.py:267
+#, python-format
+msgid "Адміністратор видалив скриньку %(address)s разом з усіма листами."
+msgstr "An administrator deleted the mailbox %(address)s together with all its messages."
+
+#: apps/mail/views_admin.py:39
+msgid "Скриньками адміністраторів керує лише суперкористувач."
+msgstr "Only a superuser can manage administrators' mailboxes."
+
+#: apps/mail/views_admin.py:69
+msgid "Невідомий або вимкнений поштовий домен."
+msgstr "Unknown or disabled mail domain."
+
+#: apps/push/mailwatch.py:95
 #: apps/push/service.py:85
 msgid "Новий лист"
 msgstr "New email"

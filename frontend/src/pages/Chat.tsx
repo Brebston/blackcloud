@@ -2,6 +2,7 @@ import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { del, errorText, get, patch, post } from "../api/client";
 import type { Conversation, Message, Reaction } from "../api/types";
+import Avatar from "../components/Avatar";
 import EmojiPicker from "../components/EmojiPicker";
 import Icon from "../components/Icon";
 import Modal from "../components/Modal";
@@ -169,7 +170,16 @@ export default function ChatPage() {
           {conversations.length === 0 && <div className="empty-small">{t("chat.startNew")}</div>}
           {conversations.map((c) => (
             <button key={c.id} className={`conv ${c.id === id ? "active" : ""}`} onClick={() => navigate(`/chat/${c.id}`)}>
-              <div className="avatar">{c.is_group ? <Icon name="users" size={16} /> : c.display_title.slice(0, 1).toUpperCase()}</div>
+              {c.is_group ? (
+                <div className="avatar">
+                  <Icon name="users" size={16} />
+                </div>
+              ) : (
+                (() => {
+                  const other = c.participants.find((p) => p.username !== user?.username);
+                  return <Avatar name={c.display_title} email={other?.username} url={other?.avatar_url} size={32} />;
+                })()
+              )}
               <div className="conv-body">
                 <div className="row-between">
                   <span className="truncate conv-title">{c.display_title}</span>
@@ -199,6 +209,10 @@ export default function ChatPage() {
                 <button className="icon-btn mobile-only" onClick={() => navigate("/chat")} aria-label={t("common.back")}>
                   <Icon name="chevronLeft" />
                 </button>
+                {current && !current.is_group && (() => {
+                  const other = current.participants.find((p) => p.username !== user?.username);
+                  return <Avatar name={current.display_title} email={other?.username} url={other?.avatar_url} size={36} />;
+                })()}
                 <div>
                   <strong>{current?.display_title}</strong>
                   <div className="small muted">
@@ -229,7 +243,15 @@ export default function ChatPage() {
                   const mine = m.sender === user?.username;
                   return (
                     <div key={m.id} className={`msg ${mine ? "mine" : ""}`}>
-                      {!mine && current?.is_group && <div className="msg-sender">{m.sender}</div>}
+                      {!mine && current?.is_group && (
+                        <div className="msg-sender">
+                          {(() => {
+                            const p = current.participants.find((x) => x.username === m.sender);
+                            return <Avatar name={p?.display_name || m.sender || "?"} email={m.sender} url={p?.avatar_url} size={20} />;
+                          })()}
+                          {m.sender}
+                        </div>
+                      )}
                       <div className="bubble">
                         {m.deleted ? (
                           <em className="muted">{t("chat.deleted")}</em>

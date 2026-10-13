@@ -61,3 +61,37 @@ def send_scheduled_mail():
         item.save(update_fields=["status", "sent_at", "payload_encrypted"])
         sent += 1
     return sent
+
+
+BLOCKLIST_LOCK = "mail:blocklist:lock"
+BLOCKLIST_MAX_MAILBOXES = 500
+
+
+@shared_task
+def enforce_blocklist():
+    """Щохвилини переносить у «Спам» нові листи заблокованих відправників (лише «Вхідні»).
+
+    Лише для скриньок із непорожнім списком; worker входить у Dovecot як master-user.
+    Обмеження: лист може бути видно у «Вхідних» до ~1 хв (зокрема в IMAP-клієнтах)."""
+    from django.core.cache import cache
+
+    from . import imap
+    from .models import BlockedSender
+
+    if not cache.add(BLOCKLIST_LOCK, 1, 110):
+        return 0  # попередній прохід ще триває
+    try:
+        by_mailbox: dict = {}
+        rows = BlockedSender.objects.filter(mailbox__active=True, mailbox__domain__active=True).select_related("mailbox__domain")
+        for row in rows.order_by("mailbox_id", "address"):
+            entry = by_mailbox.setdefault(row.mailbox_id, (row.mailbox, []))
+            entry[1].append(row.address)
+        moved = 0
+        for mailbox, entries in list(by_mailbox.values())[:BLOCKLIST_MAX_MAILBOXES]:
+            try:
+                moved += imap.apply_blocklist_for(mailbox.address, entries)
+            except Exception as exc:  # Dovecot недоступний тощо — наступного разу
+                log.info("blocklist %s: %s", mailbox.pk, exc.__class__.__name__)
+        return moved
+    finally:
+        cache.delete(BLOCKLIST_LOCK)

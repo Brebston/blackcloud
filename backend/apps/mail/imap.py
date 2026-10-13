@@ -240,7 +240,107 @@ def list_messages(address: str, folder: str, page: int = 1, page_size: int = 50,
         if page_uids:
             typ, fetched = conn.uid("FETCH", ",".join(map(str, page_uids)), FETCH_FIELDS)
             items = sorted(_parse_fetch(fetched), key=lambda m: m["uid"] or 0, reverse=True)
+    for item in items:
+        item["folder"] = folder
     return {"total": total, "page": page, "page_size": page_size, "results": items}
+
+
+# ─────────────────────── «З зірочкою» (віртуальна тека) ───────────────────────
+
+STARRED = "__starred__"
+STARRED_SCAN_LIMIT = 1000
+INTERNALDATE_RE = re.compile(rb'INTERNALDATE "[^"]+"')
+
+
+def _selectable_folders(conn) -> list[tuple[str, str]]:
+    """(назва, прапорці LIST) усіх тек, які можна відкрити."""
+    typ, data = conn.list()
+    result = []
+    for raw in data or []:
+        if not isinstance(raw, bytes):
+            continue
+        m = LIST_RE.match(raw)
+        if not m:
+            continue
+        flags = m.group("flags").decode()
+        if "\\Noselect" in flags or "\\NonExistent" in flags:
+            continue
+        name = m.group("name").decode().strip()
+        if name.startswith('"') and name.endswith('"'):
+            name = name[1:-1].replace('\\"', '"').replace("\\\\", "\\")
+        result.append((decode_folder(name), flags))
+    return result
+
+
+def _internal_dates(conn, uids: list[int]) -> dict[int, float]:
+    if not uids:
+        return {}
+    typ, data = conn.uid("FETCH", ",".join(map(str, uids)), "(UID INTERNALDATE)")
+    result = {}
+    for part in data or []:
+        meta = part[0] if isinstance(part, tuple) else part
+        if not isinstance(meta, bytes):
+            continue
+        uid = re.search(rb"UID (\d+)", meta)
+        date = INTERNALDATE_RE.search(meta)
+        if not uid:
+            continue
+        stamp = 0.0
+        if date:
+            parsed = imaplib.Internaldate2tuple(date.group(0))
+            if parsed:
+                import time
+
+                stamp = time.mktime(parsed)
+        result[int(uid.group(1))] = stamp
+    return result
+
+
+def list_starred(address: str, page: int = 1, page_size: int = 50, query: str = "") -> dict:
+    """Листи з \\Flagged з усіх тек, крім «Кошика» і «Спаму» — новіші першими.
+
+    Кожен елемент має справжню теку (folder): читання, дії й вкладення працюють із нею.
+    Переглядається щонайбільше STARRED_SCAN_LIMIT листів (новіші UID кожної теки)."""
+    page = max(1, page)
+    page_size = max(1, min(page_size, 100))
+    candidates: list[tuple[float, str, int]] = []
+    truncated = False
+    with imap_session(address) as conn:
+        for name, flags in _selectable_folders(conn):
+            if "\\Trash" in flags or "\\Junk" in flags:
+                continue
+            budget = STARRED_SCAN_LIMIT - len(candidates)
+            if budget <= 0:
+                truncated = True
+                break
+            try:
+                _select(conn, name, readonly=True)
+            except NotFound:
+                continue
+            typ, data = conn.uid("SEARCH", None, "FLAGGED")
+            uids = {int(x) for x in (data[0] or b"").split()} if typ == "OK" and data else set()
+            if uids and query:
+                uids &= _search(conn, query)
+            ordered = sorted(uids, reverse=True)
+            if len(ordered) > budget:
+                ordered, truncated = ordered[:budget], True
+            dates = _internal_dates(conn, ordered)
+            candidates.extend((dates.get(uid, 0.0), name, uid) for uid in ordered)
+        candidates.sort(key=lambda c: (c[0], c[2]), reverse=True)
+        total = len(candidates)
+        chunk = candidates[(page - 1) * page_size : page * page_size]
+        by_folder: dict[str, list[int]] = {}
+        for _stamp, name, uid in chunk:
+            by_folder.setdefault(name, []).append(uid)
+        fetched: dict[tuple[str, int], dict] = {}
+        for name, uids in by_folder.items():
+            _select(conn, name, readonly=True)
+            typ, data = conn.uid("FETCH", ",".join(map(str, uids)), FETCH_FIELDS)
+            for item in _parse_fetch(data):
+                item["folder"] = name
+                fetched[(name, item["uid"])] = item
+    items = [fetched[(name, uid)] for _stamp, name, uid in chunk if (name, uid) in fetched]
+    return {"total": total, "page": page, "page_size": page_size, "results": items, "truncated": truncated}
 
 
 # ─────────────────────── Один лист ───────────────────────
@@ -282,11 +382,20 @@ def _attachments(msg) -> list[dict]:
     return result
 
 
+def _fetch_raw_flags(conn, uid: str) -> tuple[bytes, list[str]]:
+    typ, data = conn.uid("FETCH", uid, "(FLAGS BODY.PEEK[])")
+    for part in data or []:
+        if isinstance(part, tuple):
+            flags = re.search(rb"FLAGS \(([^)]*)\)", part[0])
+            return part[1], (flags.group(1).decode().split() if flags else [])
+    raise NotFound(_("Лист не знайдено."))
+
+
 def get_message(address: str, folder: str, uid, *, mark_seen: bool = True) -> dict:
     uid = _check_uid(uid)
     with imap_session(address) as conn:
         _select(conn, folder, readonly=not mark_seen)
-        raw = _fetch_raw(conn, uid)
+        raw, flags = _fetch_raw_flags(conn, uid)
         if mark_seen:
             conn.uid("STORE", uid, "+FLAGS", "(\\Seen)")
     msg = email.message_from_bytes(raw, policy=default_policy)
@@ -311,6 +420,7 @@ def get_message(address: str, folder: str, uid, *, mark_seen: bool = True) -> di
         "text": text[:500_000],
         "has_html": html_part is not None,
         "attachments": _attachments(msg),
+        "flagged": "\\Flagged" in flags,
     }
 
 
@@ -369,6 +479,162 @@ def delete_message(address: str, folder: str, uid):
             conn.uid("EXPUNGE", uid)
         else:
             conn.uid("MOVE", uid, quote(trash))
+
+
+# ─────────────────────── Групові дії ───────────────────────
+
+MAX_BULK = 500
+BULK_ACTIONS = ("delete", "move", "seen", "unseen", "flag", "unflag", "spam", "notspam", "archive")
+
+
+def _uid_set(uids) -> str:
+    """Перевірений набір UID для однієї IMAP-команди («1,5,7»)."""
+    if not isinstance(uids, (list, tuple)) or not uids:
+        raise ValidationError({"uids": [_("Не вибрано жодного листа.")]})
+    if len(uids) > MAX_BULK:
+        raise ValidationError({"uids": [_("Максимум %(n)s листів за раз.") % {"n": MAX_BULK}]})
+    clean = sorted({int(_check_uid(u)) for u in uids})
+    if clean[0] <= 0:
+        raise ValidationError({"uid": [_("Невірний UID.")]})
+    return ",".join(map(str, clean))
+
+
+def bulk_action(address: str, folder: str, uids, action: str, target: str | None = None) -> dict:
+    """Одна дія над багатьма листами теки за одну IMAP-сесію (UID STORE / UID MOVE / UID EXPUNGE)."""
+    if action not in BULK_ACTIONS:
+        raise ValidationError({"action": [_("Невідома дія.")]})
+    uid_set = _uid_set(uids)
+    count = len(uid_set.split(","))
+    flag_ops = {
+        "seen": ("+FLAGS", "(\\Seen)"),
+        "unseen": ("-FLAGS", "(\\Seen)"),
+        "flag": ("+FLAGS", "(\\Flagged)"),
+        "unflag": ("-FLAGS", "(\\Flagged)"),
+    }
+    with imap_session(address) as conn:
+        if action in flag_ops:
+            _select(conn, folder, readonly=False)
+            typ, _data = conn.uid("STORE", uid_set, *flag_ops[action])
+            if typ != "OK":
+                raise MailUnavailable()
+            return {"action": action, "count": count}
+        if action == "delete":
+            trash = _special_folder(conn, "\\Trash", "Trash")
+            _select(conn, folder, readonly=False)
+            if folder == trash:
+                conn.uid("STORE", uid_set, "+FLAGS", "(\\Deleted)")
+                typ, _data = conn.uid("EXPUNGE", uid_set)
+                if typ != "OK":
+                    raise MailUnavailable()
+                return {"action": action, "count": count, "permanent": True}
+            dest = trash
+        elif action == "spam":
+            dest = _special_folder(conn, "\\Junk", "Junk")
+        elif action == "notspam":
+            dest = "INBOX"
+        elif action == "archive":
+            dest = _special_folder(conn, "\\Archive", "")
+            if not dest:
+                raise ValidationError({"action": [_("Теки «Архів» немає.")]})
+        else:
+            dest = str(target or "")[:200]
+            if not dest:
+                raise ValidationError({"target": [_("Вкажіть теку.")]})
+        if dest == folder:
+            raise ValidationError({"target": [_("Листи вже в цій теці.")]})
+        _select(conn, folder, readonly=False)
+        typ, _data = conn.uid("MOVE", uid_set, quote(dest))
+        if typ != "OK":
+            raise ValidationError({"target": [_("Не вдалося перемістити листи.")]})
+    return {"action": action, "count": count, "target": dest}
+
+
+# ─────────────────────── Заблоковані відправники ───────────────────────
+
+BLOCK_SCAN_LIMIT = 500
+_LOCAL_RE = re.compile(r"[^\s@<>\"(),;:\\\[\]]{1,64}")
+_DOMAIN_RE = re.compile(r"(?=.{1,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}")
+
+
+def normalize_block_entry(value) -> str:
+    """Адреса (bob@example.com, можна «Ім'я <bob@example.com>») або домен (@example.com).
+
+    Повертає нормалізований запис у нижньому регістрі або кидає ValidationError."""
+    from email.utils import parseaddr
+
+    raw = str(value or "").strip()
+    if not raw or len(raw) > 320 or any(c in raw for c in "\r\n\0"):
+        raise ValidationError({"address": [_("Невірна адреса.")]})
+    if raw.startswith("@"):
+        domain = raw[1:].lower().rstrip(".")
+        if not _DOMAIN_RE.fullmatch(domain):
+            raise ValidationError({"address": [_("Невірний домен.")]})
+        return "@" + domain
+    addr = parseaddr(raw)[1] if "<" in raw else raw
+    addr = addr.strip().lower()
+    local, sep, domain = addr.rpartition("@")
+    if not sep or not _LOCAL_RE.fullmatch(local) or not _DOMAIN_RE.fullmatch(domain.rstrip(".")):
+        raise ValidationError({"address": [_("Невірна адреса.")]})
+    return f"{local}@{domain.rstrip('.')}"
+
+
+def sender_matches(from_header: str, entries) -> bool:
+    """Чи відповідає адреса з From одному із записів (точна адреса або точний домен)."""
+    from email.utils import parseaddr
+
+    addr = parseaddr(str(from_header or ""))[1].strip().lower()
+    if "@" not in addr:
+        return False
+    domain = "@" + addr.rpartition("@")[2].rstrip(".")
+    return any(e == addr or e == domain for e in entries)
+
+
+def _search_from(conn, needle: str) -> set[int]:
+    """UID SEARCH FROM <літерал> — текст не може «вийти» з рядка (див. _search)."""
+    conn.literal = needle.encode("utf-8")
+    typ, data = conn.uid("SEARCH", "CHARSET", "UTF-8", "FROM")
+    return {int(x) for x in (data[0] or b"").split()} if typ == "OK" and data else set()
+
+
+def apply_blocklist(conn, entries, folder: str = "INBOX") -> int:
+    """Переміщує в «Спам» листи заблокованих відправників із теки (за відкритої сесії).
+
+    IMAP SEARCH FROM шукає підрядок, тому кожен збіг перевіряється за точною адресою з From."""
+    entries = [e for e in entries if e]
+    if not entries:
+        return 0
+    junk = _special_folder(conn, "\\Junk", "Junk")
+    if folder == junk:
+        return 0
+    _select(conn, folder, readonly=False)
+    hits: set[int] = set()
+    for entry in entries:
+        hits |= _search_from(conn, entry)
+    if not hits:
+        return 0
+    candidates = sorted(hits, reverse=True)[:BLOCK_SCAN_LIMIT]
+    typ, data = conn.uid("FETCH", ",".join(map(str, candidates)), "(UID BODY.PEEK[HEADER.FIELDS (FROM)])")
+    matched = []
+    for part in data or []:
+        if not isinstance(part, tuple):
+            continue
+        uid = re.search(rb"UID (\d+)", part[0])
+        msg = email.message_from_bytes(part[1], policy=default_policy)
+        try:
+            sender = str(msg["From"] or "")
+        except Exception:
+            continue
+        if uid and int(uid.group(1)) in hits and sender_matches(sender, entries):
+            matched.append(int(uid.group(1)))
+    if not matched:
+        return 0
+    typ, _data = conn.uid("MOVE", ",".join(map(str, sorted(matched))), quote(junk))
+    return len(matched) if typ == "OK" else 0
+
+
+def apply_blocklist_for(address: str, entries) -> int:
+    with imap_session(address) as conn:
+        return apply_blocklist(conn, entries)
 
 
 # ─────────────────────── Надсилання ───────────────────────

@@ -20,6 +20,13 @@ interface DavInfo {
   passwords: DavPassword[];
 }
 
+/** Шляхи реєстру, URL і команди в тексті інструкцій — у <code> з перенесенням (інакше на телефоні
+ * довгий нерозривний рядок виходить за межі картки). */
+function withCode(text: string) {
+  const parts = text.split(/(HKLM\\[^\s,)]*[^\s,).]|(?:https?|(?:web)?davs?):\/\/[^\s,)]*[^\s,).»]|defaults write \S+ \S+ -bool \w+|mount -t davfs \S+ \S+)/);
+  return parts.map((part, i) => (i % 2 === 1 ? <code key={i} className="dav-code">{part}</code> : part));
+}
+
 export default function DavSettings() {
   const t = useT();
   const toast = useToast();
@@ -183,25 +190,25 @@ export default function DavSettings() {
         </form>
       </div>
 
-      <div className="card stack">
+      <div className="card stack dav-howto">
         <h3>{t("dav.howTo")}</h3>
         <div>
           <h4>{t("dav.mac")}</h4>
-          <p className="small">{t("dav.macSteps", { url: serverUrl })}</p>
-          <p className="small muted">{t("dav.macDsStore")}</p>
+          <p className="small">{withCode(t("dav.macSteps", { url: serverUrl }))}</p>
+          <p className="small muted">{withCode(t("dav.macDsStore"))}</p>
         </div>
         <div>
           <h4>{t("dav.windows")}</h4>
-          <p className="small">{t("dav.windowsSteps", { url: serverUrl })}</p>
-          <p className="small muted">{t("dav.windowsWebClient")}</p>
+          <p className="small">{withCode(t("dav.windowsSteps", { url: serverUrl }))}</p>
+          <p className="small muted">{withCode(t("dav.windowsWebClient"))}</p>
         </div>
         <div>
           <h4>{t("dav.linux")}</h4>
-          <p className="small">{t("dav.linuxSteps", { url: serverUrl, host })}</p>
+          <p className="small">{withCode(t("dav.linuxSteps", { url: serverUrl, host }))}</p>
         </div>
         <div>
           <h4>{t("dav.mobile")}</h4>
-          <p className="small">{t("dav.mobileSteps", { url: serverUrl })}</p>
+          <p className="small">{withCode(t("dav.mobileSteps", { url: serverUrl }))}</p>
         </div>
         <div>
           <h4>{t("dav.limitsTitle")}</h4>

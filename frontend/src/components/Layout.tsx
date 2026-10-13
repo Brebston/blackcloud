@@ -8,6 +8,7 @@ import { LanguageSwitcher, useT } from "../i18n";
 import type { TKey } from "../i18n";
 import { applyAppearance, resolvedScheme } from "../lib/appearance";
 import { formatDate } from "../lib/format";
+import Avatar from "./Avatar";
 import Icon from "./Icon";
 import MobileNav from "./MobileNav";
 import QuotaBar from "./QuotaBar";
@@ -40,8 +41,18 @@ export default function Layout({ children }: { children: ReactNode }) {
       if (userMenuRef.current && !userMenuRef.current.contains(e.target as Node)) setShowUserMenu(false);
       if (notifRef.current && !notifRef.current.contains(e.target as Node)) setShowNotif(false);
     };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setShowUserMenu(false);
+        setShowNotif(false);
+      }
+    };
     document.addEventListener("mousedown", onDown);
-    return () => document.removeEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
   }, []);
 
   const loadNotifications = useCallback(async () => {
@@ -62,7 +73,7 @@ export default function Layout({ children }: { children: ReactNode }) {
       setNotifications((xs) => [{ ...payload, read_at: null }, ...xs].slice(0, 20));
       toast(payload.title, payload.kind === "security" ? "error" : "info");
     }
-    if (event === "file.updated") refresh();
+    if (event === "file.updated" || event === "avatar.updated") refresh();
   });
 
   const unread = notifications.filter((n) => !n.read_at).length;
@@ -142,12 +153,21 @@ export default function Layout({ children }: { children: ReactNode }) {
             <Icon name={isDark ? "sun" : "moon"} />
           </button>
           <div className="dropdown" ref={notifRef}>
-            <button className="icon-btn" onClick={() => setShowNotif(!showNotif)} aria-label={t("top.notifications")}>
+            <button
+              className="icon-btn"
+              onClick={() => {
+                setShowNotif(!showNotif);
+                setShowUserMenu(false);
+              }}
+              aria-label={t("top.notifications")}
+              aria-haspopup="dialog"
+              aria-expanded={showNotif}
+            >
               <Icon name="bell" />
               {unread > 0 && <span className="badge">{unread}</span>}
             </button>
             {showNotif && (
-              <div className="dropdown-menu notif-menu">
+              <div className="dropdown-menu notif-menu" role="dialog" aria-label={t("top.notifications")}>
                 <div className="dropdown-head">
                   <strong>{t("top.notifications")}</strong>
                   {unread > 0 && (
@@ -177,18 +197,21 @@ export default function Layout({ children }: { children: ReactNode }) {
           <div className="dropdown" ref={userMenuRef}>
             <button
               className="user-chip"
-              onClick={() => setShowUserMenu(!showUserMenu)}
+              onClick={() => {
+                setShowUserMenu(!showUserMenu);
+                setShowNotif(false);
+              }}
               aria-haspopup="menu"
               aria-expanded={showUserMenu}
             >
-              <div className="avatar">{(user.display_name || user.username).slice(0, 1).toUpperCase()}</div>
+              <Avatar name={user.display_name || user.username} email={user.email} url={user.avatar_url} size={32} />
               <span className="desktop-only">{user.display_name || user.username}</span>
               <Icon name="chevronDown" size={14} />
             </button>
             {showUserMenu && (
               <div className="dropdown-menu user-menu" role="menu">
                 <div className="user-menu-head">
-                  <div className="avatar">{(user.display_name || user.username).slice(0, 1).toUpperCase()}</div>
+                  <Avatar name={user.display_name || user.username} email={user.email} url={user.avatar_url} size={40} />
                   <div className="truncate">
                     <strong className="truncate">{user.display_name || user.username}</strong>
                     <div className="small muted truncate">{user.mailbox || user.email}</div>
@@ -234,6 +257,7 @@ export default function Layout({ children }: { children: ReactNode }) {
         )}
         <main className="content">{children}</main>
         <MobileNav
+          profile={{ name: user.display_name || user.username, email: user.email, url: user.avatar_url, sub: user.mailbox || user.email }}
           isStaff={user.is_staff}
           isDark={isDark}
           notifications={notifications}

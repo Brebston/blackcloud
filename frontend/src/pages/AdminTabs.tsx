@@ -3,7 +3,7 @@
 // інтерфейс лише ховає недоступне й просить підтвердження для незворотних дій.
 
 import { FormEvent, useCallback, useEffect, useState } from "react";
-import { errorText, get, patch, post } from "../api/client";
+import { ApiError, del, errorText, get, patch, post } from "../api/client";
 import Icon from "../components/Icon";
 import Modal from "../components/Modal";
 import { useToast } from "../components/Toast";
@@ -435,6 +435,11 @@ export function MailboxesTab() {
             toast(t("common.saved"), "success");
             load();
           }}
+          onDeleted={() => {
+            toast(t("admin2.mbDelete.done", { address: editing.address }), "success");
+            setEditing(null);
+            load();
+          }}
         />
       )}
     </div>
@@ -505,8 +510,19 @@ function CreateMailboxDialog({ onClose, onCreated }: { onClose: () => void; onCr
   );
 }
 
-function EditMailboxDialog({ mailbox, onClose, onSaved }: { mailbox: AdminMailbox; onClose: () => void; onSaved: () => void }) {
+function EditMailboxDialog({
+  mailbox,
+  onClose,
+  onSaved,
+  onDeleted,
+}: {
+  mailbox: AdminMailbox;
+  onClose: () => void;
+  onSaved: () => void;
+  onDeleted: () => void;
+}) {
   const t = useT();
+  const [deleting, setDeleting] = useState(false);
   const [localPart, setLocalPart] = useState(mailbox.local_part);
   const [displayName, setDisplayName] = useState(mailbox.display_name);
   const [quota, setQuota] = useState(String(mailbox.quota_mb));
@@ -537,6 +553,9 @@ function EditMailboxDialog({ mailbox, onClose, onSaved }: { mailbox: AdminMailbo
       setBusy(false);
     }
   };
+
+  // Підтвердження видалення замінює вікно редагування (а не відкривається поверх нього)
+  if (deleting) return <DeleteMailboxDialog mailbox={mailbox} onClose={() => setDeleting(false)} onDeleted={onDeleted} />;
 
   return (
     <Modal title={mailbox.address} onClose={onClose}>
@@ -569,11 +588,82 @@ function EditMailboxDialog({ mailbox, onClose, onSaved }: { mailbox: AdminMailbo
         <p className="small muted">{t("mb.renameNote")}</p>
         {error && <div className="form-error">{error}</div>}
         <div className="modal-actions">
+          <button type="button" className="btn btn-danger-outline" onClick={() => setDeleting(true)}>
+            <Icon name="trash" size={16} /> {t("admin2.mbDelete.button")}
+          </button>
+          <div className="spacer" />
           <button type="button" className="btn" onClick={onClose}>
             {t("common.cancel")}
           </button>
           <button className="btn btn-primary" disabled={busy}>
             {t("common.save")}
+          </button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+/** Видалення скриньки: пароль адміністратора + введення адреси. Листи стираються через IMAP;
+ * якщо поштовий сервер недоступний, сервер відмовляє (503), і лише суперкористувач може
+ * видалити запис примусово. */
+function DeleteMailboxDialog({ mailbox, onClose, onDeleted }: { mailbox: AdminMailbox; onClose: () => void; onDeleted: () => void }) {
+  const t = useT();
+  const [confirm, setConfirm] = useState("");
+  const [password, setPassword] = useState("");
+  const [force, setForce] = useState(false);
+  const [imapDown, setImapDown] = useState(false);
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const matches = confirm.trim().toLowerCase() === mailbox.address.toLowerCase();
+
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    setError("");
+    if (!matches) return setError(t("admin2.mbDelete.typeAddress"));
+    if (!password) return setError(t("admin.passwordRequired"));
+    setBusy(true);
+    try {
+      await del(`/api/admin/mailboxes/${mailbox.id}/`, { password, confirm: confirm.trim(), force });
+      onDeleted();
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 503) setImapDown(true);
+      setError(errorText(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Modal title={t("admin2.mbDelete.title")} onClose={onClose}>
+      <form className="stack" onSubmit={submit}>
+        <div className="banner banner-danger">{t("admin2.mbDelete.warning", { address: mailbox.address, user: mailbox.user })}</div>
+        <ul className="small muted mb-delete-list">
+          <li>{t("admin2.mbDelete.what1")}</li>
+          <li>{t("admin2.mbDelete.what2")}</li>
+          <li>{t("admin2.mbDelete.what3")}</li>
+        </ul>
+        <label>
+          {t("admin2.mbDelete.typeLabel", { address: mailbox.address })}
+          <input value={confirm} autoFocus autoComplete="off" spellCheck={false} onChange={(e) => setConfirm(e.target.value)} />
+        </label>
+        <label>
+          {t("admin.yourPassword")}
+          <input type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} />
+        </label>
+        {imapDown && (
+          <label className="check">
+            <input type="checkbox" checked={force} onChange={(e) => setForce(e.target.checked)} />
+            {t("admin2.mbDelete.force")}
+          </label>
+        )}
+        {error && <div className="form-error">{error}</div>}
+        <div className="modal-actions">
+          <button type="button" className="btn" onClick={onClose}>
+            {t("common.cancel")}
+          </button>
+          <button className="btn btn-danger" disabled={busy || !matches || !password}>
+            <Icon name="trash" size={16} /> {busy ? t("admin2.mbDelete.deleting") : t("admin2.mbDelete.button")}
           </button>
         </div>
       </form>

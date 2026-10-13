@@ -20,6 +20,8 @@ export interface User {
   used_bytes: number;
   date_joined: string;
   mailbox: string | null;
+  /** /api/users/<id>/avatar/?v=<версія> або null — фото профілю ще немає */
+  avatar_url?: string | null;
   preferences: Preferences;
   must_enroll_2fa: boolean;
   features?: { office: boolean };
@@ -122,7 +124,7 @@ export interface Conversation {
   is_group: boolean;
   title: string;
   display_title: string;
-  participants: { username: string; display_name: string; is_admin: boolean }[];
+  participants: { username: string; display_name: string; is_admin: boolean; avatar_url?: string | null }[];
   last_message: { sender: string | null; body: string; created_at: string } | null;
   last_message_at: string | null;
   unread: number;

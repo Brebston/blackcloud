@@ -1,8 +1,10 @@
-import { FormEvent, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { FormEvent, ReactNode, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { api, del, errorText, get, patch, post } from "../api/client";
 import type { MailFolder, MailMessage, MailSummary } from "../api/types";
+import ErrorBoundary from "../components/ErrorBoundary";
 import Icon from "../components/Icon";
+import MailAvatar, { parseSender, useSenderPhotos } from "../components/MailAvatar";
 import Modal from "../components/Modal";
 import PullToRefresh from "../components/PullToRefresh";
 import RichEditor, { type RichEditorHandle } from "../components/RichEditor";
@@ -36,13 +38,23 @@ const MAX_TOTAL_BYTES = 15 * 1024 * 1024;
 const CONFIDENTIAL_DAYS = [1, 7, 30, 90];
 const POLL_MS = 15_000;
 const MAILBOX_KEY = "bc_mailbox";
+/** Віртуальна тека «З зірочкою» (позначені листи з усіх тек, крім «Кошика» і «Спаму»). */
+const STARRED = "__starred__";
+
+/** Рядок списку; folder — справжня тека листа (важливо для «З зірочкою»). */
+type Summary = MailSummary & { folder?: string };
+/** Відкритий лист; flagged — з нового API (старий не повертав). */
+type Message = MailMessage & { flagged?: boolean };
 
 interface ListResult {
   total: number;
   page: number;
   page_size: number;
-  results: MailSummary[];
+  results: Summary[];
+  truncated?: boolean;
 }
+
+type BulkAction = "delete" | "move" | "seen" | "unseen" | "flag" | "unflag" | "spam" | "notspam" | "archive";
 
 interface MailboxInfo {
   id: string;
@@ -123,7 +135,8 @@ function toLocalInput(d: Date): string {
 interface ConfidentialItem {
   id: string;
   subject: string;
-  recipients: string[];
+  /** Список (новий API) або рядок «a@x, b@y» (старий) — показуємо обидва. */
+  recipients: string[] | string | null;
   from_address: string;
   created_at: string;
   expires_at: string;
@@ -143,16 +156,72 @@ function readStoredMailbox(): string {
   }
 }
 
-/** Відкритий лист живе в хеші URL (#m=<uid>&f=<тека>), щоб працювала кнопка «Назад» браузера. */
-function parseMailHash(hash: string): { uid: number; folder: string } | null {
+/** Відкритий лист живе в хеші URL (#m=<uid>&f=<тека>[&v=__starred__]), щоб працювала кнопка «Назад» браузера.
+ *  v — список, з якого відкрито лист (віртуальна тека), f — справжня тека листа. */
+function parseMailHash(hash: string): { uid: number; folder: string; view: string } | null {
   const p = new URLSearchParams(hash.replace(/^#/, ""));
   const uid = Number(p.get("m"));
   const f = p.get("f");
-  if (!Number.isSafeInteger(uid) || uid <= 0 || !f) return null;
-  return { uid, folder: f };
+  if (!Number.isSafeInteger(uid) || uid <= 0 || !f || f === STARRED) return null;
+  return { uid, folder: f, view: p.get("v") === STARRED ? STARRED : "" };
 }
 
-const mailHash = (uid: number, folder: string) => `#${new URLSearchParams({ m: String(uid), f: folder }).toString()}`;
+const mailHash = (uid: number, folder: string, view?: string) =>
+  `#${new URLSearchParams({ m: String(uid), f: folder, ...(view ? { v: view } : {}) }).toString()}`;
+
+/** Ім'я для рядка списку: без лапок (будь-яких), інакше адреса. */
+const displayName = (from: string) => {
+  const p = parseSender(from);
+  return p.name || p.email || senderName(from);
+};
+
+const recipientsText = (r: ConfidentialItem["recipients"]) => (Array.isArray(r) ? r.join(", ") : String(r ?? ""));
+
+/** Кнопка «⋯» з випадним меню; закривається дотиком поза ним і після вибору пункту. */
+function MoreMenu({ label, className, children }: { label: string; className?: string; children: (close: () => void) => ReactNode }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent | TouchEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("touchstart", onDown);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("touchstart", onDown);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+  return (
+    <div className="dropdown" ref={ref}>
+      <button
+        type="button"
+        className={`icon-btn ${open ? "active" : ""}`}
+        aria-label={label}
+        title={label}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen(!open)}
+      >
+        <Icon name="more" />
+      </button>
+      {open && (
+        <div className={`dropdown-menu mail-menu ${className || ""}`} role="menu">
+          {children(() => setOpen(false))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 const isToday = (iso: string | null) => !!iso && new Date(iso).toDateString() === new Date().toDateString();
 
@@ -166,12 +235,15 @@ export default function MailPage() {
   const [mailbox, setMailbox] = useState<MailboxInfo | null>(null);
   const [unavailable, setUnavailable] = useState("");
   const [folders, setFolders] = useState<MailFolder[]>([]);
-  const [folder, setFolder] = useState(() => parseMailHash(window.location.hash)?.folder || "INBOX");
+  const [folder, setFolder] = useState(() => {
+    const h = parseMailHash(window.location.hash);
+    return h ? h.view || h.folder : "INBOX";
+  });
   const [list, setList] = useState<ListResult | null>(null);
   const [page, setPage] = useState(1);
   const [query, setQuery] = useState("");
   const [appliedQuery, setAppliedQuery] = useState("");
-  const [open, setOpen] = useState<MailMessage | null>(null);
+  const [open, setOpen] = useState<Message | null>(null);
   const [remoteImages, setRemoteImages] = useState(false);
   const [compose, setCompose] = useState<ComposeInit | null>(null);
   const [loading, setLoading] = useState(false);
@@ -179,6 +251,9 @@ export default function MailPage() {
   const [showConfidential, setShowConfidential] = useState(false);
   const [showScheduled, setShowScheduled] = useState(false);
   const [passcodeInfo, setPasscodeInfo] = useState<SendResult["confidential"] | null>(null);
+  // Вибрані листи: ключ «тека\nuid» (у «З зірочкою» листи з різних тек)
+  const [selected, setSelected] = useState<Set<string>>(() => new Set());
+  const [bulkBusy, setBulkBusy] = useState(false);
 
   const pageRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
@@ -192,6 +267,7 @@ export default function MailPage() {
   const target = parseMailHash(location.hash);
   const targetUid = target?.uid ?? 0;
   const targetFolder = target?.folder ?? "";
+  const targetView = target?.view ?? "";
   const viewing = targetUid > 0;
   const baseUrl = location.pathname + location.search;
 
@@ -241,12 +317,15 @@ export default function MailPage() {
       try {
         const fresh = await get<MailFolder[]>(withBox("/api/mail/folders/"));
         if (stopped) return;
+        const sig = (list: MailFolder[]) => list.map((f) => `${f.name}:${f.messages}:${f.unseen}`).join("|");
         const before = foldersRef.current.find((f) => f.name === folderRef.current);
         const after = fresh.find((f) => f.name === folderRef.current);
+        const changed =
+          folderRef.current === STARRED
+            ? foldersRef.current.length > 0 && sig(foldersRef.current) !== sig(fresh)
+            : !!before && !!after && (before.messages !== after.messages || before.unseen !== after.unseen);
         setFolders(fresh);
-        if (before && after && (before.messages !== after.messages || before.unseen !== after.unseen)) {
-          await loadListRef.current(true);
-        }
+        if (changed) await loadListRef.current(true);
       } catch {
         /* сервер тимчасово недоступний — спробуємо наступного разу */
       } finally {
@@ -327,14 +406,15 @@ export default function MailPage() {
       setOpen(null);
       return;
     }
-    if (targetFolder !== folder) {
-      setFolder(targetFolder);
+    const listFolder = targetView || targetFolder;
+    if (listFolder !== folder) {
+      setFolder(listFolder);
       setPage(1);
       setQuery("");
       setAppliedQuery("");
     }
     setRemoteImages(false);
-    get<MailMessage>(withBox(`/api/mail/messages/${targetUid}/?folder=${encodeURIComponent(targetFolder)}`))
+    get<Message>(withBox(`/api/mail/messages/${targetUid}/?folder=${encodeURIComponent(targetFolder)}`))
       .then((msg) => {
         if (req !== openReq.current) return;
         setOpen(msg);
@@ -349,7 +429,21 @@ export default function MailPage() {
         pushedOpen.current = false;
         navigate(baseUrl, { replace: true });
       });
-  }, [box, targetUid, targetFolder]);
+  }, [box, targetUid, targetFolder, targetView]);
+
+  // Вибір скидається при зміні теки, сторінки, пошуку чи скриньки
+  useEffect(() => {
+    setSelected(new Set());
+  }, [folder, page, appliedQuery, box]);
+  // Після оновлення списку лишаємо вибраними лише листи, що ще є на сторінці
+  useEffect(() => {
+    setSelected((cur) => {
+      if (!cur.size) return cur;
+      const keys = new Set((list?.results || []).map((m) => `${m.folder || folderRef.current}\n${m.uid}`));
+      const next = new Set(Array.from(cur).filter((k) => keys.has(k)));
+      return next.size === cur.size ? cur : next;
+    });
+  }, [list]);
 
   // Відкрили лист — читаємо з початку; повернулися — відновлюємо прокрутку списку
   useLayoutEffect(() => {
@@ -368,7 +462,17 @@ export default function MailPage() {
   // Escape — назад до списку (діалоги закриваються власним обробником Modal)
   const dialogOpen = !!compose || showSignatures || showScheduled || showConfidential || !!passcodeInfo;
   useEffect(() => {
-    if (!viewing || dialogOpen) return;
+    if (dialogOpen) return;
+    // У списку Escape знімає вибір
+    if (!viewing) {
+      if (!selected.size) return;
+      const onKeyList = (e: KeyboardEvent) => {
+        if (e.key !== "Escape" || e.defaultPrevented) return;
+        setSelected(new Set());
+      };
+      window.addEventListener("keydown", onKeyList);
+      return () => window.removeEventListener("keydown", onKeyList);
+    }
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape" || e.defaultPrevented) return;
       const el = e.target as HTMLElement | null;
@@ -416,11 +520,17 @@ export default function MailPage() {
     if (parent) parent.scrollTop = 0;
   };
 
-  const isDraftsFolder = folders.find((f) => f.name === folder)?.special === "\\Drafts";
-  const isSentFolder = folders.find((f) => f.name === folder)?.special === "\\Sent" || folder.toLowerCase().includes("sent");
+  const specialOf = (name: string) => folders.find((f) => f.name === name)?.special || "";
+  const isDraftsFolder = specialOf(folder) === "\\Drafts";
+  const isSentName = (name: string) => specialOf(name) === "\\Sent" || name.toLowerCase().includes("sent");
+  const itemFolder = (m: Summary) => m.folder || folder;
+  const selKey = (m: Summary) => `${itemFolder(m)}\n${m.uid}`;
+  const trashFolder = folders.find((f) => f.special === "\\Trash")?.name || "Trash";
+  const junkFolder = folders.find((f) => f.special === "\\Junk")?.name || "Junk";
+  const ownAddresses = new Set(mailboxes.map((b) => b.address.toLowerCase()));
 
-  const openMessage = async (m: MailSummary) => {
-    if (isDraftsFolder) {
+  const openMessage = async (m: Summary) => {
+    if (specialOf(itemFolder(m)) === "\\Drafts") {
       // Чернетка відкривається в редакторі, а не в режимі читання
       try {
         const d = await get<{
@@ -456,20 +566,106 @@ export default function MailPage() {
       refreshFoldersOnOpen.current = true;
     }
     pushedOpen.current = true;
-    navigate(baseUrl + mailHash(m.uid, folder));
+    navigate(baseUrl + mailHash(m.uid, itemFolder(m), folder === STARRED ? STARRED : undefined));
   };
 
   /** Зірочка в рядку списку: перемикає \Flagged, не відкриваючи лист. */
-  const toggleStar = async (m: MailSummary) => {
+  const toggleStar = async (m: Summary) => {
     const flagged = !m.flagged;
+    const key = selKey(m);
     const setFlag = (v: boolean) =>
-      setList((l) => l && { ...l, results: l.results.map((x) => (x.uid === m.uid ? { ...x, flagged: v } : x)) });
+      setList((l) => l && { ...l, results: l.results.map((x) => (selKey(x) === key ? { ...x, flagged: v } : x)) });
     setFlag(flagged);
     try {
-      await patch(withBox(`/api/mail/messages/${m.uid}/`), { folder, flagged });
+      await patch(withBox(`/api/mail/messages/${m.uid}/`), { folder: itemFolder(m), flagged });
+      // «З зірочкою»: знята зірочка прибирає лист зі списку
+      if (folder === STARRED && !flagged) {
+        setList((l) => l && { ...l, total: Math.max(0, l.total - 1), results: l.results.filter((x) => selKey(x) !== key) });
+      }
     } catch (e) {
       setFlag(!flagged);
       toast(errorText(e), "error");
+    }
+  };
+
+  const toggleSelect = (m: Summary) => {
+    const key = selKey(m);
+    setSelected((cur) => {
+      const next = new Set(cur);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
+  const pageItems = list?.results || [];
+  const selectedItems = pageItems.filter((m) => selected.has(selKey(m)));
+  const selCount = selectedItems.length;
+  const allSelected = pageItems.length > 0 && selCount === pageItems.length;
+  const toggleAll = () => setSelected(selCount > 0 ? new Set() : new Set(pageItems.map(selKey)));
+
+  /** Групова дія: окремий запит на кожну теку вибраних листів (у «З зірочкою» їх може бути кілька). */
+  const runBulk = async (act: BulkAction, items: Summary[], target?: string) => {
+    if (!items.length || bulkBusy) return;
+    const permanent = act === "delete" && items.every((m) => itemFolder(m) === trashFolder);
+    if (permanent && !window.confirm(t("mail2.confirmPurge", { n: items.length }))) return;
+    const dest = act === "archive" ? archiveFolder : act === "spam" ? junkFolder : act === "notspam" ? "INBOX" : act === "move" ? target : undefined;
+    const groups = new Map<string, number[]>();
+    for (const m of items) {
+      const f = itemFolder(m);
+      if (dest && f === dest) continue; // уже там
+      groups.set(f, [...(groups.get(f) || []), m.uid]);
+    }
+    setBulkBusy(true);
+    let n = 0;
+    try {
+      for (const [f, uids] of Array.from(groups.entries())) {
+        const r = await post<{ count: number }>(withBox("/api/mail/messages/bulk/"), { folder: f, uids, action: act, target });
+        n += r.count || 0;
+      }
+      const msgKey: Record<BulkAction, TKey> = {
+        delete: permanent ? "mail2.done.purged" : "mail2.done.deleted",
+        move: "mail2.done.moved",
+        archive: "mail2.done.archived",
+        spam: "mail2.done.spam",
+        notspam: "mail2.done.notspam",
+        seen: "mail2.done.seen",
+        unseen: "mail2.done.unseen",
+        flag: "mail2.done.flag",
+        unflag: "mail2.done.unflag",
+      };
+      toast(t(msgKey[act], { n }), "success");
+      return true;
+    } catch (e) {
+      toast(errorText(e), "error");
+      return false;
+    } finally {
+      setBulkBusy(false);
+      setSelected(new Set());
+      loadList(true);
+      loadFolders().catch(() => {});
+    }
+  };
+
+  /** Блокування відправників (точна адреса): нові листи — у «Спам», наявні у «Вхідних» — одразу туди. */
+  const blockSenders = async (froms: string[]): Promise<boolean> => {
+    const addresses = Array.from(new Set(froms.map((f) => parseSender(f).email).filter((a) => a && !ownAddresses.has(a))));
+    if (!addresses.length) {
+      toast(t("mail2.nothingToBlock"), "info");
+      return false;
+    }
+    const shownList = addresses.slice(0, 5).join(", ") + (addresses.length > 5 ? ` (+${addresses.length - 5})` : "");
+    if (!window.confirm(t("mail2.confirmBlock", { n: addresses.length, addresses: shownList }))) return false;
+    try {
+      const r = await post<{ moved: number }>(withBox("/api/mail/blocked/"), { addresses });
+      toast(t("mail2.blockedToast", { address: shownList, n: r.moved || 0 }), "success");
+      setSelected(new Set());
+      loadList(true);
+      loadFolders().catch(() => {});
+      return true;
+    } catch (e) {
+      toast(errorText(e), "error");
+      return false;
     }
   };
 
@@ -487,11 +683,13 @@ export default function MailPage() {
 
   // Свайп у списку (телефон): ліворуч — у кошик (як кнопка «Видалити»), праворуч — в архів (якщо є тека \Archive)
   const archiveFolder = folders.find((f) => f.special === "\\Archive")?.name;
-  const swipeAction = async (m: MailSummary, kind: "delete" | "archive") => {
-    setList((l) => l && { ...l, total: Math.max(0, l.total - 1), results: l.results.filter((x) => x.uid !== m.uid) });
+  const swipeAction = async (m: Summary, kind: "delete" | "archive") => {
+    const key = selKey(m);
+    const from = itemFolder(m);
+    setList((l) => l && { ...l, total: Math.max(0, l.total - 1), results: l.results.filter((x) => selKey(x) !== key) });
     try {
-      if (kind === "delete") await del(withBox(`/api/mail/messages/${m.uid}/?folder=${encodeURIComponent(folder)}`));
-      else await patch(withBox(`/api/mail/messages/${m.uid}/`), { folder, move_to: archiveFolder });
+      if (kind === "delete") await del(withBox(`/api/mail/messages/${m.uid}/?folder=${encodeURIComponent(from)}`));
+      else await patch(withBox(`/api/mail/messages/${m.uid}/`), { folder: from, move_to: archiveFolder });
       toast(kind === "delete" ? t("mail.deleted") : t("mobile.archived"), "success");
       loadFolders().catch(() => {});
     } catch (e) {
@@ -538,6 +736,12 @@ export default function MailPage() {
     });
   };
 
+  // Фото відправників (локальні користувачі): один пакетний запит на сторінку списку
+  const photoOf = useSenderPhotos([
+    ...(list?.results || []).map((m) => parseSender(isSentName(itemFolder(m)) ? m.to.split(",")[0] || "" : m.from).email),
+    ...(open ? [parseSender(open.from).email] : []),
+  ]);
+
   if (unavailable) {
     return (
       <div className="page">
@@ -550,166 +754,423 @@ export default function MailPage() {
   }
 
   const totalPages = list ? Math.max(1, Math.ceil(list.total / list.page_size)) : 1;
-  // Дії в режимі читання — над текою, з якої відкрито лист
+  // Дії в режимі читання — над справжньою текою листа (не над «З зірочкою»)
   const readerFolder = targetFolder || folder;
   const folderParam = encodeURIComponent(readerFolder);
   const shown = open && open.uid === targetUid ? open : null;
+  const readerSpecial = specialOf(readerFolder);
+  const listSpecial = folder === STARRED ? "" : specialOf(folder);
+  const shownSender = shown ? parseSender(shown.from).email : "";
+  const canBlockShown = !!shownSender && !ownAddresses.has(shownSender) && readerSpecial !== "\\Sent" && readerSpecial !== "\\Drafts";
+
+  /** Дія над відкритим листом через груповий ендпоінт (один UID). */
+  const readerBulk = (act: BulkAction, msg: string, target?: string) =>
+    shown &&
+    action(
+      () => post(withBox("/api/mail/messages/bulk/"), { folder: readerFolder, uids: [shown.uid], action: act, target }),
+      msg,
+    );
+
+  const toggleReaderStar = async () => {
+    if (!shown) return;
+    const flagged = !shown.flagged;
+    setOpen({ ...shown, flagged });
+    try {
+      await patch(withBox(`/api/mail/messages/${shown.uid}/`), { folder: readerFolder, flagged });
+      loadList(true);
+    } catch (e) {
+      setOpen({ ...shown, flagged: !flagged });
+      toast(errorText(e), "error");
+    }
+  };
+
+  const moveOptions = (exclude: string) =>
+    folders
+      .filter((f) => f.name !== exclude)
+      .map((f) => (
+        <option key={f.name} value={f.name}>
+          {folderLabel(t, f)}
+        </option>
+      ));
+
+  // ── Панель групових дій (замість звичайної панелі списку, коли щось вибрано) ──
+  const inTrash = listSpecial === "\\Trash";
+  const inJunk = listSpecial === "\\Junk";
+  const anyUnread = selectedItems.some((m) => !m.seen);
+  const anyUnflagged = selectedItems.some((m) => !m.flagged);
+  const canArchive = !!archiveFolder && selectedItems.some((m) => itemFolder(m) !== archiveFolder);
+  const selectAllBox = (
+    <label className="mail-check mail-check-all" title={allSelected ? t("mail2.selectNone") : t("mail2.selectAll")}>
+      <input
+        type="checkbox"
+        checked={allSelected}
+        disabled={!pageItems.length}
+        aria-label={allSelected || selCount > 0 ? t("mail2.selectNone") : t("mail2.selectAll")}
+        aria-checked={selCount > 0 && !allSelected ? "mixed" : allSelected}
+        ref={(el: HTMLInputElement | null) => {
+          if (el) el.indeterminate = selCount > 0 && !allSelected;
+        }}
+        onChange={toggleAll}
+      />
+    </label>
+  );
+  const bulkBar = (
+    <div className="mail-toolbar mail-bulkbar" role="toolbar" aria-label={t("mail2.bulkActions")}>
+      {selectAllBox}
+      <span className="mail-selcount nowrap" aria-live="polite">
+        {t("mail2.selected", { n: selCount })}
+      </span>
+      <span className="spacer" />
+      {canArchive && (
+        <button className="icon-btn" disabled={bulkBusy} onClick={() => runBulk("archive", selectedItems)} aria-label={t("mobile.archive")} title={t("mobile.archive")}>
+          <Icon name="archive" />
+        </button>
+      )}
+      {!mobile &&
+        (inJunk ? (
+          <button className="icon-btn" disabled={bulkBusy} onClick={() => runBulk("notspam", selectedItems)} aria-label={t("mail2.notSpam")} title={t("mail2.notSpam")}>
+            <Icon name="inbox" />
+          </button>
+        ) : (
+          <button className="icon-btn" disabled={bulkBusy} onClick={() => runBulk("spam", selectedItems)} aria-label={t("mail2.reportSpam")} title={t("mail2.reportSpam")}>
+            <Icon name="alert" />
+          </button>
+        ))}
+      <button
+        className="icon-btn danger"
+        disabled={bulkBusy}
+        onClick={() => runBulk("delete", selectedItems)}
+        aria-label={inTrash ? t("mail2.deleteForever") : t("common.delete")}
+        title={inTrash ? t("mail2.deleteForever") : t("common.delete")}
+      >
+        <Icon name="trash" />
+      </button>
+      <button
+        className="icon-btn"
+        disabled={bulkBusy}
+        onClick={() => runBulk(anyUnread ? "seen" : "unseen", selectedItems)}
+        aria-label={anyUnread ? t("mail2.markRead") : t("mail2.markUnread")}
+        title={anyUnread ? t("mail2.markRead") : t("mail2.markUnread")}
+      >
+        <Icon name={anyUnread ? "eye" : "mail"} />
+      </button>
+      <MoreMenu label={t("mobile.moreActions")}>
+        {(close) => (
+          <>
+            <button role="menuitem" className="menu-item" onClick={() => (close(), runBulk(anyUnread ? "unseen" : "seen", selectedItems))}>
+              <Icon name={anyUnread ? "mail" : "eye"} size={18} /> {anyUnread ? t("mail2.markUnread") : t("mail2.markRead")}
+            </button>
+            <button role="menuitem" className="menu-item" onClick={() => (close(), runBulk(anyUnflagged ? "flag" : "unflag", selectedItems))}>
+              <Icon name="star" size={18} /> {anyUnflagged ? t("mailui.star") : t("mailui.unstar")}
+            </button>
+            {mobile &&
+              (inJunk ? (
+                <button role="menuitem" className="menu-item" onClick={() => (close(), runBulk("notspam", selectedItems))}>
+                  <Icon name="inbox" size={18} /> {t("mail2.notSpam")}
+                </button>
+              ) : (
+                <button role="menuitem" className="menu-item" onClick={() => (close(), runBulk("spam", selectedItems))}>
+                  <Icon name="alert" size={18} /> {t("mail2.reportSpam")}
+                </button>
+              ))}
+            <label className="menu-item menu-select">
+              <Icon name="move" size={18} />
+              <select
+                aria-label={t("mail.moveTo")}
+                value=""
+                onChange={(e) => {
+                  const dest = e.target.value;
+                  close();
+                  if (dest) runBulk("move", selectedItems, dest);
+                }}
+              >
+                <option value="">{t("mail.moveTo")}</option>
+                {moveOptions(folder === STARRED ? "" : folder)}
+              </select>
+            </label>
+            {!inJunk && (
+              <>
+                <div className="menu-sep" />
+                <button role="menuitem" className="menu-item danger" onClick={() => (close(), blockSenders(selectedItems.map((m) => m.from)))}>
+                  <Icon name="shield" size={18} /> {t("mail2.blockSenders")}
+                </button>
+              </>
+            )}
+          </>
+        )}
+      </MoreMenu>
+      <button className="icon-btn" onClick={() => setSelected(new Set())} aria-label={t("mail2.clearSelection")} title={t("mail2.clearSelection")}>
+        <Icon name="x" />
+      </button>
+    </div>
+  );
 
   const listView = (
     <>
-      <div className="mail-toolbar">
-        <button
-          className="icon-btn"
-          onClick={() => {
-            loadList();
-            loadFolders();
-          }}
-          aria-label={t("common.refresh")}
-          title={t("common.refresh")}
-        >
-          <Icon name="refresh" />
-        </button>
-        {loading && list && <span className="small muted">{t("common.loading")}</span>}
-        <span className="spacer" />
-        {list && list.total > 0 && (
-          <span className="small muted nowrap">
-            {t("mailui.range", {
-              from: (list.page - 1) * list.page_size + 1,
-              to: Math.min(list.page * list.page_size, list.total),
-              total: list.total,
-            })}
-          </span>
-        )}
-        <button className="icon-btn" disabled={page <= 1} onClick={() => goPage(page - 1)} aria-label={t("mailui.prevPage")} title={t("mailui.prevPage")}>
-          <Icon name="chevronLeft" />
-        </button>
-        <button
-          className="icon-btn"
-          disabled={page >= totalPages}
-          onClick={() => goPage(page + 1)}
-          aria-label={t("mailui.nextPage")}
-          title={t("mailui.nextPage")}
-        >
-          <Icon name="chevronRight" />
-        </button>
-      </div>
+      {selCount > 0 ? (
+        bulkBar
+      ) : (
+        <div className="mail-toolbar">
+          {selectAllBox}
+          <button
+            className="icon-btn"
+            onClick={() => {
+              loadList();
+              loadFolders();
+            }}
+            aria-label={t("common.refresh")}
+            title={t("common.refresh")}
+          >
+            <Icon name="refresh" />
+          </button>
+          {loading && list && <span className="small muted">{t("common.loading")}</span>}
+          <span className="spacer" />
+          {list && list.total > 0 && (
+            <span className="small muted nowrap">
+              {t("mailui.range", {
+                from: (list.page - 1) * list.page_size + 1,
+                to: Math.min(list.page * list.page_size, list.total),
+                total: list.total,
+              })}
+            </span>
+          )}
+          <button className="icon-btn" disabled={page <= 1} onClick={() => goPage(page - 1)} aria-label={t("mailui.prevPage")} title={t("mailui.prevPage")}>
+            <Icon name="chevronLeft" />
+          </button>
+          <button
+            className="icon-btn"
+            disabled={page >= totalPages}
+            onClick={() => goPage(page + 1)}
+            aria-label={t("mailui.nextPage")}
+            title={t("mailui.nextPage")}
+          >
+            <Icon name="chevronRight" />
+          </button>
+        </div>
+      )}
       <div className="mail-list" ref={listRef}>
-        <PullToRefresh enabled={mobile} onRefresh={() => Promise.all([loadList(), loadFolders().catch(() => {})])}>
+        <PullToRefresh enabled={mobile && selCount === 0} onRefresh={() => Promise.all([loadList(), loadFolders().catch(() => {})])}>
+        {folder === STARRED && list?.truncated && <div className="banner banner-info small mail-list-note">{t("mail2.starredTruncated")}</div>}
         {loading && !list && <div className="empty-small">{t("common.loading")}</div>}
         {list && list.results.length === 0 && (
           <div className="empty">
-            <Icon name={FOLDER_ICONS[folders.find((f) => f.name === folder)?.special || ""] || "mail"} size={32} />
-            {t("mail.empty")}
+            <Icon name={folder === STARRED ? "star" : FOLDER_ICONS[listSpecial] || "mail"} size={32} />
+            {folder === STARRED ? t("mail2.starredEmpty") : t("mail.empty")}
           </div>
         )}
-        {list?.results.map((m) => (
-          <SwipeRow
-            key={m.uid}
-            className={`mail-row ${m.seen ? "" : "unread"}`}
-            left={mobile ? { icon: "trash", label: t("common.delete"), tone: "swipe-danger", run: () => swipeAction(m, "delete") } : undefined}
-            right={
-              mobile && archiveFolder && archiveFolder !== folder
-                ? { icon: "archive", label: t("mobile.archive"), tone: "swipe-archive", run: () => swipeAction(m, "archive") }
-                : undefined
-            }
-          >
-            <button
-              className={`mail-star ${m.flagged ? "on" : ""}`}
-              aria-pressed={m.flagged}
-              aria-label={m.flagged ? t("mailui.unstar") : t("mailui.star")}
-              title={m.flagged ? t("mailui.unstar") : t("mailui.star")}
-              onClick={() => toggleStar(m)}
+        {list?.results.map((m) => {
+          const f = itemFolder(m);
+          const sent = isSentName(f);
+          const who = sent ? m.to.split(",")[0] || m.to : m.from;
+          const isSel = selected.has(selKey(m));
+          const name = sent ? `${t("mail.to")}: ${displayName(m.to)}` : displayName(m.from);
+          const tagFolder = folder === STARRED && specialOf(f) !== "\\Inbox" ? folders.find((x) => x.name === f) : undefined;
+          return (
+            <SwipeRow
+              key={selKey(m)}
+              className={`mail-row ${m.seen ? "" : "unread"} ${isSel ? "selected" : ""}`}
+              left={mobile && selCount === 0 ? { icon: "trash", label: t("common.delete"), tone: "swipe-danger", run: () => swipeAction(m, "delete") } : undefined}
+              right={
+                mobile && selCount === 0 && archiveFolder && archiveFolder !== f
+                  ? { icon: "archive", label: t("mobile.archive"), tone: "swipe-archive", run: () => swipeAction(m, "archive") }
+                  : undefined
+              }
             >
-              <Icon name="star" size={16} />
-            </button>
-            <button className="mail-row-open" onClick={() => openMessage(m)}>
-              <span className="mail-from truncate">
-                {isSentFolder ? `${t("mail.to")}: ${senderName(m.to)}` : senderName(m.from)}
-              </span>
-              <span className="mail-subject truncate">{m.subject || t("mail.noSubject")}</span>
-              {m.has_attachments && (
-                <span className="mail-clip" title={t("mailui.hasAttachments")}>
-                  <Icon name="paperclip" size={14} />
-                </span>
+              {!mobile && (
+                <label className="mail-check">
+                  <input type="checkbox" checked={isSel} onChange={() => toggleSelect(m)} aria-label={t("mail2.selectMessage", { subject: m.subject || t("mail.noSubject") })} />
+                </label>
               )}
-              <span className="mail-date" title={formatDate(m.date)}>
-                {formatDate(m.date, isToday(m.date))}
-              </span>
-            </button>
-          </SwipeRow>
-        ))}
+              <button
+                className={`mail-star ${m.flagged ? "on" : ""}`}
+                aria-pressed={m.flagged}
+                aria-label={m.flagged ? t("mailui.unstar") : t("mailui.star")}
+                title={m.flagged ? t("mailui.unstar") : t("mailui.star")}
+                onClick={() => toggleStar(m)}
+              >
+                <Icon name="star" size={16} />
+              </button>
+              <MailAvatar
+                from={who}
+                photo={photoOf(parseSender(who).email)}
+                selected={isSel}
+                onToggle={() => toggleSelect(m)}
+                label={isSel ? t("mail2.deselectMessage", { name }) : t("mail2.selectMessage", { subject: name })}
+                size={mobile ? 40 : 32}
+              />
+              <button className="mail-row-open" onClick={() => (mobile && selCount > 0 ? toggleSelect(m) : openMessage(m))}>
+                <span className="mail-from truncate">{name}</span>
+                <span className="mail-subject truncate">
+                  {tagFolder && <span className="mail-folder-tag">{folderLabel(t, tagFolder)}</span>}
+                  {m.subject || t("mail.noSubject")}
+                </span>
+                {m.has_attachments && (
+                  <span className="mail-clip" title={t("mailui.hasAttachments")}>
+                    <Icon name="paperclip" size={14} />
+                  </span>
+                )}
+                <span className="mail-date" title={formatDate(m.date)}>
+                  {formatDate(m.date, isToday(m.date))}
+                </span>
+              </button>
+            </SwipeRow>
+          );
+        })}
         </PullToRefresh>
       </div>
     </>
   );
 
+  const replyBtns = mobile ? (
+    <>
+      <button className="icon-btn" onClick={() => reply(false)} aria-label={t("mail.reply")} title={t("mail.reply")}>
+        <Icon name="reply" />
+      </button>
+      <button className="icon-btn" onClick={() => reply(true)} aria-label={t("mail2.replyAll")} title={t("mail2.replyAll")}>
+        <Icon name="users" />
+      </button>
+      <button className="icon-btn icon-flip" onClick={forward} aria-label={t("mail.forward")} title={t("mail.forward")}>
+        <Icon name="reply" />
+      </button>
+    </>
+  ) : (
+    <>
+      <button className="btn btn-sm" onClick={() => reply(false)}>
+        <Icon name="reply" size={14} /> {t("mail.reply")}
+      </button>
+      <button className="btn btn-sm" onClick={() => reply(true)} title={t("mail2.replyAll")}>
+        <Icon name="users" size={14} /> {t("mail.replyAll")}
+      </button>
+      <button className="btn btn-sm" onClick={forward}>
+        <span className="icon-flip">
+          <Icon name="reply" size={14} />
+        </span>{" "}
+        {t("mail.forward")}
+      </button>
+    </>
+  );
+
   const readerView = (
     <>
-      <div className="reader-toolbar">
+      <div className="reader-toolbar" role="toolbar" aria-label={t("mail2.messageActions")}>
         <button className="icon-btn" onClick={closeMessage} aria-label={t("mailui.backToList")} title={t("mailui.backToList")}>
           <Icon name="chevronLeft" />
         </button>
         {shown && (
           <>
-            <span className="reader-sep" />
-            <button className="btn btn-sm" onClick={() => reply(false)}>
-              <Icon name="reply" size={14} /> {t("mail.reply")}
-            </button>
-            <button className="btn btn-sm" onClick={() => reply(true)}>
-              {t("mail.replyAll")}
-            </button>
-            <button className="btn btn-sm" onClick={forward}>
-              {t("mail.forward")}
-            </button>
+            {!mobile && <span className="reader-sep" />}
+            {!mobile && replyBtns}
+            <span className="spacer" />
+            {mobile && replyBtns}
             <button
-              className="icon-btn"
-              title={t("mail.flag")}
-              aria-label={t("mail.flag")}
-              onClick={() =>
-                action(() => patch(withBox(`/api/mail/messages/${shown.uid}/`), { folder: readerFolder, flagged: true }), t("mail.flagged"))
-              }
+              className={`icon-btn mail-star-btn ${shown.flagged ? "on" : ""}`}
+              aria-pressed={!!shown.flagged}
+              title={shown.flagged ? t("mailui.unstar") : t("mailui.star")}
+              aria-label={shown.flagged ? t("mailui.unstar") : t("mailui.star")}
+              onClick={toggleReaderStar}
             >
-              <Icon name="star" size={16} />
+              <Icon name="star" size={mobile ? 20 : 16} />
             </button>
-            <button
-              className="icon-btn"
-              title={t("mail.unread")}
-              aria-label={t("mail.unread")}
-              onClick={() =>
-                action(() => patch(withBox(`/api/mail/messages/${shown.uid}/`), { folder: readerFolder, seen: false }), t("mail.markedUnread"))
-              }
-            >
-              <Icon name="eye" size={16} />
-            </button>
-            <select
-              className="select-sm"
-              aria-label={t("mail.moveTo")}
-              value=""
-              onChange={(e) =>
-                e.target.value &&
-                action(
-                  () => patch(withBox(`/api/mail/messages/${shown.uid}/`), { folder: readerFolder, move_to: e.target.value }),
-                  t("mail.moved"),
-                )
-              }
-            >
-              <option value="">{t("mail.moveTo")}</option>
-              {folders
-                .filter((f) => f.name !== readerFolder)
-                .map((f) => (
-                  <option key={f.name} value={f.name}>
-                    {folderLabel(t, f)}
-                  </option>
-                ))}
-            </select>
-            <button
-              className="icon-btn danger"
-              title={t("common.delete")}
-              aria-label={t("common.delete")}
-              onClick={() => action(() => del(withBox(`/api/mail/messages/${shown.uid}/?folder=${folderParam}`)), t("mail.deleted"))}
-            >
-              <Icon name="trash" size={16} />
-            </button>
+            {!mobile && (
+              <>
+                <button
+                  className="icon-btn"
+                  title={t("mail2.markUnread")}
+                  aria-label={t("mail2.markUnread")}
+                  onClick={() => readerBulk("unseen", t("mail.markedUnread"))}
+                >
+                  <Icon name="mail" size={16} />
+                </button>
+                {archiveFolder && archiveFolder !== readerFolder && (
+                  <button className="icon-btn" title={t("mobile.archive")} aria-label={t("mobile.archive")} onClick={() => readerBulk("archive", t("mobile.archived"))}>
+                    <Icon name="archive" size={16} />
+                  </button>
+                )}
+                {readerSpecial === "\\Junk" ? (
+                  <button className="icon-btn" title={t("mail2.notSpam")} aria-label={t("mail2.notSpam")} onClick={() => readerBulk("notspam", t("mail2.done.notspam", { n: 1 }))}>
+                    <Icon name="inbox" size={16} />
+                  </button>
+                ) : (
+                  <button className="icon-btn" title={t("mail2.reportSpam")} aria-label={t("mail2.reportSpam")} onClick={() => readerBulk("spam", t("mail2.done.spam", { n: 1 }))}>
+                    <Icon name="alert" size={16} />
+                  </button>
+                )}
+                <button
+                  className="icon-btn danger"
+                  title={t("common.delete")}
+                  aria-label={t("common.delete")}
+                  onClick={() => action(() => del(withBox(`/api/mail/messages/${shown.uid}/?folder=${folderParam}`)), t("mail.deleted"))}
+                >
+                  <Icon name="trash" size={16} />
+                </button>
+              </>
+            )}
+            <MoreMenu label={t("mobile.moreActions")}>
+              {(close) => (
+                <>
+                  {mobile && (
+                    <>
+                      <button role="menuitem" className="menu-item" onClick={() => (close(), readerBulk("unseen", t("mail.markedUnread")))}>
+                        <Icon name="mail" size={18} /> {t("mail2.markUnread")}
+                      </button>
+                      {archiveFolder && archiveFolder !== readerFolder && (
+                        <button role="menuitem" className="menu-item" onClick={() => (close(), readerBulk("archive", t("mobile.archived")))}>
+                          <Icon name="archive" size={18} /> {t("mobile.archive")}
+                        </button>
+                      )}
+                      {readerSpecial === "\\Junk" ? (
+                        <button role="menuitem" className="menu-item" onClick={() => (close(), readerBulk("notspam", t("mail2.done.notspam", { n: 1 })))}>
+                          <Icon name="inbox" size={18} /> {t("mail2.notSpam")}
+                        </button>
+                      ) : (
+                        <button role="menuitem" className="menu-item" onClick={() => (close(), readerBulk("spam", t("mail2.done.spam", { n: 1 })))}>
+                          <Icon name="alert" size={18} /> {t("mail2.reportSpam")}
+                        </button>
+                      )}
+                    </>
+                  )}
+                  <label className="menu-item menu-select">
+                    <Icon name="move" size={18} />
+                    <select
+                      aria-label={t("mail.moveTo")}
+                      value=""
+                      onChange={(e) => {
+                        const dest = e.target.value;
+                        close();
+                        if (dest) action(() => patch(withBox(`/api/mail/messages/${shown.uid}/`), { folder: readerFolder, move_to: dest }), t("mail.moved"));
+                      }}
+                    >
+                      <option value="">{t("mail.moveTo")}</option>
+                      {moveOptions(readerFolder)}
+                    </select>
+                  </label>
+                  {canBlockShown && (
+                    <button
+                      role="menuitem"
+                      className="menu-item"
+                      onClick={() => {
+                        close();
+                        blockSenders([shown.from]).then((ok) => ok && closeMessage());
+                      }}
+                    >
+                      <Icon name="shield" size={18} /> {t("mail2.blockSender", { address: shownSender })}
+                    </button>
+                  )}
+                  {mobile && (
+                    <>
+                      <div className="menu-sep" />
+                      <button
+                        role="menuitem"
+                        className="menu-item danger"
+                        onClick={() => (close(), action(() => del(withBox(`/api/mail/messages/${shown.uid}/?folder=${folderParam}`)), t("mail.deleted")))}
+                      >
+                        <Icon name="trash" size={18} /> {t("common.delete")}
+                      </button>
+                    </>
+                  )}
+                </>
+              )}
+            </MoreMenu>
           </>
         )}
       </div>
@@ -718,14 +1179,17 @@ export default function MailPage() {
         {shown && (
           <>
             <h3 className="reader-subject">{shown.subject || t("mail.noSubject")}</h3>
-            <div className="reader-meta">
-              <div className="row-between reader-from">
-                <strong className="reader-addr">{shown.from}</strong>
-                <span className="small muted nowrap">{formatDate(shown.date)}</span>
-              </div>
-              <div className="small muted reader-addr">
-                {t("mail.to")}: {shown.to}
-                {shown.cc && ` · ${t("mail.cc")}: ${shown.cc}`}
+            <div className="reader-meta reader-meta-av">
+              <MailAvatar from={shown.from} photo={photoOf(shownSender)} size={40} />
+              <div className="reader-meta-text">
+                <div className="row-between reader-from">
+                  <strong className="reader-addr">{shown.from}</strong>
+                  <span className="small muted nowrap">{formatDate(shown.date)}</span>
+                </div>
+                <div className="small muted reader-addr">
+                  {t("mail.to")}: {shown.to}
+                  {shown.cc && ` · ${t("mail.cc")}: ${shown.cc}`}
+                </div>
               </div>
             </div>
             {shown.attachments.length > 0 && (
@@ -766,6 +1230,20 @@ export default function MailPage() {
         )}
       </div>
     </>
+  );
+
+  const dialogFallback = (onClose: () => void) => (error: Error) => (
+    <Modal title={t("mail2.dialogErrorTitle")} onClose={onClose}>
+      <div className="stack">
+        <p>{t("mail2.dialogError")}</p>
+        <p className="small muted">{error.message}</p>
+        <div className="modal-actions">
+          <button className="btn btn-primary" onClick={onClose}>
+            {t("common.close")}
+          </button>
+        </div>
+      </div>
+    </Modal>
   );
 
   return (
@@ -810,7 +1288,7 @@ export default function MailPage() {
           <button className="icon-btn" onClick={() => setShowScheduled(true)} aria-label={t("mail.scheduled")} title={t("mail.scheduled")}>
             <Icon name="clock" />
           </button>
-          <button className="icon-btn" onClick={() => setShowConfidential(true)} aria-label={t("mail.confidentialSent")} title={t("mail.confidentialSent")}>
+          <button className="icon-btn" onClick={() => setShowConfidential(true)} aria-label={t("mail2.confTooltip")} title={t("mail2.confTooltip")}>
             <Icon name="lock" />
           </button>
         </div>
@@ -822,25 +1300,43 @@ export default function MailPage() {
             <Icon name="edit" size={16} /> {t("mail.compose")}
           </button>
           <nav className="mail-folders" aria-label={t("mailui.folders")}>
-            {folders.map((f) => (
-              <button
-                key={f.name}
-                className={`folder-btn ${f.name === folder ? "active" : ""}`}
-                aria-current={f.name === folder ? "true" : undefined}
-                onClick={() => selectFolder(f.name)}
-              >
-                <Icon name={FOLDER_ICONS[f.special || ""] || "folder"} size={16} />
-                <span className="truncate">{folderLabel(t, f)}</span>
-                {f.unseen > 0 && <span className="count">{f.unseen}</span>}
-              </button>
-            ))}
+            {folders.map((f) => {
+              const btn = (
+                <button
+                  key={f.name}
+                  className={`folder-btn ${f.name === folder ? "active" : ""}`}
+                  aria-current={f.name === folder ? "true" : undefined}
+                  onClick={() => selectFolder(f.name)}
+                >
+                  <Icon name={FOLDER_ICONS[f.special || ""] || "folder"} size={16} />
+                  <span className="truncate">{folderLabel(t, f)}</span>
+                  {f.unseen > 0 && <span className="count">{f.unseen}</span>}
+                </button>
+              );
+              if (f.special !== "\\Inbox") return btn;
+              // «З зірочкою» — одразу після «Вхідних», як у Gmail
+              return [
+                btn,
+                <button
+                  key={STARRED}
+                  className={`folder-btn folder-starred ${folder === STARRED ? "active" : ""}`}
+                  aria-current={folder === STARRED ? "true" : undefined}
+                  onClick={() => selectFolder(STARRED)}
+                >
+                  <Icon name="star" size={16} />
+                  <span className="truncate">{t("mail2.starred")}</span>
+                </button>,
+              ];
+            })}
           </nav>
           <Link to="/settings?tab=mail" className="small muted mail-settings-link">
             {t("mail.imapSettings")}
           </Link>
         </aside>
 
-        <section className={`card mail-main ${viewing ? "is-reading" : ""}`}>{viewing ? readerView : listView}</section>
+        <section className={`card mail-main ${viewing ? "is-reading" : ""}`}>
+          <ErrorBoundary resetKey={viewing ? `m${targetUid}` : `l${folder}`}>{viewing ? readerView : listView}</ErrorBoundary>
+        </section>
       </div>
 
       {compose && mailbox && (
@@ -865,9 +1361,21 @@ export default function MailPage() {
           }}
         />
       )}
-      {showScheduled && mailbox && <ScheduledDialog withBox={withBox} onClose={() => setShowScheduled(false)} />}
-      {showSignatures && <SignaturesDialog onClose={() => setShowSignatures(false)} />}
-      {showConfidential && <ConfidentialDialog onClose={() => setShowConfidential(false)} />}
+      {showScheduled && mailbox && (
+        <ErrorBoundary fallback={dialogFallback(() => setShowScheduled(false))}>
+          <ScheduledDialog withBox={withBox} onClose={() => setShowScheduled(false)} />
+        </ErrorBoundary>
+      )}
+      {showSignatures && (
+        <ErrorBoundary fallback={dialogFallback(() => setShowSignatures(false))}>
+          <SignaturesDialog onClose={() => setShowSignatures(false)} />
+        </ErrorBoundary>
+      )}
+      {showConfidential && (
+        <ErrorBoundary fallback={dialogFallback(() => setShowConfidential(false))}>
+          <ConfidentialDialog onClose={() => setShowConfidential(false)} />
+        </ErrorBoundary>
+      )}
       {passcodeInfo && (
         <Modal title={t("conf.passcodeTitle")} onClose={() => setPasscodeInfo(null)}>
           <div className="stack">
@@ -1608,7 +2116,7 @@ function ConfidentialDialog({ onClose }: { onClose: () => void }) {
 
   const load = () =>
     get<ConfidentialItem[]>("/api/mail/confidential/")
-      .then(setItems)
+      .then((r) => setItems(Array.isArray(r) ? r : []))
       .catch((e) => setError(errorText(e)));
   useEffect(() => {
     load();
@@ -1628,6 +2136,7 @@ function ConfidentialDialog({ onClose }: { onClose: () => void }) {
   return (
     <Modal title={t("mail.confidentialSent")} onClose={onClose} wide>
       <div className="stack">
+        <p className="small muted">{t("mail2.confIntro")}</p>
         <p className="small muted">{t("conf.listHint")}</p>
         {items === null && !error && <div className="empty-small">{t("common.loading")}</div>}
         {items && items.length === 0 && <div className="empty-small">{t("conf.empty")}</div>}
@@ -1649,7 +2158,7 @@ function ConfidentialDialog({ onClose }: { onClose: () => void }) {
                       <div className="truncate">{m.subject || t("mail.noSubject")}</div>
                       <div className="small muted">{formatDate(m.created_at)}</div>
                     </td>
-                    <td className="small">{m.recipients.join(", ")}</td>
+                    <td className="small conf-recipients">{recipientsText(m.recipients)}</td>
                     <td className="small">
                       {m.revoked_at ? (
                         <span className="pill pill-danger">{t("conf.statusRevoked")}</span>

@@ -180,6 +180,12 @@ CELERY_BEAT_SCHEDULE = {
         "options": {"expires": 50},
     },
     "send-scheduled-mail": {"task": "apps.mail.tasks.send_scheduled_mail", "schedule": timedelta(minutes=1)},
+    # Заблоковані відправники: нові листи з «Вхідних» → «Спам»
+    "mail-enforce-blocklist": {
+        "task": "apps.mail.tasks.enforce_blocklist",
+        "schedule": timedelta(minutes=1),
+        "options": {"expires": 50},
+    },
     "push-poll-new-mail": {"task": "apps.push.tasks.poll_new_mail", "schedule": timedelta(minutes=1)},
     "purge-expired-confidential": {
         "task": "apps.mail.tasks.purge_expired_confidential",
@@ -281,6 +287,8 @@ REST_FRAMEWORK = {
         # автозбереження чернетки — раз на кілька секунд під час набору
         "mail_draft": "600/hour",
         "user_search": "60/min",
+        # фото профілю (обробка у thumbnailer)
+        "avatar": "20/hour",
     },
     "EXCEPTION_HANDLER": "apps.core.exceptions.exception_handler",
     # Ідентифікація клієнта для лімітів — лише REMOTE_ADDR (його вже виставив uvicorn
