@@ -222,6 +222,22 @@ services:
       timeout: 5s
       retries: 5
 
+  # WebDAV (/dav/) — той самий образ і код, але окремі процеси: Finder копіює сотні файлів
+  # паралельно, і раніше це займало всі воркери backend — вебінтерфейс віддавав 503.
+  # Без ключів пошти, push і health_token; пошту й мініатюри не обслуговує.
+  dav:
+    <<: *backend-common
+    command: ["dav"]
+    environment:
+      <<: *backend-env
+      DAV_WORKERS: ${DAV_WORKERS:-2}
+    networks: [edge, internal]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8000/api/health/')"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
   worker:
     <<: *backend-common
     command: ["worker"]

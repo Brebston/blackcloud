@@ -88,19 +88,22 @@ jobs:
         run: |
           set -eu
           cd "$DEPLOY_PATH"
-          cid="$(docker compose ps -q backend)"
-          [ -n "$cid" ] || { echo "::error::Контейнер backend не запущено"; docker compose ps; exit 1; }
-          status=""
-          for i in $(seq 1 36); do
-            status="$(docker inspect --format '{{.State.Health.Status}}' "$cid" 2>/dev/null || echo unknown)"
-            [ "$status" = "healthy" ] && break
-            sleep 5
+          # backend — вебінтерфейс і API, dav — WebDAV (/dav/), окремі процеси
+          for svc in backend dav; do
+            cid="$(docker compose ps -q "$svc")"
+            [ -n "$cid" ] || { echo "::error::Контейнер $svc не запущено"; docker compose ps; exit 1; }
+            status=""
+            for i in $(seq 1 36); do
+              status="$(docker inspect --format '{{.State.Health.Status}}' "$cid" 2>/dev/null || echo unknown)"
+              [ "$status" = "healthy" ] && break
+              sleep 5
+            done
+            if [ "$status" != "healthy" ]; then
+              echo "::error::$svc не став healthy (стан: $status). Логи: docker compose logs $svc на сервері."
+              docker compose ps
+              exit 1
+            fi
           done
-          if [ "$status" != "healthy" ]; then
-            echo "::error::backend не став healthy (стан: $status). Логи: docker compose logs backend на сервері."
-            docker compose ps
-            exit 1
-          fi
           # Наскрізна перевірка через Traefik (локально, без залежності від NAT loopback роутера)
           domain="$(grep -E '^DOMAIN=' .env | tail -n1 | cut -d= -f2- | tr -d '"'"'"' ')"
           curl -fsS --max-time 15 --resolve "$domain:443:127.0.0.1" "https://$domain/api/health/"
