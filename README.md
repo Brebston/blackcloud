@@ -242,6 +242,8 @@ Document Server займає ~2–3 ГБ RAM і стартує 1–2 хвили�
 | Моніторинг | Uptime Kuma (профіль `monitoring`) + сповіщення в Telegram; `GET /api/health/deep/` з токеном перевіряє БД, Redis, ClamAV, диск (≥85%), сертифікати сайту й пошти, Celery | [docs/MONITORING.md](docs/MONITORING.md) |
 | PWA і push | Встановлення на телефон/комп'ютер, Web Push про нові листи, чат та інші події; окремий сервіс `pusher` — єдиний з виходом в інтернет, без ключів шифрування й пароля БД | [docs/PUSH.md](docs/PUSH.md) |
 | Версії файлів і ZIP | Історія версій із відновленням (усі версії перевіряє антивірус, займають квоту, до 20 / 90 днів), «Завантажити новою версією», завантаження папки як ZIP (потоково, до 10 ГБ) | [docs/FILES.md](docs/FILES.md) |
+| Пошта: групові дії | Вибір кількох листів, «З зірочкою», заблоковані відправники (у «Спам»), аватари відправників і фото профілів | [docs/MAIL.md](docs/MAIL.md) |
+| Логотип у Gmail (BIMI) | DNS + SVG Tiny PS + сертифікат VMC/CMC | [docs/BIMI.md](docs/BIMI.md) |
 | WebDAV | Підключення як мережевого диска (Finder, Windows, Linux, мобільні застосунки) за адресою `https://DOMAIN/dav/` з окремим паролем застосунку | [docs/WEBDAV.md](docs/WEBDAV.md) |
 
 Нові секрети (`health_token`, `vapid_private_key`, `vapid_public_key`) створює `make secrets`; автодеплой сам додає відсутні (`scripts/init-secrets.sh --secrets-only`, наявні файли й `.env` не змінюються).

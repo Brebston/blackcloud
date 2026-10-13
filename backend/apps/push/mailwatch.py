@@ -61,7 +61,9 @@ def _fetch_new(conn, first: int, last: int) -> list[dict]:
             continue  # вже прочитано (напр. власний лист, переміщений фільтром)
         msg = email.message_from_bytes(headers, policy=default_policy)
         name, addr = parseaddr(str(msg["From"] or ""))
-        items.append({"uid": int(uid.group(1)), "from": (name or addr)[:100], "subject": str(msg["Subject"] or "")[:200]})
+        items.append(
+            {"uid": int(uid.group(1)), "from": (name or addr)[:100], "subject": str(msg["Subject"] or "")[:200], "sender": str(msg["From"] or "")}
+        )
     return items[-MAX_PER_RUN:]
 
 
@@ -83,6 +85,10 @@ def check_mailbox(mailbox) -> int:
         first = max(state[1], uidnext - MAX_PER_RUN)
         items = _fetch_new(conn, first, uidnext - 1)
     cache.set(key, current, STATE_TTL)
+    # Листи заблокованих відправників не сповіщаються (їх перенесе в «Спам» apps.mail.tasks.enforce_blocklist)
+    blocked = list(mailbox.blocked_senders.values_list("address", flat=True))
+    if blocked:
+        items = [i for i in items if not imap.sender_matches(i["sender"], blocked)]
     user = mailbox.user
     for item in items:
         with language_of(user):

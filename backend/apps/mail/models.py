@@ -148,3 +148,20 @@ class ScheduledMessage(models.Model):
 
     class Meta:
         ordering = ["send_at"]
+
+
+class BlockedSender(models.Model):
+    """Заблокований відправник (точна адреса або @домен) для скриньки: нові листи від нього
+    worker щохвилини переносить із «Вхідних» у «Спам»."""
+
+    mailbox = models.ForeignKey(Mailbox, on_delete=models.CASCADE, related_name="blocked_senders")
+    address = models.CharField(max_length=320)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["address"]
+        constraints = [models.UniqueConstraint(fields=["mailbox", "address"], name="uniq_blocked_sender")]
+
+    def save(self, *args, **kwargs):
+        self.address = self.address.lower()
+        super().save(*args, **kwargs)

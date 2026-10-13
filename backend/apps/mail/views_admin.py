@@ -1,13 +1,18 @@
 """Адміністрування поштових скриньок: створення додаткових скриньок, перейменування,
-ім'я відправника, квота, вимкнення.
+ім'я відправника, квота, вимкнення, видалення.
 
 Права перевіряються на сервері: IsStaffWith2FA (адмін + вхід з 2FA у цій сесії),
 а скриньками інших адміністраторів керує лише суперкористувач."""
 
+import logging
+
+from django.apps import apps as django_apps
 from django.conf import settings
 from django.contrib.auth import get_user_model
+from django.core.cache import cache
 from django.db import IntegrityError, transaction
 from django.utils.translation import gettext as _
+from django.utils.translation import gettext_noop
 from rest_framework import serializers
 from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
 from rest_framework.response import Response
@@ -15,11 +20,15 @@ from rest_framework.views import APIView
 
 from apps.core.audit import audit
 from apps.core.permissions import IsStaffWith2FA
+from apps.core.realtime import notify
+
+from . import imap
 
 from .models import LOCAL_PART_VALIDATOR, Alias, MailDomain, Mailbox
 
 User = get_user_model()
 MAX_MAILBOXES_PER_USER = 20
+logger = logging.getLogger("blackcloud")
 
 
 def _check_target(request, user):
@@ -116,8 +125,150 @@ class AdminMailboxesView(APIView):
         return Response(_serialize(mb), status=201)
 
 
+class DeleteMailboxSerializer(serializers.Serializer):
+    password = serializers.CharField(max_length=1024, trim_whitespace=False)
+    confirm = serializers.CharField(max_length=320)
+    # Лише суперкористувач: видалити запис, навіть якщо листи не вдалося стерти через IMAP
+    force = serializers.BooleanField(required=False, default=False)
+
+
+def _list_folders(conn) -> list[tuple[str, str, bool]]:
+    """[(назва, роздільник, можна_вибрати)] — усі теки скриньки, включно з \\Noselect."""
+    typ, data = conn.list()
+    if typ != "OK":
+        raise imap.MailUnavailable()
+    out = []
+    for raw in data or []:
+        if not isinstance(raw, bytes):
+            continue
+        m = imap.LIST_RE.match(raw)
+        if not m:
+            continue
+        name = m.group("name").decode().strip()
+        if name.startswith('"') and name.endswith('"'):
+            name = name[1:-1].replace('\\"', '"').replace("\\\\", "\\")
+        delim = m.group("delim").decode().strip('"')
+        selectable = "\\noselect" not in m.group("flags").decode().lower()
+        out.append((imap.decode_folder(name), delim if delim != "NIL" else "", selectable))
+    return out
+
+
+def wipe_mailbox(address: str) -> int:
+    """Стирає всі листи й теки скриньки через master-сесію Dovecot. Повертає кількість листів.
+
+    Будь-яка помилка IMAP — MailUnavailable (503): запис скриньки тоді не видаляється,
+    щоб на диску не лишилося листів без власника."""
+    removed = 0
+    try:
+        with imap.imap_session(address) as conn:
+            folders = _list_folders(conn)
+            for name, _delim, selectable in folders:
+                if not selectable:
+                    continue
+                typ, data = conn.select(imap.quote(name), readonly=False)
+                if typ != "OK":
+                    raise imap.MailUnavailable()
+                count = int((data or [b"0"])[0] or 0)
+                if count:
+                    typ, _r = conn.uid("STORE", "1:*", "+FLAGS.SILENT", "(\\Deleted)")
+                    if typ != "OK":
+                        raise imap.MailUnavailable()
+                    typ, _r = conn.expunge()
+                    if typ != "OK":
+                        raise imap.MailUnavailable()
+                    removed += count
+                conn.close()
+            # Спочатку найглибші теки; «Вхідні» не видаляються (їх не можна видалити в IMAP)
+            nested = [f for f in folders if f[0].upper() != "INBOX"]
+            nested.sort(key=lambda f: (f[0].count(f[1]) if f[1] else 0, len(f[0])), reverse=True)
+            for name, _delim, _sel in nested:
+                conn.unsubscribe(imap.quote(name))
+                typ, _r = conn.delete(imap.quote(name))
+                if typ != "OK":
+                    logger.info("mailbox wipe: folder not deleted (%s)", address)
+            typ, data = conn.select(imap.quote("INBOX"), readonly=True)
+            if typ != "OK" or int((data or [b"0"])[0] or 0) != 0:
+                raise imap.MailUnavailable()
+    except imap.MailUnavailable:
+        raise
+    except (OSError, ValueError, imap.imaplib.IMAP4.error) as exc:
+        raise imap.MailUnavailable() from exc
+    return removed
+
+
 class AdminMailboxDetailView(APIView):
     permission_classes = [IsStaffWith2FA]
+
+    def delete(self, request, pk):
+        """Видалити скриньку (користувач лишається): спершу листи через IMAP, потім записи."""
+        from apps.accounts.models import is_reserved_username
+        from apps.accounts.views import _require_password
+
+        mb = Mailbox.objects.select_related("domain", "user").filter(pk=pk).first()
+        if mb is None:
+            raise NotFound()
+        _check_target(request, mb.user)
+        if is_reserved_username(mb.local_part) and not request.user.is_superuser:
+            raise PermissionDenied(_("Службові скриньки видаляє лише суперкористувач."))
+        ser = DeleteMailboxSerializer(data=request.data)
+        ser.is_valid(raise_exception=True)
+        d = ser.validated_data
+        address = mb.address
+        if d["confirm"].strip().lower() != address:
+            raise ValidationError({"confirm": [_("Введіть адресу скриньки для підтвердження.")]})
+        if d["force"] and not request.user.is_superuser:
+            raise PermissionDenied(_("Примусове видалення доступне лише суперкористувачу."))
+        _require_password(request, d["password"])
+
+        # Dovecot бачить лише активні скриньки — вимкнену на час очищення вмикаємо
+        was_active = mb.active
+        if not was_active:
+            Mailbox.objects.filter(pk=mb.pk).update(active=True)
+        try:
+            removed = wipe_mailbox(address)
+            wiped = True
+        except imap.MailUnavailable as exc:
+            if not was_active:
+                Mailbox.objects.filter(pk=mb.pk).update(active=False)
+            if not d["force"]:
+                audit(request, "admin.mailbox_delete_failed", target=address)
+                raise imap.MailUnavailable(
+                    _("Не вдалося стерти листи через IMAP — скриньку не видалено. Спробуйте пізніше.")
+                ) from exc
+            removed, wiped = 0, False
+
+        with transaction.atomic():
+            aliases = Alias.objects.filter(destination=address) | Alias.objects.filter(source=address)
+            alias_count = aliases.count()
+            aliases.delete()
+            mb.scheduled_messages.all().delete()
+            try:
+                blocked = django_apps.get_model("mail", "BlockedSender")
+            except LookupError:
+                blocked = None
+            if blocked is not None and any(f.name == "mailbox" for f in blocked._meta.get_fields()):
+                blocked.objects.filter(mailbox=mb).delete()
+            mailbox_id = mb.pk
+            mb.delete()
+        cache.delete(f"push:mail:{mailbox_id}")
+        audit(
+            request,
+            "admin.mailbox_deleted",
+            target=address,
+            owner=mb.user.username,
+            messages=removed,
+            aliases=alias_count,
+            wiped=wiped,
+        )
+        notify(
+            mb.user,
+            "security",
+            gettext_noop("Поштову скриньку видалено"),
+            gettext_noop("Адміністратор видалив скриньку %(address)s разом з усіма листами."),
+            "/mail",
+            params={"address": address},
+        )
+        return Response(status=204)
 
     def patch(self, request, pk):
         mb = Mailbox.objects.select_related("domain", "user").filter(pk=pk).first()

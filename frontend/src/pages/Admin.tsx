@@ -1,6 +1,7 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { errorText, get, patch, post, del } from "../api/client";
 import type { Paginated } from "../api/types";
+import Avatar from "../components/Avatar";
 import Icon from "../components/Icon";
 import Modal from "../components/Modal";
 import { useToast } from "../components/Toast";
@@ -21,6 +22,10 @@ interface AdminUser {
   used_bytes: number;
   date_joined: string;
   last_login: string | null;
+  avatar_url?: string | null;
+  blocked_reason?: string;
+  blocked_at?: string | null;
+  blocked_by?: string | null;
 }
 
 interface Invite {
@@ -54,6 +59,7 @@ export default function AdminPage() {
   const [q, setQ] = useState("");
   const [editing, setEditing] = useState<AdminUser | null>(null);
   const [creating, setCreating] = useState(false);
+  const [blocking, setBlocking] = useState<AdminUser | null>(null);
   const [denied, setDenied] = useState("");
 
   const loadUsers = useCallback(async () => {
@@ -143,7 +149,7 @@ export default function AdminPage() {
             </button>
           </div>
           <div className="card table-card">
-            <table className="table">
+            <table className="table admin-users-table">
               <thead>
                 <tr>
                   <th>{t("admin.users.colUser")}</th>
@@ -159,11 +165,16 @@ export default function AdminPage() {
                   return (
                     <tr key={u.id} className={u.is_active ? "" : "inactive"}>
                       <td>
-                        <div>
-                          <strong>{u.username}</strong> {u.is_staff && <span className="pill">{t("admin.users.pillAdmin")}</span>}
-                          {!u.is_active && <span className="pill pill-danger">{t("admin.users.pillBlocked")}</span>}
+                        <div className="admin-user-cell">
+                          <Avatar name={u.display_name || u.username} email={u.email} url={u.avatar_url} size={32} />
+                          <div className="admin-user-text">
+                            <div>
+                              <strong>{u.username}</strong> {u.is_staff && <span className="pill">{t("admin.users.pillAdmin")}</span>}
+                              {!u.is_active && <BlockedPill user={u} />}
+                            </div>
+                            <div className="small muted truncate">{u.email}</div>
+                          </div>
                         </div>
-                        <div className="small muted">{u.email}</div>
                       </td>
                       <td className="quota-cell">
                         <div className="quota-track small-track">
@@ -173,12 +184,35 @@ export default function AdminPage() {
                           {formatBytes(u.used_bytes)} / {formatBytes(u.quota_bytes)}
                         </div>
                       </td>
-                      <td>{u.has_2fa ? <span className="pill pill-success">{t("common.yes")}</span> : <span className="pill pill-warning">{t("common.no")}</span>}</td>
-                      <td className="small muted">{formatDate(u.last_login)}</td>
-                      <td>
-                        <button className="btn btn-sm" onClick={() => setEditing(u)}>
-                          {t("admin.users.manage")}
-                        </button>
+                      <td className="col-2fa">{u.has_2fa ? <span className="pill pill-success">{t("common.yes")}</span> : <span className="pill pill-warning">{t("common.no")}</span>}</td>
+                      <td className="small muted col-last-login">{formatDate(u.last_login)}</td>
+                      <td className="col-user-actions">
+                        <div className="row gap-sm admin-user-actions">
+                          <button className="btn btn-sm" onClick={() => setEditing(u)}>
+                            {t("admin.users.manage")}
+                          </button>
+                          {u.id !== user?.id && (u.is_active ? (
+                            <button className="btn btn-sm btn-danger-outline" onClick={() => setBlocking(u)}>
+                              <Icon name="lock" size={14} /> {t("admin2.block.block")}
+                            </button>
+                          ) : (
+                            <button
+                              className="btn btn-sm"
+                              onClick={async () => {
+                                if (!window.confirm(t("admin2.block.unblockConfirm", { name: u.username }))) return;
+                                try {
+                                  await post(`/api/admin/users/${u.id}/unblock/`);
+                                  toast(t("admin2.block.unblocked", { name: u.username }), "success");
+                                  loadUsers();
+                                } catch (err) {
+                                  toast(errorText(err), "error");
+                                }
+                              }}
+                            >
+                              {t("admin2.block.unblock")}
+                            </button>
+                          ))}
+                        </div>
                       </td>
                     </tr>
                   );
@@ -200,10 +234,25 @@ export default function AdminPage() {
           user={editing}
           isSelf={editing.id === user?.id}
           onClose={() => setEditing(null)}
+          onBlock={() => {
+            setBlocking(editing);
+            setEditing(null);
+          }}
           onSaved={() => {
             setEditing(null);
             loadUsers();
             toast(t("common.saved"), "success");
+          }}
+        />
+      )}
+      {blocking && (
+        <BlockUserDialog
+          user={blocking}
+          onClose={() => setBlocking(null)}
+          onDone={() => {
+            toast(t("admin2.block.blocked", { name: blocking.username }), "success");
+            setBlocking(null);
+            loadUsers();
           }}
         />
       )}
@@ -220,10 +269,86 @@ export default function AdminPage() {
   );
 }
 
-function EditUserDialog({ user, isSelf, onClose, onSaved }: { user: AdminUser; isSelf: boolean; onClose: () => void; onSaved: () => void }) {
+function BlockedPill({ user }: { user: AdminUser }) {
+  const t = useT();
+  const tip = [
+    user.blocked_reason ? t("admin2.block.reasonTip", { reason: user.blocked_reason }) : t("admin2.block.noReason"),
+    user.blocked_at ? t("admin2.block.whenTip", { date: formatDate(user.blocked_at), by: user.blocked_by || "—" }) : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
+  return (
+    <span className="pill pill-danger" title={tip} aria-label={`${t("admin.users.pillBlocked")}. ${tip}`} tabIndex={0}>
+      {t("admin.users.pillBlocked")}
+    </span>
+  );
+}
+
+function BlockUserDialog({ user, onClose, onDone }: { user: AdminUser; onClose: () => void; onDone: () => void }) {
+  const t = useT();
+  const [reason, setReason] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    setError("");
+    if (!reason.trim()) return setError(t("admin2.block.reasonRequired"));
+    if (!password) return setError(t("admin.passwordRequired"));
+    setBusy(true);
+    try {
+      await post(`/api/admin/users/${user.id}/block/`, { reason: reason.trim(), password });
+      onDone();
+    } catch (err) {
+      setError(errorText(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Modal title={t("admin2.block.title", { name: user.username })} onClose={onClose}>
+      <form className="stack" onSubmit={submit}>
+        <p className="small">{t("admin2.block.explain")}</p>
+        <label>
+          {t("admin2.block.reason")}
+          <textarea rows={3} maxLength={500} value={reason} autoFocus onChange={(e) => setReason(e.target.value)} />
+          <span className="small muted">{t("admin2.block.reasonCount", { n: reason.length })}</span>
+        </label>
+        <label>
+          {t("admin.yourPassword")}
+          <input type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} />
+        </label>
+        {error && <div className="form-error">{error}</div>}
+        <div className="modal-actions">
+          <button type="button" className="btn" onClick={onClose}>
+            {t("common.cancel")}
+          </button>
+          <button className="btn btn-danger" disabled={busy}>
+            <Icon name="lock" size={16} /> {t("admin2.block.block")}
+          </button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+function EditUserDialog({
+  user,
+  isSelf,
+  onClose,
+  onSaved,
+  onBlock,
+}: {
+  user: AdminUser;
+  isSelf: boolean;
+  onClose: () => void;
+  onSaved: () => void;
+  onBlock: () => void;
+}) {
   const [quotaGb, setQuotaGb] = useState(String(Math.round((user.quota_bytes / 1024 ** 3) * 100) / 100));
   const t = useT();
-  const [active, setActive] = useState(user.is_active);
   const [error, setError] = useState("");
 
   const save = async (e: FormEvent) => {
@@ -231,7 +356,7 @@ function EditUserDialog({ user, isSelf, onClose, onSaved }: { user: AdminUser; i
     const q = Number(quotaGb);
     if (!Number.isFinite(q) || q < 0 || q > 100000) return setError(t("admin.edit.quotaInvalid"));
     try {
-      await patch(`/api/admin/users/${user.id}/`, { quota_gb: q, is_active: active });
+      await patch(`/api/admin/users/${user.id}/`, { quota_gb: q });
       onSaved();
     } catch (err) {
       setError(errorText(err));
@@ -248,9 +373,26 @@ function EditUserDialog({ user, isSelf, onClose, onSaved }: { user: AdminUser; i
     }
   };
 
+  const unblock = async () => {
+    if (!window.confirm(t("admin2.block.unblockConfirm", { name: user.username }))) return;
+    try {
+      await post(`/api/admin/users/${user.id}/unblock/`);
+      onSaved();
+    } catch (err) {
+      setError(errorText(err));
+    }
+  };
+
   return (
     <Modal title={user.username} onClose={onClose}>
       <form className="stack" onSubmit={save}>
+        <div className="admin-user-cell">
+          <Avatar name={user.display_name || user.username} email={user.email} url={user.avatar_url} size={48} />
+          <div className="admin-user-text">
+            <strong className="truncate">{user.display_name || user.username}</strong>
+            <span className="small muted truncate">{user.email}</span>
+          </div>
+        </div>
         <p className="small muted">
           {t("admin.edit.summary", { used: formatBytes(user.used_bytes), date: formatDate(user.date_joined, false) })}
         </p>
@@ -258,10 +400,29 @@ function EditUserDialog({ user, isSelf, onClose, onSaved }: { user: AdminUser; i
           {t("admin.edit.quotaGb")}
           <input type="number" min={0} step="0.5" value={quotaGb} onChange={(e) => setQuotaGb(e.target.value)} />
         </label>
-        <label className="check">
-          <input type="checkbox" checked={active} disabled={isSelf} onChange={(e) => setActive(e.target.checked)} />
-          {t("admin.edit.active")}
-        </label>
+        {!isSelf && (
+          <div className={`admin-block-box ${user.is_active ? "" : "is-blocked"}`}>
+            {user.is_active ? (
+              <>
+                <div className="small muted">{t("admin2.block.activeHint")}</div>
+                <button type="button" className="btn btn-danger-outline" onClick={onBlock}>
+                  <Icon name="lock" size={16} /> {t("admin2.block.block")}
+                </button>
+              </>
+            ) : (
+              <>
+                <div className="small">
+                  <strong>{t("admin.users.pillBlocked")}</strong>
+                  {user.blocked_at && <> · {t("admin2.block.whenTip", { date: formatDate(user.blocked_at), by: user.blocked_by || "—" })}</>}
+                  <div className="break-anywhere">{user.blocked_reason ? t("admin2.block.reasonTip", { reason: user.blocked_reason }) : t("admin2.block.noReason")}</div>
+                </div>
+                <button type="button" className="btn" onClick={unblock}>
+                  {t("admin2.block.unblock")}
+                </button>
+              </>
+            )}
+          </div>
+        )}
         {error && <div className="form-error">{error}</div>}
         <div className="modal-actions">
           {user.has_2fa && !isSelf && (

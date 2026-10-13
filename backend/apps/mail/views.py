@@ -1,3 +1,4 @@
+import logging
 import uuid
 
 from django.conf import settings
@@ -22,8 +23,10 @@ from apps.core.tickets import issue_ticket, peek_ticket
 from apps.storage.services import content_disposition
 
 from . import imap
-from .models import ConfidentialMessage, Mailbox, Signature, ScheduledMessage
+from .models import BlockedSender, ConfidentialMessage, Mailbox, Signature, ScheduledMessage
 from .passwords import dovecot_hash, generate_client_password
+
+log = logging.getLogger("blackcloud")
 
 
 def _mailbox(request) -> Mailbox:
@@ -111,9 +114,29 @@ class MessagesView(APIView):
             page = int(request.query_params.get("page", 1))
         except ValueError:
             page = 1
-        return Response(
-            imap.list_messages(mb.address, _folder(request), page=page, query=request.query_params.get("q", ""))
+        folder = _folder(request)
+        query = request.query_params.get("q", "")
+        if folder == imap.STARRED:
+            # Віртуальна тека «З зірочкою»: позначені листи з усіх тек (кожен — зі своєю текою)
+            return Response(imap.list_starred(mb.address, page=page, query=query))
+        return Response(imap.list_messages(mb.address, folder, page=page, query=query))
+
+
+class BulkView(APIView):
+    """Групова дія над вибраними листами однієї теки (одна IMAP-сесія, набори UID)."""
+
+    def post(self, request):
+        mb = _mailbox(request)
+        folder = request.data.get("folder") or "INBOX"
+        if not isinstance(folder, str) or len(folder) > 200 or folder == imap.STARRED:
+            raise ValidationError({"folder": [_("Невірна назва теки.")]})
+        target = request.data.get("target")
+        action = str(request.data.get("action") or "")
+        result = imap.bulk_action(
+            mb.address, folder, request.data.get("uids"), action, target if isinstance(target, str) else None
         )
+        audit(request, "mail.bulk", mailbox=mb.address, op=action, count=result["count"])
+        return Response(result)
 
 
 class MessageDetailView(APIView):
@@ -350,6 +373,77 @@ class SignatureDetailView(APIView):
         return Response(status=204)
 
 
+# ═══════════════════════════ Заблоковані відправники ═══════════════════════════
+
+MAX_BLOCKED = 1000
+MAX_BLOCK_AT_ONCE = 100
+
+
+def _blocked_info(b: BlockedSender) -> dict:
+    return {
+        "id": b.pk,
+        "mailbox": str(b.mailbox_id),
+        "mailbox_address": b.mailbox.address,
+        "address": b.address,
+        "created_at": b.created_at,
+    }
+
+
+class BlockedView(APIView):
+    """Список/додавання заблокованих відправників (лише власні скриньки користувача).
+
+    Нові листи від них worker щохвилини переносить у «Спам»; наявні у «Вхідних» —
+    переносяться одразу під час блокування."""
+
+    def get(self, request):
+        qs = BlockedSender.objects.select_related("mailbox__domain").filter(mailbox__user=request.user, mailbox__active=True)
+        if request.query_params.get("mailbox"):
+            qs = qs.filter(mailbox=_mailbox(request))
+        return Response([_blocked_info(b) for b in qs.order_by("mailbox__created_at", "address")[:5000]])
+
+    def post(self, request):
+        mb = _mailbox(request)
+        values = request.data.get("addresses")
+        if values is None:
+            values = [request.data.get("address")]
+        if not isinstance(values, list) or not values or len(values) > MAX_BLOCK_AT_ONCE:
+            raise ValidationError({"address": [_("Максимум %(n)s адрес за раз.") % {"n": MAX_BLOCK_AT_ONCE}]})
+        own = {m.address.lower() for m in Mailbox.objects.select_related("domain").filter(user=request.user)}
+        own_domains = {"@" + a.rpartition("@")[2] for a in own}
+        entries = []
+        for value in values:
+            entry = imap.normalize_block_entry(value)
+            if entry in own or entry in own_domains:
+                raise ValidationError({"address": [_("Не можна заблокувати власну адресу або домен.")]})
+            if entry not in entries:
+                entries.append(entry)
+        existing = set(BlockedSender.objects.filter(mailbox=mb, address__in=entries).values_list("address", flat=True))
+        new = [e for e in entries if e not in existing]
+        if BlockedSender.objects.filter(mailbox=mb).count() + len(new) > MAX_BLOCKED:
+            raise ValidationError({"address": [_("Максимум %(n)s заблокованих адрес.") % {"n": MAX_BLOCKED}]})
+        for entry in new:
+            BlockedSender.objects.get_or_create(mailbox=mb, address=entry)
+        moved = 0
+        try:
+            moved = imap.apply_blocklist_for(mb.address, entries)
+        except Exception as exc:  # блокування збережено; worker перенесе листи пізніше
+            log.info("blocklist apply %s: %s", mb.pk, exc.__class__.__name__)
+        audit(request, "mail.sender_blocked", mailbox=mb.address, count=len(new))
+        items = BlockedSender.objects.select_related("mailbox__domain").filter(mailbox=mb, address__in=entries)
+        return Response({"blocked": [_blocked_info(b) for b in items], "moved": moved}, status=201)
+
+
+class BlockedDetailView(APIView):
+    def delete(self, request, pk):
+        item = BlockedSender.objects.select_related("mailbox__domain").filter(pk=pk, mailbox__user=request.user).first()
+        if item is None:
+            raise NotFound()
+        address = item.mailbox.address
+        item.delete()
+        audit(request, "mail.sender_unblocked", mailbox=address)
+        return Response(status=204)
+
+
 # ═══════════════════════════ Конфіденційні листи ═══════════════════════════
 
 
@@ -361,7 +455,8 @@ class ConfidentialListView(APIView):
                 {
                     "id": str(m.pk),
                     "subject": m.subject,
-                    "recipients": m.recipients,
+                    # У базі — рядок «a@x, b@y»; клієнту віддаємо список
+                    "recipients": [a.strip() for a in (m.recipients or "").split(",") if a.strip()],
                     "from_address": m.from_address,
                     "created_at": m.created_at,
                     "expires_at": m.expires_at,

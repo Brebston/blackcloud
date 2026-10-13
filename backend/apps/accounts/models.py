@@ -86,6 +86,14 @@ class User(AbstractBaseUser, PermissionsMixin):
     quota_bytes = models.BigIntegerField(default=default_quota)
     used_bytes = models.BigIntegerField(default=0)
 
+    # Фото профілю: 0 — немає; інакше номер версії (для URL і ETag). Самі байти — в UserAvatar.
+    avatar_version = models.PositiveIntegerField(default=0)
+
+    # Блокування адміністратором (is_active=False + причина). Помилка входу лишається загальною.
+    blocked_reason = models.CharField(max_length=500, blank=True)
+    blocked_at = models.DateTimeField(null=True, blank=True)
+    blocked_by = models.ForeignKey("self", null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+
     objects = UserManager()
 
     USERNAME_FIELD = "username"
@@ -105,6 +113,12 @@ class User(AbstractBaseUser, PermissionsMixin):
     def has_2fa(self) -> bool:
         device = getattr(self, "totp_device", None)
         return bool(device and device.confirmed)
+
+    @property
+    def avatar_url(self) -> str | None:
+        if not self.avatar_version:
+            return None
+        return f"/api/users/{self.pk}/avatar/?v={self.avatar_version}"
 
     def set_password(self, raw_password):
         super().set_password(raw_password)
@@ -222,3 +236,21 @@ class Invite(models.Model):
     @property
     def is_valid(self) -> bool:
         return self.used_at is None and self.expires_at > timezone.now()
+
+
+class UserAvatar(models.Model):
+    """Фото профілю.
+
+    Завантажений оригінал (до 5 МБ) зберігається зашифрованим (Fernet) лише до обробки:
+    декодування недовірених зображень виконує ізольований сервіс thumbnailer (через worker),
+    а не веб-процес. Готове фото — квадрат 256×256 WebP без EXIF — невелике, тож лежить у БД.
+    """
+
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name="avatar", primary_key=True)
+    image = models.BinaryField(blank=True, default=b"")
+    content_type = models.CharField(max_length=40, blank=True)
+    # Оригінал, що чекає на обробку: Fernet-токен; pending_id захищає від гонок двох завантажень
+    pending = models.BinaryField(blank=True, default=b"")
+    pending_id = models.UUIDField(null=True, blank=True)
+    failed = models.BooleanField(default=False)
+    updated_at = models.DateTimeField(auto_now=True)

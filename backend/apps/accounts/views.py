@@ -30,6 +30,7 @@ from .models import Invite, Preferences, User, UserSession
 from .serializers import (
     AdminCreateUserSerializer,
     AdminUserSerializer,
+    BlockUserSerializer,
     ChangePasswordSerializer,
     DisableTwoFactorSerializer,
     InviteSerializer,
@@ -401,6 +402,25 @@ def _revoke_all_sessions(user) -> None:
     close_user_sockets(user.pk)
 
 
+def _mark_blocked(user, by, reason: str) -> None:
+    """Акаунт уже is_active=False: записуємо причину й обриваємо доступ.
+
+    Сесії видаляються, WebSocket закриваються; паролі WebDAV і вхід перевіряють is_active,
+    а помилка входу для заблокованого лишається загальною («невірний логін або пароль»)."""
+    user.blocked_reason = reason[:500]
+    user.blocked_at = timezone.now()
+    user.blocked_by = by
+    user.save(update_fields=["blocked_reason", "blocked_at", "blocked_by"])
+    _revoke_all_sessions(user)
+
+
+def _mark_unblocked(user) -> None:
+    user.blocked_reason = ""
+    user.blocked_at = None
+    user.blocked_by = None
+    user.save(update_fields=["blocked_reason", "blocked_at", "blocked_by"])
+
+
 class SessionsViewSet(viewsets.GenericViewSet, mixins.ListModelMixin):
     serializer_class = SessionSerializer
     pagination_class = None
@@ -473,7 +493,7 @@ class AdminUserViewSet(
     serializer_class = AdminUserSerializer
 
     def get_queryset(self):
-        qs = User.objects.select_related("totp_device").order_by("username")
+        qs = User.objects.select_related("totp_device", "blocked_by").order_by("username")
         q = self.request.query_params.get("q")
         if q:
             qs = qs.filter(Q(username__icontains=q) | Q(email__icontains=q) | Q(display_name__icontains=q))
@@ -495,10 +515,44 @@ class AdminUserViewSet(
             raise ValidationError({"is_active": [_("Не можна деактивувати себе.")]})
         if "is_staff" in serializer.validated_data and not self.request.user.is_superuser:
             raise PermissionDenied(_("Лише суперкористувач може змінювати права адміністратора."))
+        was_active = target.is_active
         user = serializer.save()
-        if user.is_active is False:
-            _revoke_all_sessions(user)
+        if user.is_active is False and was_active:
+            _mark_blocked(user, self.request.user, "")
+        elif user.is_active and not was_active:
+            _mark_unblocked(user)
         audit(self.request, "admin.user_updated", target=user.username, changes=list(serializer.validated_data))
+
+    @action(detail=True, methods=["post"])
+    def block(self, request, pk=None):
+        """Заблокувати акаунт: причина обов'язкова, дію підтверджує пароль адміністратора."""
+        user = self.get_object()
+        if user == request.user:
+            raise ValidationError({"detail": _("Не можна заблокувати себе.")})
+        self._check_target(user)
+        ser = BlockUserSerializer(data=request.data)
+        ser.is_valid(raise_exception=True)
+        reason = ser.validated_data["reason"].strip()
+        if not reason:
+            raise ValidationError({"reason": [_("Вкажіть причину блокування.")]})
+        _require_password(request, ser.validated_data["password"])
+        user.is_active = False
+        user.save(update_fields=["is_active"])
+        _mark_blocked(user, request.user, reason)
+        audit(request, "admin.user_blocked", target=user.username, reason=reason)
+        return Response(AdminUserSerializer(user).data)
+
+    @action(detail=True, methods=["post"])
+    def unblock(self, request, pk=None):
+        user = self.get_object()
+        self._check_target(user)
+        if user.is_active:
+            return Response(AdminUserSerializer(user).data)
+        user.is_active = True
+        user.save(update_fields=["is_active"])
+        _mark_unblocked(user)
+        audit(request, "admin.user_unblocked", target=user.username)
+        return Response(AdminUserSerializer(user).data)
 
     def create(self, request):
         ser = AdminCreateUserSerializer(data=request.data, context={"allow_reserved": request.user.is_superuser})

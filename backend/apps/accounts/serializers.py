@@ -10,6 +10,7 @@ from .models import Invite, Preferences, User, UserSession
 class UserSerializer(serializers.ModelSerializer):
     has_2fa = serializers.BooleanField(read_only=True)
     mailbox = serializers.SerializerMethodField()
+    avatar_url = serializers.CharField(read_only=True)
 
     class Meta:
         model = User
@@ -24,6 +25,7 @@ class UserSerializer(serializers.ModelSerializer):
             "used_bytes",
             "date_joined",
             "mailbox",
+            "avatar_url",
         ]
         read_only_fields = fields
 
@@ -133,6 +135,8 @@ def session_public_id(session_key: str) -> str:
 
 class AdminUserSerializer(serializers.ModelSerializer):
     has_2fa = serializers.BooleanField(read_only=True)
+    avatar_url = serializers.CharField(read_only=True)
+    blocked_by = serializers.CharField(source="blocked_by.username", read_only=True, default=None)
     quota_gb = serializers.FloatField(write_only=True, required=False, min_value=0, max_value=100000)
 
     class Meta:
@@ -150,8 +154,15 @@ class AdminUserSerializer(serializers.ModelSerializer):
             "quota_gb",
             "date_joined",
             "last_login",
+            "avatar_url",
+            "blocked_reason",
+            "blocked_at",
+            "blocked_by",
         ]
-        read_only_fields = ["id", "username", "email", "has_2fa", "used_bytes", "date_joined", "last_login", "quota_bytes"]
+        read_only_fields = [
+            "id", "username", "email", "has_2fa", "used_bytes", "date_joined", "last_login", "quota_bytes",
+            "blocked_reason", "blocked_at",
+        ]
 
     def update(self, instance, validated_data):
         quota_gb = validated_data.pop("quota_gb", None)
@@ -178,6 +189,13 @@ class InviteSerializer(serializers.ModelSerializer):
 
 
 class PublicUserSerializer(serializers.ModelSerializer):
+    avatar_url = serializers.CharField(read_only=True)
+
     class Meta:
         model = User
-        fields = ["id", "username", "display_name"]
+        fields = ["id", "username", "display_name", "avatar_url"]
+
+
+class BlockUserSerializer(serializers.Serializer):
+    reason = serializers.CharField(max_length=500)
+    password = serializers.CharField(max_length=1024, trim_whitespace=False)

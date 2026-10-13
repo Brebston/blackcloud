@@ -8,6 +8,7 @@ import type { TKey } from "../i18n";
 import { useBadges } from "../lib/badges";
 import { formatDate } from "../lib/format";
 import { isIOS, isStandalone } from "../lib/pwa";
+import Avatar from "./Avatar";
 import Icon from "./Icon";
 import Modal from "./Modal";
 
@@ -28,6 +29,7 @@ const MORE: { to: string; icon: string; label: TKey; staff?: boolean }[] = [
 const badgeText = (n: number) => (n > 99 ? "99+" : String(n));
 
 export default function MobileNav({
+  profile,
   isStaff,
   isDark,
   notifications,
@@ -36,6 +38,7 @@ export default function MobileNav({
   onMarkAll,
   onLogout,
 }: {
+  profile?: { name: string; email: string; url?: string | null; sub: string };
   isStaff: boolean;
   isDark: boolean;
   notifications: Notification[];
@@ -84,6 +87,16 @@ export default function MobileNav({
 
       {open && (
         <Modal title={t("mobile.more")} onClose={() => setOpen(false)} className="more-sheet">
+          {profile && (
+            <button type="button" className="more-profile" onClick={() => go("/settings?tab=profile")}>
+              <Avatar name={profile.name} email={profile.email} url={profile.url} size={44} />
+              <span className="more-profile-text">
+                <strong className="truncate">{profile.name}</strong>
+                <span className="small muted truncate">{profile.sub}</span>
+              </span>
+              <Icon name="chevronRight" size={18} />
+            </button>
+          )}
           <div className="more-grid">
             {MORE.filter((m) => !m.staff || isStaff).map((m) => (
               <button key={m.to} type="button" className={`more-item ${pathname.startsWith(m.to) ? "active" : ""}`} onClick={() => go(m.to)}>

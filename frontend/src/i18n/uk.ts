@@ -10,6 +10,8 @@ import * as publicShare from "./parts/publicShare";
 import * as office from "./parts/office";
 import * as admin from "./parts/admin";
 import * as misc from "./parts/misc";
+import * as mail2 from "./parts/mail2";
+import * as admin2 from "./parts/admin2";
 import * as mailui from "./parts/mailui";
 import * as push from "./parts/push";
 import * as files2 from "./parts/files2";
@@ -367,6 +369,8 @@ const uk = {
   ...office.uk,
   ...admin.uk,
   ...misc.uk,
+  ...mail2.uk,
+  ...admin2.uk,
   ...mailui.uk,
   ...push.uk,
   ...files2.uk,

@@ -66,7 +66,12 @@ class ConversationSerializer(serializers.ModelSerializer):
 
     def get_participants(self, obj):
         return [
-            {"username": p.user.username, "display_name": p.user.display_name, "is_admin": p.is_admin}
+            {
+                "username": p.user.username,
+                "display_name": p.user.display_name,
+                "is_admin": p.is_admin,
+                "avatar_url": p.user.avatar_url,
+            }
             for p in obj.participants.all()
         ]
 
