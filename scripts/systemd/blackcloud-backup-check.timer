@@ -1,0 +1,10 @@
+[Unit]
+Description=BlackCloud: щонеділі о 05:00 — перевірка резервних копій
+
+[Timer]
+OnCalendar=Sun *-*-* 05:00:00
+RandomizedDelaySec=10m
+Persistent=true
+
+[Install]
+WantedBy=timers.target

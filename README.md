@@ -256,6 +256,7 @@ Document Server займає ~2–3 ГБ RAM і стартує 1–2 хвили�
 | `make logs` | логи всіх сервісів |
 | `make dkim` | DKIM-запис для DNS |
 | `make backup` | дамп PostgreSQL у `backups/` |
+| `make backup-install` / `backup-now` / `backup-check` / `backup-list` | резервні копії поза сервером (restic → Hetzner Storage Box), щоночі + щотижнева перевірка відновленням — [docs/BACKUP.md](docs/BACKUP.md) |
 | `make migrate` | міграції (одноразовий сервіс від імені власника БД) |
 | `make lock` / `make pin` | залежності з хешами / образи за digest |
 | `make scan` / `make audit` | сканування образів (Trivy) / перевірка залежностей |

@@ -110,9 +110,11 @@ jobs:
 
       - name: Синтаксис shell-скриптів
         run: |
+          # Скрипти з #!/usr/bin/env bash перевіряються bash, решта — POSIX sh
           git ls-files '*.sh' | while read -r f; do
-            echo "sh -n $f"
-            sh -n "$f"
+            if head -n1 "$f" | grep -q bash; then shell=bash; else shell=sh; fi
+            echo "$shell -n $f"
+            "$shell" -n "$f"
           done
 
   audit:
