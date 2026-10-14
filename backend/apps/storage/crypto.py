@@ -61,6 +61,7 @@ def unwrap_key(wrapped: bytes, version: int, file_id: uuid.UUID) -> bytes:
 
 # Окремий "індекс" для мініатюри, щоб її шифротекст не можна було підставити замість чанка
 THUMB_INDEX = 2**62
+PREVIEW_INDEX = 2**62 + 1
 
 
 def _chunk_aad(file_id: uuid.UUID, index: int) -> bytes:

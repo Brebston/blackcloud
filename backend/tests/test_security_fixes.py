@@ -477,9 +477,12 @@ def test_thumbrender_rejects_pixel_bomb():
     from apps.storage import thumbrender
 
     buf = io.BytesIO()
-    Image.new("1", (7000, 7000)).save(buf, format="PNG")
+    # 81 млн пікселів > MAX_PIXELS (64 млн: 48-Мп фото iPhone ще проходять)
+    Image.new("1", (9000, 9000)).save(buf, format="PNG")
     with pytest.raises(Exception):
         thumbrender.render("image", buf.getvalue())
+    with pytest.raises(Exception):
+        thumbrender.render("preview", buf.getvalue())
 
 
 @pytest.mark.django_db

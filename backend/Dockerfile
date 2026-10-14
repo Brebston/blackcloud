@@ -34,3 +34,16 @@ USER app
 EXPOSE 8000
 ENTRYPOINT ["/usr/bin/tini", "--", "/app/entrypoint.sh"]
 CMD ["web"]
+
+# Ізольований сервіс мініатюр: той самий код + ffmpeg (кадр із відео). ffmpeg лише тут,
+# а не в образі веб/worker — розбір відео виконується в контейнері без секретів і мережі.
+FROM base AS thumbnailer
+USER root
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends ffmpeg \
+ && rm -rf /var/lib/apt/lists/*
+USER app
+CMD ["thumbnailer"]
+
+# Типова ціль (docker compose build без target): веб, dav, worker, beat, pusher, migrate
+FROM base AS app

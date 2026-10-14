@@ -245,6 +245,21 @@ class ThumbnailView(APIView):
         return response
 
 
+class PreviewImageView(APIView):
+    """Велике WebP-зображення для перегляду HEIC/TIFF/BMP (браузер їх не показує сам).
+    Створене нашим кодувальником у thumbnailer, тож безпечно віддається з основного домену."""
+
+    def get(self, request, pk):
+        f = services.get_readable_file(request.user, pk)
+        if not f.has_preview or not f.is_downloadable:
+            raise NotFound()
+        response = HttpResponse(services.read_preview_image(f), content_type="image/webp")
+        response["Cache-Control"] = "private, max-age=604800, immutable"
+        response["X-Content-Type-Options"] = "nosniff"
+        response["Content-Security-Policy"] = "default-src 'none'; sandbox"
+        return response
+
+
 class FileDownloadView(APIView):
     """Завантаження з основного домену — завжди як вкладення (attachment).
 
@@ -302,7 +317,9 @@ class PreviewServeView(APIView):
         f = services.get_readable_file(user, data["f"])
         if f.deleted_at is not None or f.content_version != data["v"]:
             raise NotFound()
-        return services.file_response(f, inline=True, frame_ancestor=f"https://{settings.DOMAIN}")
+        return services.file_response(
+            f, inline=True, frame_ancestor=f"https://{settings.DOMAIN}", range_header=request.META.get("HTTP_RANGE", "")
+        )
 
 
 # ═══════════════════════════ Завантаження чанками ═══════════════════════════

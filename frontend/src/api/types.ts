@@ -50,6 +50,8 @@ export interface FileItem {
   scan_detail: string;
   downloadable: boolean;
   has_thumbnail: boolean;
+  /** Велике зображення для перегляду HEIC/TIFF/BMP (браузер не показує їх сам) */
+  has_preview?: boolean;
   content_version: number;
   owner: string;
   shared: boolean | null;

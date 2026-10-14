@@ -290,19 +290,26 @@ services:
   thumbnailer:
     build:
       context: ./backend
+      target: thumbnailer  # + ffmpeg для кадрів із відео
       args:
         PYTHON_IMAGE: ${PYTHON_IMAGE:-python:3.12-slim-bookworm}
-    image: blackcloud/backend:latest
+    image: blackcloud/thumbnailer:latest
     command: ["thumbnailer"]
     restart: unless-stopped
     environment:
       THUMB_CONCURRENCY: "2"
-      THUMB_MAX_MEMORY_MB: "700"
+      # Ліміт адресного простору процесу (і дочірніх ffmpeg/pdftoppm). 48-Мп HEIC з iPhone
+      # потребує ~0,5–1 ГБ; раніше 700 МБ — частина фото лишалась без мініатюри
+      THUMB_MAX_MEMORY_MB: "1400"
+      # glibc резервує по 64 МБ віртуальної пам'яті на кожен потік декодера — без цього
+      # RLIMIT_AS вичерпувався ще до реального використання пам'яті
+      MALLOC_ARENA_MAX: "2"
     networks: [thumbs]
     read_only: true
     tmpfs:
-      - /tmp:size=256m,mode=1777
-    mem_limit: 768m
+      # відео до 300 МБ пишеться сюди на час рендеру кадру
+      - /tmp:size=400m,mode=1777
+    mem_limit: 2g
     pids_limit: 64
     security_opt:
       - no-new-privileges:true

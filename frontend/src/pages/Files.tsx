@@ -32,7 +32,14 @@ function loadViewMode(): ViewMode {
 function FileThumb({ f, size = "sm" }: { f: FileItem; size?: "sm" | "lg" }) {
   const [failed, setFailed] = useState(false);
   if (f.has_thumbnail && f.downloadable && !failed) {
-    return <img className={`thumb thumb-${size}`} src={thumbnailUrl(f)} alt="" loading="lazy" onError={() => setFailed(true)} />;
+    const img = <img className={`thumb thumb-${size}`} src={thumbnailUrl(f)} alt="" loading="lazy" onError={() => setFailed(true)} />;
+    if (!f.mime_type.startsWith("video/")) return img;
+    return (
+      <span className={`thumb-video thumb-video-${size}`}>
+        {img}
+        <span className="thumb-play" aria-hidden="true" />
+      </span>
+    );
   }
   return <Icon name={fileIcon(f.mime_type, f.name)} size={size === "lg" ? 48 : 18} />;
 }

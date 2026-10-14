@@ -179,14 +179,22 @@ def requeue_stuck_scans():
 
 
 @shared_task
-def backfill_thumbnails(limit: int = 5000) -> int:
-    """Мініатюри для файлів, завантажених до появи цієї функції."""
+def backfill_thumbnails(limit: int = 5000, *, retry_failed: bool = False) -> int:
+    """Мініатюри (і великі зображення для HEIC/TIFF), яких бракує: старі файли, нові типи
+    (відео) або невдалі спроби (сервіс був зайнятий). Після MAX_ATTEMPTS невдач файл
+    пропускається, якщо не retry_failed (команда generate_thumbnails --retry)."""
+    from django.db.models import Q
+
     done = 0
-    qs = File.objects.filter(status=File.Status.CLEAN, has_thumbnail=False, deleted_at__isnull=True)
-    for f in qs.iterator():
+    qs = File.objects.filter(status=File.Status.CLEAN, deleted_at__isnull=True).filter(
+        Q(has_thumbnail=False) | Q(has_preview=False, mime_type__in=thumbnails.PREVIEW_MIME)
+    )
+    for f in qs.order_by("-created_at").iterator():
         if done >= limit:
             break
-        if thumbnails.supports(f) and thumbnails.generate(f):
+        if not thumbnails.supports(f) or (not retry_failed and thumbnails.attempts_exhausted(f)):
+            continue
+        if thumbnails.generate(f):
             done += 1
     return done
 
