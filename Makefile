@@ -1,7 +1,7 @@
 COMPOSE ?= docker compose
 DEV = $(COMPOSE) -f docker-compose.yml -f docker-compose.dev.yml
 
-.PHONY: help init secrets build migrations migrate up up-dev down logs superuser test shell dkim backup lock pin scan audit thumbnails
+.PHONY: help init secrets build migrations migrate up up-dev down logs superuser test shell dkim backup lock pin scan audit thumbnails backup-install backup-enable backup-now backup-check backup-list
 
 help:
 	@echo "make init       — перший запуск: секрети, збірка, міграції, старт"
@@ -15,6 +15,7 @@ help:
 	@echo "make pin        — закріпити Docker-образи за digest у .env"
 	@echo "make scan       — сканування образів на вразливості (Trivy)"
 	@echo "make audit      — перевірка залежностей (pip-audit, npm audit)"
+	@echo "make backup-install / backup-enable / backup-now / backup-check / backup-list — резервні копії (docs/BACKUP.md)"
 
 secrets:
 	@sh scripts/init-secrets.sh
@@ -67,6 +68,35 @@ backup:
 	@mkdir -p backups
 	$(COMPOSE) exec -T postgres pg_dump -U blackcloud -Fc blackcloud > backups/db-$$(date +%Y%m%d-%H%M%S).dump
 	@echo "Збережено у backups/ (зашифруйте перед відправкою за межі сервера)"
+
+# ─── Резервні копії поза сервером (restic → Hetzner Storage Box), див. docs/BACKUP.md ───
+# Скрипт копіюється в /usr/local/sbin (власник root): root ніколи не виконує файл із репозиторію
+backup-install:
+	sudo install -o root -g root -m 755 scripts/backup.sh /usr/local/sbin/blackcloud-backup
+	sudo install -o root -g root -m 644 scripts/systemd/blackcloud-backup*.service scripts/systemd/blackcloud-backup*.timer /etc/systemd/system/
+	sed "s|/opt/blackcloud|$(CURDIR)|g" scripts/systemd/blackcloud-backup-request.path \
+	  | sudo tee /etc/systemd/system/blackcloud-backup-request.path >/dev/null
+	# backup-state/status — читає адмінка; request/ — куди вона пише запит (uid 10001 = app у контейнері)
+	sudo install -d -m 755 -o root -g root backup-state backup-state/status
+	sudo install -d -m 700 -o 10001 -g 10001 backup-state/request
+	sudo systemctl daemon-reload
+	@echo "Встановлено. Далі: sudo blackcloud-backup init (див. docs/BACKUP.md)"
+
+backup-enable:
+	sudo systemctl enable --now blackcloud-backup.timer blackcloud-backup-check.timer blackcloud-backup-request.path
+	sudo blackcloud-backup status
+	systemctl list-timers 'blackcloud-backup*'
+
+backup-now:
+	sudo systemctl start blackcloud-backup.service
+	sudo journalctl -u blackcloud-backup -n 20 --no-pager
+
+backup-check:
+	sudo systemctl start blackcloud-backup-check.service
+	sudo journalctl -u blackcloud-backup-check -n 20 --no-pager
+
+backup-list:
+	sudo blackcloud-backup snapshots
 
 # ─── Ланцюг постачання ─────────────────────────────────────────
 lock:

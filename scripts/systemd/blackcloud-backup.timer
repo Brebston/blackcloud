@@ -1,0 +1,11 @@
+[Unit]
+Description=BlackCloud: щоночі о 03:30 — резервна копія
+
+[Timer]
+OnCalendar=*-*-* 03:30:00
+RandomizedDelaySec=10m
+# Якщо сервер був вимкнений о 03:30 — копія після ввімкнення
+Persistent=true
+
+[Install]
+WantedBy=timers.target

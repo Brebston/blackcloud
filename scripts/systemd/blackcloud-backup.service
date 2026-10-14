@@ -1,0 +1,12 @@
+[Unit]
+Description=BlackCloud: нічна резервна копія (restic → Storage Box)
+Wants=network-online.target docker.service
+After=network-online.target docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/blackcloud-backup run
+# Не заважати сайту: найнижчий пріоритет CPU і диска
+Nice=10
+IOSchedulingClass=idle
+TimeoutStartSec=6h

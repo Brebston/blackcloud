@@ -142,6 +142,18 @@ def _check_celery() -> dict:
     return {"ok": age <= settings.HEALTH_CELERY_MAX_AGE, "age_seconds": age}
 
 
+def _check_backup() -> dict | None:
+    """Пропускається, доки копії не налаштовані на сервері (немає status.json)."""
+    from . import backups
+
+    status = backups.read_status()
+    if status is None:
+        return None
+    when = backups.last_success(status)
+    age = int((timezone.now() - when).total_seconds() // 3600) if when else None
+    return {"ok": not backups.is_stale(status), "age_hours": age}
+
+
 HEALTH_CHECKS = {
     "db": _check_db,
     "cache": _check_cache,
@@ -150,6 +162,7 @@ HEALTH_CHECKS = {
     "cert_web": _check_cert_web,
     "cert_mail": _check_cert_mail,
     "celery": _check_celery,
+    "backup": _check_backup,
 }
 
 

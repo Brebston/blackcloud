@@ -87,7 +87,9 @@ def test_all_ok(healthy):
     assert r.status_code == 200, r.json()
     data = r.json()
     assert data["status"] == "ok"
-    assert set(data["checks"]) == {"db", "cache", "clamav", "disk", "cert_web", "cert_mail", "celery"}
+    assert set(data["checks"]) == {"db", "cache", "clamav", "disk", "cert_web", "cert_mail", "celery", "backup"}
+    # резервні копії не налаштовані (немає status.json) — перевірка пропускається, а не падає
+    assert data["checks"]["backup"] == {"ok": True, "skipped": True}
     assert data["checks"]["disk"]["percent"] == 50.0
     assert data["checks"]["disk"]["free_gb"] == 50.0
     assert 58 <= data["checks"]["cert_web"]["days_left"] <= 60

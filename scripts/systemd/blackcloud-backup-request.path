@@ -1,0 +1,11 @@
+[Unit]
+Description=BlackCloud: запит «зробити копію зараз» з адмінки
+
+[Path]
+# Адмінка (backend) створює лише цей файл; копію запускає systemd від root звичайним сервісом.
+# Шлях /opt/blackcloud замінюється на фактичний під час make backup-install.
+PathExists=/opt/blackcloud/backup-state/request/run
+Unit=blackcloud-backup.service
+
+[Install]
+WantedBy=paths.target

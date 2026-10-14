@@ -4,6 +4,8 @@ secrets/*
 certs/*
 !certs/.gitkeep
 backups/
+# стан резервних копій (пише scripts/backup.sh на хості)
+backup-state/
 __pycache__/
 *.pyc
 .pytest_cache/

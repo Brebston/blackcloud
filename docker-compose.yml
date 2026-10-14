@@ -212,6 +212,10 @@ services:
     volumes:
       - objects_data:/data/objects
       - static_files:/app/staticfiles
+      # Резервні копії (scripts/backup.sh на хості): стан — лише читання; request/ — запит
+      # «зробити копію зараз» (файл-прапорець, копію запускає systemd, а не backend)
+      - ./backup-state/status:/backup-state/status:ro
+      - ./backup-state/request:/backup-state/request
     networks:
       edge: {}
       internal:

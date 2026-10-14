@@ -1,0 +1,11 @@
+[Unit]
+Description=BlackCloud: перевірка резервних копій і пробне відновлення
+Wants=network-online.target docker.service
+After=network-online.target docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/blackcloud-backup check
+Nice=10
+IOSchedulingClass=idle
+TimeoutStartSec=6h

@@ -670,3 +670,221 @@ function DeleteMailboxDialog({ mailbox, onClose, onDeleted }: { mailbox: AdminMa
     </Modal>
   );
 }
+
+// ═══════════════════════════ Резервні копії ═══════════════════════════
+// Копії робить сервер (systemd + restic, scripts/backup.sh). Адмінка лише показує стан
+// зі status.json і може поставити запит «зробити копію зараз» — відновлення й видалення
+// копій свідомо доступні тільки з терміналу сервера.
+
+interface BackupRun {
+  status: "ok" | "failed" | "running";
+  started_at?: string;
+  finished_at?: string;
+  duration_s?: number;
+  trigger?: "schedule" | "manual";
+  requested_by?: string;
+  message?: string;
+}
+
+interface BackupSnapshot {
+  id: string;
+  time: string;
+  data_added: number | null;
+  files_new: number | null;
+  files_changed: number | null;
+}
+
+interface BackupStatusData {
+  last_backup?: BackupRun;
+  last_check?: BackupRun;
+  last_success_at?: string;
+  snapshots?: BackupSnapshot[];
+  snapshot_count?: number;
+  repo_size_bytes?: number | null;
+  schedule?: { next_backup: string | null; next_check: string | null };
+  retention?: { keep_daily: number; keep_weekly: number; keep_monthly: number };
+  updated_at?: string;
+}
+
+interface BackupResponse {
+  configured: boolean;
+  status: BackupStatusData | null;
+  stale: boolean | null;
+  running: boolean;
+  request_pending: boolean;
+  can_request: boolean;
+}
+
+export function BackupsTab() {
+  const t = useT();
+  const toast = useToast();
+  const [data, setData] = useState<BackupResponse | null>(null);
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const load = useCallback(() => {
+    get<BackupResponse>("/api/admin/backups/")
+      .then((d) => {
+        setData(d);
+        setError("");
+      })
+      .catch((e) => setError(errorText(e)));
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  // Поки копія виконується або чекає запуску — оновлюємо стан кожні 5 с
+  const active = !!data && (data.running || data.request_pending);
+  useEffect(() => {
+    if (!active) return;
+    const timer = window.setInterval(load, 5000);
+    return () => window.clearInterval(timer);
+  }, [active, load]);
+
+  const runNow = async () => {
+    setBusy(true);
+    try {
+      await post("/api/admin/backups/run/");
+      toast(t("backup.requested"), "success");
+      load();
+    } catch (e) {
+      toast(errorText(e), "error");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (error && !data) return <div className="banner banner-warning">{error}</div>;
+  if (!data) return <div className="empty-small">{t("common.loading")}</div>;
+  if (!data.configured || !data.status) return <div className="banner banner-info">{t("backup.notConfigured")}</div>;
+
+  const s = data.status;
+  const last = s.last_backup;
+  const check = s.last_check;
+  const state = data.running ? "running" : last?.status === "failed" ? "failed" : data.stale ? "stale" : "ok";
+  const pill = { ok: "pill-success", running: "pill-warning", stale: "pill-warning", failed: "pill-danger" }[state];
+  const trigger =
+    last?.trigger === "manual" ? t("backup.trigger.manual", { user: last.requested_by || "—" }) : t("backup.trigger.schedule");
+  const retention = s.retention;
+
+  return (
+    <div className="stack">
+      {error && <div className="banner banner-warning">{error}</div>}
+      <div className="settings-grid">
+        <div className="card stack">
+          <div className="row-between">
+            <h3>{t("backup.title")}</h3>
+            <button className="icon-btn" onClick={load} aria-label={t("common.refresh")} title={t("common.refresh")}>
+              <Icon name="refresh" />
+            </button>
+          </div>
+          <div>
+            <span className={`pill ${pill}`}>{t(`backup.state.${state}` as TKey)}</span>
+          </div>
+          <dl className="info-list">
+            <dt>{t("backup.lastSuccess")}</dt>
+            <dd>{s.last_success_at ? formatDate(s.last_success_at) : t("backup.never")}</dd>
+            {last?.started_at && (
+              <>
+                <dt>{t("backup.lastRun")}</dt>
+                <dd>
+                  {formatDate(last.started_at)} · {trigger}
+                  {typeof last.duration_s === "number" && ` · ${t("backup.seconds", { n: last.duration_s })}`}
+                </dd>
+              </>
+            )}
+            {last?.status === "failed" && last.message && (
+              <>
+                <dt>{t("backup.error")}</dt>
+                <dd className="text-danger small backup-error">{last.message}</dd>
+              </>
+            )}
+            <dt>{t("backup.next")}</dt>
+            <dd>{s.schedule?.next_backup ? formatDate(s.schedule.next_backup) : "—"}</dd>
+            <dt>{t("backup.size")}</dt>
+            <dd>{typeof s.repo_size_bytes === "number" ? formatBytes(s.repo_size_bytes) : "—"}</dd>
+            <dt>{t("backup.count")}</dt>
+            <dd>{s.snapshot_count ?? "—"}</dd>
+            {retention && (
+              <>
+                <dt>{t("backup.retention")}</dt>
+                <dd>{t("backup.retentionValue", { d: retention.keep_daily, w: retention.keep_weekly, m: retention.keep_monthly })}</dd>
+              </>
+            )}
+          </dl>
+          <div>
+            <button className="btn btn-primary" onClick={runNow} disabled={busy || active || !data.can_request}>
+              <Icon name="upload" size={16} /> {data.running ? t("backup.state.running") : data.request_pending ? t("backup.pending") : t("backup.runNow")}
+            </button>
+          </div>
+          <p className="small muted">{t("backup.runHint")}</p>
+        </div>
+
+        <div className="card stack">
+          <h3>{t("backup.check.title")}</h3>
+          <div>
+            {!check && <span className="pill">{t("backup.check.never")}</span>}
+            {check?.status === "ok" && <span className="pill pill-success">{t("backup.check.ok")}</span>}
+            {check?.status === "failed" && <span className="pill pill-danger">{t("backup.check.failed")}</span>}
+            {check?.status === "running" && <span className="pill pill-warning">{t("backup.check.running")}</span>}
+          </div>
+          <dl className="info-list">
+            {check?.started_at && (
+              <>
+                <dt>{t("backup.check.last")}</dt>
+                <dd>{formatDate(check.started_at)}</dd>
+              </>
+            )}
+            {check?.message && (
+              <>
+                <dt>{check.status === "failed" ? t("backup.error") : t("backup.check.result")}</dt>
+                <dd className={check.status === "failed" ? "text-danger small backup-error" : "small"}>{check.message}</dd>
+              </>
+            )}
+            <dt>{t("backup.check.next")}</dt>
+            <dd>{s.schedule?.next_check ? formatDate(s.schedule.next_check) : "—"}</dd>
+          </dl>
+          <p className="small muted">{t("backup.check.hint")}</p>
+        </div>
+      </div>
+
+      <div className="card table-card">
+        <table className="table">
+          <thead>
+            <tr>
+              <th>{t("backup.col.date")}</th>
+              <th>ID</th>
+              <th>{t("backup.col.added")}</th>
+              <th>{t("backup.col.files")}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {(s.snapshots ?? []).length === 0 && (
+              <tr>
+                <td colSpan={4} className="empty-small">
+                  {t("backup.historyEmpty")}
+                </td>
+              </tr>
+            )}
+            {(s.snapshots ?? []).map((snap) => (
+              <tr key={snap.id + snap.time}>
+                <td>{formatDate(snap.time)}</td>
+                <td className="mono small">{snap.id}</td>
+                <td>{typeof snap.data_added === "number" ? formatBytes(snap.data_added) : "—"}</td>
+                <td className="muted">
+                  {snap.files_new ?? "—"} / {snap.files_changed ?? "—"}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className="small muted">
+        {t("backup.restoreNote")}
+        {s.updated_at && ` ${t("backup.updated", { when: formatDate(s.updated_at) })}`}
+      </p>
+    </div>
+  );
+}

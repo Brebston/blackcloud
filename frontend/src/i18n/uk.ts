@@ -12,6 +12,7 @@ import * as admin from "./parts/admin";
 import * as misc from "./parts/misc";
 import * as mail2 from "./parts/mail2";
 import * as admin2 from "./parts/admin2";
+import * as backup from "./parts/backup";
 import * as mailui from "./parts/mailui";
 import * as push from "./parts/push";
 import * as files2 from "./parts/files2";
@@ -371,6 +372,7 @@ const uk = {
   ...misc.uk,
   ...mail2.uk,
   ...admin2.uk,
+  ...backup.uk,
   ...mailui.uk,
   ...push.uk,
   ...files2.uk,
