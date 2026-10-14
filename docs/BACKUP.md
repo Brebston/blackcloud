@@ -57,11 +57,24 @@ Host storagebox
     IdentitiesOnly yes
     ServerAliveInterval 60
 ```
-Встановіть ключ у Storage Box (один раз введіть пароль Storage Box, підтвердьте відбиток `yes`):
+Далі — **один із двох способів входу**:
+
+*а) За ключем (рекомендовано).* Вставте вміст `sudo cat /etc/blackcloud-backup/id_ed25519.pub`
+у Hetzner Console → Storage Box → SSH keys (або: `sudo sh -c 'cat /etc/blackcloud-backup/id_ed25519.pub | ssh -p 23 uXXXXX@uXXXXX.your-storagebox.de install-ssh-key'`).
+
+*б) За паролем Storage Box.* У блоці `Host storagebox` замініть рядки `IdentityFile …` і
+`IdentitiesOnly yes` на `PubkeyAuthentication no` і збережіть пароль на сервері:
 ```sh
-sudo sh -c 'cat /etc/blackcloud-backup/id_ed25519.pub | ssh -p 23 uXXXXX@uXXXXX.your-storagebox.de install-ssh-key'
-sudo sftp storagebox <<< 'ls'      # має зайти без пароля
-sudo blackcloud-backup init        # тепер створить сховище restic
+sudo blackcloud-backup set-password    # введення не відображається; файл 600, лише root
+```
+restic отримує пароль через `SSH_ASKPASS` (сам скрипт віддає його ssh), тож пароль не видно
+ні в аргументах процесів, ні в журналах. Тримайте вимкненими SMB і WebDAV Storage Box:
+пароль діє й для них. Змінили пароль у Hetzner — повторіть `set-password`.
+
+Перше підключення (підтвердіть відбиток Storage Box: `yes`; за паролем — введіть його вручну), потім створіть сховище:
+```sh
+sudo sftp storagebox                   # ls → exit
+sudo blackcloud-backup init            # створить сховище restic
 ```
 
 **4. Сповіщення в Telegram.** В Uptime Kuma (`ssh -L 3001:127.0.0.1:3001 brebston@blkbox`,
@@ -81,6 +94,24 @@ make backup-list       # список копій
 make backup-check      # перевірка цілісності + пробне відновлення БД і файлу
 make backup-enable     # щоночі о 03:30, перевірка щонеділі о 05:00
 ```
+
+### Адмінка → «Резервні копії»
+
+Вкладка показує стан останньої копії й перевірки (з текстом помилки, якщо щось не так), наступний
+запуск, розмір сховища, політику зберігання та історію копій, і має кнопку **«Зробити копію зараз»**.
+
+Як це влаштовано (застосунок не отримує доступу до копій):
+- скрипт після кожного запуску пише `backup-state/status/status.json` (без секретів); у backend
+  цей каталог змонтований **лише для читання**;
+- кнопка створює файл-запит `backup-state/request/run` — більше backend нічого не може;
+  `blackcloud-backup-request.path` (systemd) бачить файл і запускає звичайну копію від root;
+  запит видаляється на початку копії; повторний запит, поки копія триває, — 409; не частіше 6/год;
+- відновлення й видалення копій в адмінці немає свідомо — лише з терміналу сервера;
+- `/api/health/deep/` має перевірку `backup` (остання вдала копія давніша за 26 год → `fail`,
+  поріг — `BACKUP_MAX_AGE_HOURS`); до налаштування копій перевірка пропускається.
+
+Каталоги створює `make backup-install`; після `make backup-enable` стан з'являється одразу
+(`sudo blackcloud-backup status` оновлює його вручну).
 
 ### Щоденне користування
 

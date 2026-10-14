@@ -6,19 +6,33 @@
 # автодеплой або будь-хто з правами на /opt/blackcloud — це був би шлях до root.
 #
 #   blackcloud-backup init       — ключ SSH, пароль restic, шаблон налаштувань, ініціалізація сховища
+#   blackcloud-backup set-password — зберегти пароль Storage Box (якщо вхід за паролем, а не ключем)
 #   blackcloud-backup run        — нічна копія (БД + файли + пошта + ключі) і прибирання старих
 #   blackcloud-backup check      — щотижнева перевірка: цілісність + пробне відновлення БД і файлу
 #   blackcloud-backup snapshots  — список копій
+#   blackcloud-backup status     — оновити стан для адмінки (список копій, розмір, розклад)
 #   blackcloud-backup restic …   — будь-яка команда restic з налаштованим сховищем
+#
+# Адмінка BlackCloud бачить лише <BLACKCLOUD_DIR>/backup-state/status/status.json (без секретів)
+# і може створити файл-запит backup-state/request/run — тоді systemd (blackcloud-backup-request.path)
+# запускає звичайну копію. Веб-застосунок нічого не виконує на хості й не має доступу до сховища.
 #
 # Налаштування й секрети — лише на сервері, у /etc/blackcloud-backup (700, root), не в git:
 #   backup.env       RESTIC_REPOSITORY, KUMA_PUSH_URL, політика зберігання
 #   restic_password  пароль шифрування копій (збережіть копію ПОЗА сервером!)
-#   id_ed25519       ключ SSH для Storage Box
+#   id_ed25519       ключ SSH для Storage Box (або storagebox_password — вхід за паролем)
+#   storagebox_password  пароль Storage Box, якщо вхід за паролем (600, лише root)
 set -Eeuo pipefail
 umask 077
 
 CONF_DIR=/etc/blackcloud-backup
+
+# Режим SSH_ASKPASS: ssh (його запускає restic) питає пароль Storage Box — віддаємо з файлу.
+# Так пароль не потрапляє ні в аргументи процесів, ні в журнали, і не потрібен sshpass.
+if [ "${BC_SSH_ASKPASS:-}" = 1 ]; then
+  cat "$CONF_DIR/storagebox_password"
+  exit 0
+fi
 CONF="$CONF_DIR/backup.env"
 DUMP_DIR=/var/backups/blackcloud
 LOCK=/run/blackcloud-backup.lock
@@ -35,13 +49,116 @@ load_conf() {
   export RESTIC_REPOSITORY
   export RESTIC_PASSWORD_FILE="${RESTIC_PASSWORD_FILE:-$CONF_DIR/restic_password}"
   export RESTIC_CACHE_DIR=/var/cache/restic
+  if [ -s "$CONF_DIR/storagebox_password" ]; then
+    # Вхід за паролем: OpenSSH 8.4+ бере пароль у SSH_ASKPASS навіть без терміналу
+    export SSH_ASKPASS SSH_ASKPASS_REQUIRE=force BC_SSH_ASKPASS=1
+    SSH_ASKPASS=$(readlink -f "$0")
+  fi
   BLACKCLOUD_DIR="${BLACKCLOUD_DIR:-/opt/blackcloud}"
   COMPOSE_PROJECT="${COMPOSE_PROJECT:-blackcloud}"
   KEEP_DAILY="${KEEP_DAILY:-7}"
   KEEP_WEEKLY="${KEEP_WEEKLY:-4}"
   KEEP_MONTHLY="${KEEP_MONTHLY:-12}"
   command -v restic >/dev/null || die "restic не встановлено: sudo apt install restic"
+  STATE_DIR="$BLACKCLOUD_DIR/backup-state"
+  STATUS_FILE="$STATE_DIR/status/status.json"
+  REQUEST_FILE="$STATE_DIR/request/run"
+  prepare_state_dirs
 }
+
+# backup-state/status — читає backend (uid 10001, лише читання); request — туди він пише запит
+prepare_state_dirs() {
+  install -d -m 755 -o root -g root "$STATE_DIR" "$STATE_DIR/status"
+  install -d -m 700 -o 10001 -g 10001 "$STATE_DIR/request"
+}
+
+now_iso() { date -u +%Y-%m-%dT%H:%M:%SZ; }
+
+# Стан для адмінки (JSON без секретів). status_set СЕКЦІЯ ключ значення … | status_refresh
+status_py() {
+  python3 - "$STATUS_FILE" "$@" <<'PY'
+import datetime, json, os, re, subprocess, sys
+
+path, action, *args = sys.argv[1:]
+try:
+    with open(path) as fh:
+        data = json.load(fh)
+    if not isinstance(data, dict):
+        data = {}
+except (OSError, ValueError):
+    data = {}
+
+
+def iso(value):
+    # restic: 2026-10-14T03:30:12.123456789+02:00 → без дробових секунд (зручно для браузера)
+    return re.sub(r"\.\d+", "", value) if isinstance(value, str) else value
+
+
+def run(cmd):
+    try:
+        return subprocess.run(cmd, capture_output=True, text=True, timeout=900)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+
+
+if action == "set":
+    section, *kv = args
+    obj = {}
+    for key, value in zip(kv[::2], kv[1::2]):
+        if key.endswith(("_s", "_bytes")) and value.lstrip("-").isdigit():
+            value = int(value)
+        obj[key] = value
+    data[section] = obj
+    if obj.get("status") == "ok" and section == "last_backup":
+        data["last_success_at"] = obj.get("finished_at")
+    if obj.get("status") == "ok" and section == "last_check":
+        data["last_check_ok_at"] = obj.get("finished_at")
+elif action == "refresh":
+    r = run(["restic", "snapshots", "--host", "blackcloud", "--json"])
+    if r is not None and r.returncode == 0:
+        snaps = sorted(json.loads(r.stdout or "[]"), key=lambda s: s.get("time", ""), reverse=True)
+        data["snapshot_count"] = len(snaps)
+        data["snapshots"] = [
+            {
+                "id": s.get("short_id") or str(s.get("id", ""))[:8],
+                "time": iso(s.get("time")),
+                "data_added": (s.get("summary") or {}).get("data_added"),
+                "files_new": (s.get("summary") or {}).get("files_new"),
+                "files_changed": (s.get("summary") or {}).get("files_changed"),
+            }
+            for s in snaps[:60]
+        ]
+    r = run(["restic", "stats", "--mode", "raw-data", "--json"])
+    if r is not None and r.returncode == 0:
+        try:
+            data["repo_size_bytes"] = json.loads(r.stdout).get("total_size")
+        except ValueError:
+            pass
+    schedule = {}
+    for key, unit in (("next_backup", "blackcloud-backup.timer"), ("next_check", "blackcloud-backup-check.timer")):
+        r = run(["systemctl", "show", unit, "--property=NextElapseUSecRealtime", "--value"])
+        value = (r.stdout.strip() if r is not None else "") or "n/a"
+        schedule[key] = None
+        if value != "n/a":
+            d = run(["date", "-u", "-d", value, "+%Y-%m-%dT%H:%M:%SZ"])
+            schedule[key] = d.stdout.strip() if d is not None and d.returncode == 0 else None
+    data["schedule"] = schedule
+    data["retention"] = {k.lower(): int(os.environ.get(k, "0") or 0) for k in ("KEEP_DAILY", "KEEP_WEEKLY", "KEEP_MONTHLY")}
+
+data["version"] = 1
+data["updated_at"] = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+tmp = path + ".tmp"
+with open(tmp, "w") as fh:
+    json.dump(data, fh, ensure_ascii=False)
+os.chmod(tmp, 0o644)
+os.replace(tmp, path)
+PY
+}
+status_set() { status_py set "$@" || log "не вдалося оновити стан для адмінки"; }
+status_refresh() { KEEP_DAILY="$KEEP_DAILY" KEEP_WEEKLY="$KEEP_WEEKLY" KEEP_MONTHLY="$KEEP_MONTHLY" status_py refresh || log "не вдалося оновити стан для адмінки"; }
+
+# Останні рядки журналу запуску — коротке пояснення помилки для адмінки (паролів restic не друкує)
+error_tail() { tail -n 6 "$RUN_LOG" 2>/dev/null | tr -s '\n' ' ' | cut -c1-600; }
 
 # Сповіщення через Uptime Kuma (монітор типу Push): немає сигналу понад добу або status=down → Telegram
 notify() {
@@ -109,9 +226,10 @@ EOF
     echo
     echo "Далі (див. docs/BACKUP.md, крок 3):"
     echo "  1) Додайте в /root/.ssh/config блок «Host storagebox» з вашим uXXXXX."
-    echo "  2) Встановіть публічний ключ у Storage Box:"
-    echo "     sudo sh -c 'cat $CONF_DIR/id_ed25519.pub | ssh -p 23 uXXXXX@uXXXXX.your-storagebox.de install-ssh-key'"
-    echo "  3) Повторіть: sudo blackcloud-backup init"
+    echo "  2) Вхід за ключем: вставте $CONF_DIR/id_ed25519.pub у Storage Box (Hetzner Console → SSH keys)"
+    echo "     або вхід за паролем: sudo blackcloud-backup set-password"
+    echo "  3) Перше підключення (підтвердити відбиток): sudo sftp storagebox"
+    echo "  4) Повторіть: sudo blackcloud-backup init"
     return 0
   fi
 
@@ -128,10 +246,30 @@ EOF
 
 cmd_run() {
   load_conf
+  # Запит з адмінки («зробити копію зараз») прибираємо одразу, щоб systemd не запускав повторно
+  TRIGGER=schedule
+  REQUESTED_BY=""
+  if [ -f "$REQUEST_FILE" ]; then
+    TRIGGER=manual
+    REQUESTED_BY=$(head -c 300 "$REQUEST_FILE" | python3 -c 'import json,sys
+try: print(str(json.load(sys.stdin).get("user",""))[:64])
+except Exception: print("")' 2>/dev/null || true)
+    rm -f "$REQUEST_FILE"
+  fi
   with_lock
-  # Будь-яке завершення з помилкою (і через die) → сповіщення
-  trap 'rc=$?; [ "$rc" -eq 0 ] || notify down "Резервна копія НЕ вдалась (код $rc). journalctl -u blackcloud-backup"' EXIT
-  local started; started=$(date +%s)
+  RUN_LOG=$(mktemp /var/tmp/bc-backup-log.XXXXXX)
+  exec > >(tee -a "$RUN_LOG") 2>&1
+  STARTED_ISO=$(now_iso)
+  STARTED=$(date +%s)
+  status_set last_backup status running started_at "$STARTED_ISO" trigger "$TRIGGER" requested_by "$REQUESTED_BY"
+  # Будь-яке завершення з помилкою (і через die) → стан «failed» в адмінці + сповіщення
+  trap 'rc=$?
+        if [ "$rc" -ne 0 ]; then
+          status_set last_backup status failed started_at "$STARTED_ISO" finished_at "$(now_iso)" \
+            duration_s "$(( $(date +%s) - STARTED ))" trigger "$TRIGGER" requested_by "$REQUESTED_BY" message "$(error_tail)"
+          notify down "Резервна копія НЕ вдалась (код $rc). journalctl -u blackcloud-backup"
+        fi
+        rm -f "$RUN_LOG"' EXIT
   install -d -m 700 "$DUMP_DIR"
 
   # 1. Узгоджений дамп усіх баз (і ролей) без зупинки сайту. --clean: при відновленні
@@ -160,9 +298,12 @@ cmd_run() {
   restic forget --tag nightly --host blackcloud --prune \
     --keep-daily "$KEEP_DAILY" --keep-weekly "$KEEP_WEEKLY" --keep-monthly "$KEEP_MONTHLY"
 
-  local secs=$(( $(date +%s) - started ))
-  local total; total=$(restic stats latest --mode raw-data --json 2>/dev/null | sed -n 's/.*"total_size":\([0-9]*\).*/\1/p')
+  local secs=$(( $(date +%s) - STARTED ))
   log "Готово за ${secs} с"
+  status_set last_backup status ok started_at "$STARTED_ISO" finished_at "$(now_iso)" duration_s "$secs" \
+    trigger "$TRIGGER" requested_by "$REQUESTED_BY" message ""
+  status_refresh
+  local total; total=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("repo_size_bytes") or 0)' "$STATUS_FILE" 2>/dev/null || echo 0)
   notify up "OK за ${secs} с, сховище $(( ${total:-0} / 1024 / 1024 )) МБ"
 }
 
@@ -175,9 +316,19 @@ cmd_check() {
   # Глобальні (не local): їх використовує trap EXIT, що спрацьовує вже після виходу з функції
   tmp=$(mktemp -d /var/tmp/bc-restore-test.XXXXXX)
   pg="bc-restore-test-$$"
-  # Прибирання і сповіщення при будь-якому завершенні з помилкою
-  trap 'rc=$?; docker rm -f "$pg" >/dev/null 2>&1 || true; rm -rf "$tmp"
-        [ "$rc" -eq 0 ] || notify down "Перевірка копій НЕ пройшла (код $rc). journalctl -u blackcloud-backup-check" "$push"' EXIT
+  RUN_LOG="$tmp/run.log"
+  exec > >(tee -a "$RUN_LOG") 2>&1
+  STARTED_ISO=$(now_iso)
+  STARTED=$(date +%s)
+  status_set last_check status running started_at "$STARTED_ISO"
+  # Прибирання, стан для адмінки і сповіщення при будь-якому завершенні з помилкою
+  trap 'rc=$?
+        if [ "$rc" -ne 0 ]; then
+          status_set last_check status failed started_at "$STARTED_ISO" finished_at "$(now_iso)" \
+            duration_s "$(( $(date +%s) - STARTED ))" message "$(error_tail)"
+          notify down "Перевірка копій НЕ пройшла (код $rc). journalctl -u blackcloud-backup-check" "$push"
+        fi
+        docker rm -f "$pg" >/dev/null 2>&1 || true; rm -rf "$tmp"' EXIT
 
   # 1. Цілісність сховища: структура + 10 % даних читаються й розшифровуються
   log "restic check (10 % даних)…"
@@ -210,14 +361,31 @@ cmd_check() {
     log "Файл відновлюється без змін: ${sample#"$objects"/}"
   fi
 
+  status_set last_check status ok started_at "$STARTED_ISO" finished_at "$(now_iso)" \
+    duration_s "$(( $(date +%s) - STARTED ))" message "Користувачів у БД: $users, файлів: $files"
+  status_refresh
   notify up "Перевірка OK: користувачів $users, файлів $files" "$push"
+}
+
+cmd_set_password() {
+  [ "$(id -u)" -eq 0 ] || die "запускайте від root (sudo)"
+  install -d -m 700 "$CONF_DIR"
+  local pw
+  read -r -s -p "Пароль Storage Box (не відображається): " pw
+  echo
+  [ -n "$pw" ] || die "порожній пароль"
+  printf '%s\n' "$pw" > "$CONF_DIR/storagebox_password"
+  chmod 600 "$CONF_DIR/storagebox_password"
+  log "Збережено: $CONF_DIR/storagebox_password (600, root)"
 }
 
 case "${1:-}" in
   init) cmd_init ;;
+  set-password) cmd_set_password ;;
   run) cmd_run ;;
   check) cmd_check ;;
   snapshots) load_conf; restic snapshots --host blackcloud ;;
+  status) load_conf; status_refresh; log "Стан оновлено: $STATUS_FILE" ;;
   restic) load_conf; shift; restic "$@" ;;
   *) sed -n '2,20p' "$0"; exit 2 ;;
 esac

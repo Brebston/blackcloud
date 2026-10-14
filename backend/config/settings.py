@@ -297,6 +297,7 @@ REST_FRAMEWORK = {
         "user_search": "60/min",
         # фото профілю (обробка у thumbnailer)
         "avatar": "20/hour",
+        "backup_run": "6/hour",
     },
     "EXCEPTION_HANDLER": "apps.core.exceptions.exception_handler",
     # Ідентифікація клієнта для лімітів — лише REMOTE_ADDR (його вже виставив uvicorn
@@ -376,6 +377,11 @@ HEALTH_TLS_HOST = env("HEALTH_TLS_HOST", "172.31.250.2")
 HEALTH_MAIL_TLS_HOST = env("HEALTH_MAIL_TLS_HOST", "dovecot")
 HEALTH_MAIL_TLS_PORT = env_int("HEALTH_MAIL_TLS_PORT", 993)
 HEALTH_CELERY_MAX_AGE = env_int("HEALTH_CELERY_MAX_AGE", 300)
+
+# Резервні копії (scripts/backup.sh на хості): каталог стану, змонтований у backend
+BACKUP_STATE_DIR = env("BACKUP_STATE_DIR", "/backup-state")
+# Остання вдала копія давніша — попередження в адмінці й «fail» у /api/health/deep/
+BACKUP_MAX_AGE_HOURS = env_int("BACKUP_MAX_AGE_HOURS", 26)
 
 # ─── Календар ──────────────────────────────────────────────────
 MAX_RECURRING_EVENTS_PER_USER = env_int("MAX_RECURRING_EVENTS_PER_USER", 300)

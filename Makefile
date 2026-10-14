@@ -74,11 +74,17 @@ backup:
 backup-install:
 	sudo install -o root -g root -m 755 scripts/backup.sh /usr/local/sbin/blackcloud-backup
 	sudo install -o root -g root -m 644 scripts/systemd/blackcloud-backup*.service scripts/systemd/blackcloud-backup*.timer /etc/systemd/system/
+	sed "s|/opt/blackcloud|$(CURDIR)|g" scripts/systemd/blackcloud-backup-request.path \
+	  | sudo tee /etc/systemd/system/blackcloud-backup-request.path >/dev/null
+	# backup-state/status — читає адмінка; request/ — куди вона пише запит (uid 10001 = app у контейнері)
+	sudo install -d -m 755 -o root -g root backup-state backup-state/status
+	sudo install -d -m 700 -o 10001 -g 10001 backup-state/request
 	sudo systemctl daemon-reload
 	@echo "Встановлено. Далі: sudo blackcloud-backup init (див. docs/BACKUP.md)"
 
 backup-enable:
-	sudo systemctl enable --now blackcloud-backup.timer blackcloud-backup-check.timer
+	sudo systemctl enable --now blackcloud-backup.timer blackcloud-backup-check.timer blackcloud-backup-request.path
+	sudo blackcloud-backup status
 	systemctl list-timers 'blackcloud-backup*'
 
 backup-now:

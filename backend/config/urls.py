@@ -13,6 +13,7 @@ urlpatterns = [
     path("api/admin/", include("apps.accounts.urls_admin")),
     path("api/admin/", include("apps.storage.urls_admin")),
     path("api/admin/", include("apps.mail.urls_admin")),
+    path("api/admin/", include("apps.core.urls_admin")),
     path("api/users/", include("apps.accounts.urls_users")),
     path("api/files/", include("apps.storage.urls")),
     path("api/preview/<str:ticket>/", PreviewServeView.as_view()),

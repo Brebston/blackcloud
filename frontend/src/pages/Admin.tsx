@@ -8,7 +8,7 @@ import { useToast } from "../components/Toast";
 import { useAuth } from "../hooks/useAuth";
 import { useT } from "../i18n";
 import { formatBytes, formatDate } from "../lib/format";
-import { AntivirusTab, MailboxesTab, QuarantineTab } from "./AdminTabs";
+import { AntivirusTab, BackupsTab, MailboxesTab, QuarantineTab } from "./AdminTabs";
 
 interface AdminUser {
   id: string;
@@ -53,7 +53,7 @@ export default function AdminPage() {
   const { user } = useAuth();
   const toast = useToast();
   const t = useT();
-  const [tab, setTab] = useState<"users" | "invites" | "audit" | "mailboxes" | "quarantine" | "antivirus">("users");
+  const [tab, setTab] = useState<"users" | "invites" | "audit" | "mailboxes" | "quarantine" | "antivirus" | "backups">("users");
   const [stats, setStats] = useState<Stats | null>(null);
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [q, setQ] = useState("");
@@ -134,6 +134,9 @@ export default function AdminPage() {
         </button>
         <button className={`tab ${tab === "antivirus" ? "active" : ""}`} onClick={() => setTab("antivirus")}>
           <Icon name="shield" size={16} /> {t("admin.tab.antivirus")}
+        </button>
+        <button className={`tab ${tab === "backups" ? "active" : ""}`} onClick={() => setTab("backups")}>
+          <Icon name="archive" size={16} /> {t("backup.tab")}
         </button>
       </div>
 
@@ -228,6 +231,7 @@ export default function AdminPage() {
       {tab === "mailboxes" && <MailboxesTab />}
       {tab === "quarantine" && <QuarantineTab />}
       {tab === "antivirus" && <AntivirusTab />}
+      {tab === "backups" && <BackupsTab />}
 
       {editing && (
         <EditUserDialog
