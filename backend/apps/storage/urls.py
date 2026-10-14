@@ -13,6 +13,7 @@ urlpatterns = [
     path("items/<uuid:pk>/", views.FileDetailView.as_view()),
     path("items/<uuid:pk>/download/", views.FileDownloadView.as_view()),
     path("items/<uuid:pk>/thumbnail/", views.ThumbnailView.as_view()),
+    path("items/<uuid:pk>/preview-image/", views.PreviewImageView.as_view()),
     path("items/<uuid:pk>/preview/", views.PreviewTicketView.as_view()),
     path("items/<uuid:pk>/versions/", views.FileVersionsView.as_view()),
     path("items/<uuid:pk>/versions/<uuid:vid>/", views.FileVersionDetailView.as_view()),

@@ -1,9 +1,9 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import type { FileItem } from "../api/types";
 import { useT } from "../i18n";
 import { formatBytes } from "../lib/format";
-import { downloadUrl, imageSrc, needsPreviewUrl, usePreviewUrl, viewKind } from "../lib/viewer";
+import { downloadUrl, imageSrc, needsPreviewUrl, thumbnailUrl, usePreviewUrl, viewKind } from "../lib/viewer";
 import Icon from "./Icon";
 import ImageZoom from "./ImageZoom";
 
@@ -28,6 +28,7 @@ export default function FileViewer({
   const file = files[index];
   const kind = file ? viewKind(file, officeEnabled) : null;
   const preview = usePreviewUrl(file, kind);
+  const [videoFailed, setVideoFailed] = useState<string | null>(null);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -93,8 +94,26 @@ export default function FileViewer({
               <ImageZoom key={file.id} src={imageSrc(file, preview.url)} alt={file.name} />
             )}
             {kind === "pdf" && preview.url && <iframe key={file.id} className="viewer-pdf" src={preview.url} title={file.name} />}
-            {kind === "video" && preview.url && (
-              <video key={file.id} className="viewer-media" src={preview.url} controls autoPlay />
+            {kind === "video" && preview.url && videoFailed !== file.id && (
+              <video
+                key={file.id}
+                className="viewer-media"
+                src={preview.url}
+                poster={file.has_thumbnail ? thumbnailUrl(file) : undefined}
+                controls
+                autoPlay
+                playsInline
+                onError={() => setVideoFailed(file.id)}
+              />
+            )}
+            {kind === "video" && videoFailed === file.id && (
+              <div className="viewer-empty">
+                <Icon name="alert" size={40} />
+                <div>{t("files.viewer.videoUnsupported")}</div>
+                <a className="btn btn-sm" href={downloadUrl(file)}>
+                  <Icon name="download" size={14} /> {t("files.download")}
+                </a>
+              </div>
             )}
             {kind === "audio" && preview.url && <audio key={file.id} src={preview.url} controls autoPlay />}
             {kind === "text" && preview.url && (

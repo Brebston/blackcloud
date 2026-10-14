@@ -80,7 +80,7 @@ pin:
 
 scan:
 	$(COMPOSE) build
-	for img in blackcloud/backend blackcloud/frontend blackcloud/clamav blackcloud/postfix blackcloud/dovecot blackcloud/rspamd; do \
+	for img in blackcloud/backend blackcloud/thumbnailer blackcloud/frontend blackcloud/clamav blackcloud/postfix blackcloud/dovecot blackcloud/rspamd; do \
 	  docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy:latest image \
 	    --severity HIGH,CRITICAL --ignore-unfixed --quiet $$img:latest; \
 	done

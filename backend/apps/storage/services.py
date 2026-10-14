@@ -9,7 +9,7 @@ from asgiref.sync import sync_to_async
 from django.conf import settings
 from django.db import transaction
 from django.db.models import F, Max, Sum
-from django.http import StreamingHttpResponse
+from django.http import HttpResponse, StreamingHttpResponse
 from django.utils import timezone
 from django.utils.translation import gettext as _
 from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
@@ -36,6 +36,7 @@ SAFE_INLINE_MIME = {
     "audio/wav",
     "video/mp4",
     "video/webm",
+    "video/quicktime",  # .MOV з iPhone/камер (H.264/HEVC) — браузер відтворює, якщо підтримує кодек
 }
 
 
@@ -265,24 +266,70 @@ async def aiter_plaintext(f: File):
         yield await sync_to_async(read_chunk, thread_sensitive=False)(f, data_key, index)
 
 
+def parse_range(header: str, size: int):
+    """Один діапазон bytes=a-b / a- / -n. None — віддати весь файл; "invalid" — 416."""
+    if not header or not header.startswith("bytes=") or "," in header or size == 0:
+        return None
+    start_s, sep, end_s = header[6:].strip().partition("-")
+    if not sep:
+        return None
+    try:
+        if start_s == "":
+            n = int(end_s)
+            if n <= 0:
+                return "invalid"
+            return max(0, size - n), size - 1
+        start = int(start_s)
+        end = int(end_s) if end_s else size - 1
+    except ValueError:
+        return None
+    if start < 0 or start >= size or end < start:
+        return "invalid"
+    return start, min(end, size - 1)
+
+
+async def aiter_range(f: File, start: int, end: int):
+    data_key = crypto.unwrap_key(f.wrapped_key, f.key_version, f.id)
+    cs = f.chunk_size
+    for index in range(start // cs, end // cs + 1):
+        chunk = await sync_to_async(read_chunk, thread_sensitive=False)(f, data_key, index)
+        base = index * cs
+        yield chunk[max(start - base, 0) : min(end - base + 1, len(chunk))]
+
+
 def content_disposition(disposition: str, filename: str) -> str:
     ascii_name = filename.encode("ascii", "ignore").decode().replace('"', "").replace("\\", "") or "file"
     return f"{disposition}; filename=\"{ascii_name}\"; filename*=UTF-8''{urllib.parse.quote(filename)}"
 
 
-def file_response(f: File, *, inline: bool = False, frame_ancestor: str | None = None) -> StreamingHttpResponse:
-    """inline=True використовується лише на usercontent-піддомені (окремий origin)."""
+def file_response(
+    f: File, *, inline: bool = False, frame_ancestor: str | None = None, range_header: str = ""
+) -> StreamingHttpResponse:
+    """inline=True використовується лише на usercontent-піддомені (окремий origin).
+    range_header (лише inline) — перемотування відео й аудіо; Safari без 206 відео не відтворює."""
     if not f.is_downloadable:
         raise PermissionDenied(_("Файл недоступний для завантаження (статус: %(status)s).") % {"status": f.get_status_display()})
     show_inline = inline and f.mime_type in SAFE_INLINE_MIME
     content_type = f.mime_type if show_inline else "application/octet-stream"
     if content_type == "text/plain":
         content_type = "text/plain; charset=utf-8"
-    response = StreamingHttpResponse(aiter_plaintext(f), content_type=content_type)
-    response["Content-Length"] = str(f.size)
+    rng = parse_range(range_header, f.size) if show_inline else None
+    if rng == "invalid":
+        response = HttpResponse(status=416)
+        response["Content-Range"] = f"bytes */{f.size}"
+        return response
+    if rng is None:
+        response = StreamingHttpResponse(aiter_plaintext(f), content_type=content_type)
+        response["Content-Length"] = str(f.size)
+    else:
+        start, end = rng
+        response = StreamingHttpResponse(aiter_range(f, start, end), content_type=content_type, status=206)
+        response["Content-Range"] = f"bytes {start}-{end}/{f.size}"
+        response["Content-Length"] = str(end - start + 1)
     if not show_inline:
         _attachment_headers(response, f.name)
         return response
+    response["Accept-Ranges"] = "bytes"
     response["Content-Disposition"] = content_disposition("inline", f.name)
     response["X-Content-Type-Options"] = "nosniff"
     response["Cache-Control"] = "private, no-store"
@@ -391,6 +438,8 @@ def _swap_in(f: File, *, number, size, wrapped, key_version, chunk_size, chunks,
     archived = None
     if f.has_thumbnail:
         drop.append(f.thumb_key())
+    if f.has_preview:
+        drop.append(f.preview_key())
     if max_versions() > 1:
         archived = FileVersion.objects.create(
             file=f,
@@ -424,6 +473,7 @@ def _swap_in(f: File, *, number, size, wrapped, key_version, chunk_size, chunks,
         status=File.Status.SCANNING,
         scan_detail="",
         has_thumbnail=False,
+        has_preview=False,
         modified_by=author,
         content_updated_at=now,
         updated_at=now,
@@ -780,6 +830,11 @@ def prune_versions(f: File, *, older_than=None) -> int:
 def read_thumbnail(f: File) -> bytes:
     data_key = crypto.unwrap_key(f.wrapped_key, f.key_version, f.id)
     return crypto.decrypt_chunk(data_key, f.id, crypto.THUMB_INDEX, get_store().get(f.thumb_key()))
+
+
+def read_preview_image(f: File) -> bytes:
+    data_key = crypto.unwrap_key(f.wrapped_key, f.key_version, f.id)
+    return crypto.decrypt_chunk(data_key, f.id, crypto.PREVIEW_INDEX, get_store().get(f.preview_key()))
 
 
 # ─────────────────────────── Видалення ───────────────────────────

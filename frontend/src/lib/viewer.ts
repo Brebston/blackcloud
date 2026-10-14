@@ -5,8 +5,10 @@ import { tr } from "../i18n";
 
 export type ViewKind = "image" | "pdf" | "video" | "audio" | "text" | "office";
 
-// Те, що браузер показує нативно (решта зображень, напр. HEIC, — через мініатюру)
+// Те, що браузер показує нативно (HEIC/TIFF/BMP — через велике WebP-зображення з сервера)
 const BROWSER_IMAGES = ["image/png", "image/jpeg", "image/gif", "image/webp", "image/avif"];
+// .MOV з iPhone — той самий контейнер, що й MP4; відтворення залежить від кодека й браузера
+export const BROWSER_VIDEOS = ["video/mp4", "video/webm", "video/quicktime"];
 const OFFICE_EXT = ["docx", "doc", "docm", "dotx", "odt", "rtf", "xlsx", "xls", "xlsm", "ods", "csv", "pptx", "ppt", "ppsx", "odp"];
 
 export function extension(name: string): string {
@@ -16,9 +18,9 @@ export function extension(name: string): string {
 
 export function viewKind(f: FileItem, officeEnabled: boolean): ViewKind | null {
   if (!f.downloadable) return null;
-  if (BROWSER_IMAGES.includes(f.mime_type) || (f.mime_type.startsWith("image/") && f.has_thumbnail)) return "image";
+  if (BROWSER_IMAGES.includes(f.mime_type) || (f.mime_type.startsWith("image/") && (f.has_preview || f.has_thumbnail))) return "image";
   if (f.mime_type === "application/pdf") return "pdf";
-  if (f.mime_type === "video/mp4" || f.mime_type === "video/webm") return "video";
+  if (BROWSER_VIDEOS.includes(f.mime_type)) return "video";
   if (["audio/mpeg", "audio/ogg", "audio/wav"].includes(f.mime_type)) return "audio";
   if (officeEnabled && OFFICE_EXT.includes(extension(f.name))) return "office";
   if (f.mime_type === "text/plain") return "text";
@@ -58,8 +60,11 @@ export function usePreviewUrl(f: FileItem | undefined, kind: ViewKind | null) {
 }
 
 export function imageSrc(f: FileItem, previewUrl: string): string {
-  return BROWSER_IMAGES.includes(f.mime_type) ? previewUrl : thumbnailUrl(f);
+  if (BROWSER_IMAGES.includes(f.mime_type)) return previewUrl;
+  // Мініатюра (480 px) — лише запасний варіант, поки велике зображення ще не створено
+  return f.has_preview ? previewImageUrl(f) : thumbnailUrl(f);
 }
 
 export const downloadUrl = (f: FileItem) => `/api/files/items/${f.id}/download/`;
 export const thumbnailUrl = (f: FileItem) => `/api/files/items/${f.id}/thumbnail/?v=${f.content_version}`;
+export const previewImageUrl = (f: FileItem) => `/api/files/items/${f.id}/preview-image/?v=${f.content_version}`;

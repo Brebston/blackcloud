@@ -53,6 +53,8 @@ class File(models.Model):
     # Версія вмісту: збільшується при кожному збереженні з онлайн-редактора
     content_version = models.PositiveIntegerField(default=0)
     has_thumbnail = models.BooleanField(default=False)
+    # Велике зображення для перегляду форматів, які браузер не показує сам (HEIC, TIFF…)
+    has_preview = models.BooleanField(default=False)
     # Хто і коли записав поточний вміст (для історії версій); null — власник / created_at
     modified_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
@@ -98,6 +100,10 @@ class File(models.Model):
     def thumb_key(self, version: int | None = None) -> str:
         version = self.content_version if version is None else version
         return f"{self.object_prefix}thumb-v{version}"
+
+    def preview_key(self, version: int | None = None) -> str:
+        version = self.content_version if version is None else version
+        return f"{self.object_prefix}preview-v{version}"
 
     @property
     def extension(self) -> str:

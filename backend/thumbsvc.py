@@ -1,6 +1,7 @@
 """Ізольований HTTP-сервіс мініатюр (див. apps/storage/thumbrender.py).
 
-POST /render?kind=image|pdf  (тіло — відкриті байти файлу)  →  200 image/webp | 422
+POST /render?kind=image|preview|pdf|avatar|video  (тіло — відкриті байти файлу)  →  200 image/webp | 422
+Відео не читається в пам'ять: тіло пишеться у тимчасовий файл у /tmp (tmpfs).
 Працює без Django, без секретів і в окремій внутрішній мережі `thumbs`,
 до якої підключений лише worker.
 """
@@ -8,6 +9,7 @@ POST /render?kind=image|pdf  (тіло — відкриті байти файл�
 import logging
 import os
 import resource
+import tempfile
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlsplit
@@ -50,24 +52,50 @@ class Handler(BaseHTTPRequestHandler):
             length = -1
         if length < 0:
             return self._reply(411)
-        if length > thumbrender.MAX_INPUT_BYTES:
+        limit = thumbrender.MAX_VIDEO_INPUT_BYTES if kind == "video" else thumbrender.MAX_INPUT_BYTES
+        if length > limit:
             return self._reply(413)
+        if kind == "video":
+            return self._render_video(length)
         data = self.rfile.read(length)
-        if not SLOTS.acquire(timeout=60):
+        if not SLOTS.acquire(timeout=120):
             return self._reply(503)
         try:
             out = thumbrender.render(kind, data)
         except Exception as exc:
-            log.info("render failed: %s", exc.__class__.__name__)
+            log.info("render %s failed: %s %s", kind, exc.__class__.__name__, str(exc)[:120])
             return self._reply(422)
         finally:
             SLOTS.release()
         return self._reply(200, out, "image/webp")
 
+    def _render_video(self, length: int):
+        with tempfile.TemporaryDirectory(prefix="bc-video-") as tmp:
+            path = os.path.join(tmp, "in.video")
+            fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            with os.fdopen(fd, "wb") as fh:
+                left = length
+                while left > 0:
+                    piece = self.rfile.read(min(left, 1 << 20))
+                    if not piece:
+                        return self._reply(400)
+                    fh.write(piece)
+                    left -= len(piece)
+            if not SLOTS.acquire(timeout=120):
+                return self._reply(503)
+            try:
+                out = thumbrender.render_video_file(path)
+            except Exception as exc:
+                log.info("render video failed: %s %s", exc.__class__.__name__, str(exc)[:120])
+                return self._reply(422)
+            finally:
+                SLOTS.release()
+        return self._reply(200, out, "image/webp")
+
 
 def main():
     # Жорсткі ліміти процесу: пам'ять і час CPU на дочірні pdftoppm теж поширюються
-    mem = int(os.environ.get("THUMB_MAX_MEMORY_MB", "700")) * 1024 * 1024
+    mem = int(os.environ.get("THUMB_MAX_MEMORY_MB", "1400")) * 1024 * 1024
     try:
         resource.setrlimit(resource.RLIMIT_AS, (mem, mem))
     except (ValueError, OSError):

@@ -31,6 +31,7 @@ class FileSerializer(serializers.ModelSerializer):
             "scan_detail",
             "downloadable",
             "has_thumbnail",
+            "has_preview",
             "content_version",
             "owner",
             "shared",
