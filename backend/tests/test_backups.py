@@ -118,3 +118,17 @@ def test_health_deep_backup_check(healthy, state):  # noqa: F811
     write_status(state, last_success_at=(timezone.now() - timedelta(hours=30)).isoformat())
     r = deep()
     assert r.status_code == 503 and r.json()["checks"]["backup"] == {"ok": False, "age_hours": 30}
+
+
+@pytest.mark.django_db
+def test_health_deep_first_backup_running_is_not_failure(healthy, state):  # noqa: F811
+    def deep():
+        return APIClient().get("/api/health/deep/", HTTP_AUTHORIZATION=f"Bearer {TOKEN}")
+
+    # найперша копія ще триває — не тривога
+    write_status(state, last_success_at=None, last_backup={"status": "running", "started_at": timezone.now().isoformat()})
+    r = deep()
+    assert r.status_code == 200 and r.json()["checks"]["backup"]["first_backup_running"] is True
+    # найперша копія впала — тривога
+    write_status(state, last_success_at=None, last_backup={"status": "failed", "started_at": timezone.now().isoformat()})
+    assert deep().status_code == 503

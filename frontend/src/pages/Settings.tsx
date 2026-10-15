@@ -14,6 +14,7 @@ import type { TKey } from "../i18n";
 import { ACCENTS, THEMES, applyAppearance } from "../lib/appearance";
 import type { Accent, Theme } from "../lib/appearance";
 import { formatBytes, formatDate } from "../lib/format";
+import PasskeysCard from "../components/PasskeysCard";
 
 const TABS: { id: string; label: TKey; icon: string }[] = [
   { id: "profile", label: "settings.tab.profile", icon: "user" },
@@ -334,6 +335,13 @@ function SecurityTab() {
 
   return (
     <div className="settings-grid">
+      <PasskeysCard
+        hasTotp={info.has_2fa}
+        onChange={() => {
+          load();
+          refresh();
+        }}
+      />
       <div className="card stack">
         <h3>
           <Icon name="shield" /> {t("security.2faTitle")}

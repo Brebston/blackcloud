@@ -4,6 +4,10 @@ import { ensureCsrf, errorText, post } from "../api/client";
 import Icon from "../components/Icon";
 import { useAuth } from "../hooks/useAuth";
 import { LanguageSwitcher, useT } from "../i18n";
+import { biometricKey, confirmWithPasskey, isCancelled, loginWithPasskey, passkeysSupported } from "../lib/webauthn";
+
+// Після входу паролем — запропонувати ключ доступу (див. components/PasskeyPrompt.tsx)
+const OFFER_KEY = "bc_offer_passkey";
 
 const SPA_ROOTS = ["files", "shared", "trash", "calendar", "mail", "chat", "settings", "admin", "edit"];
 
@@ -26,6 +30,25 @@ export default function LoginPage() {
   const [useBackup, setUseBackup] = useState(false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [hasPasskey2fa, setHasPasskey2fa] = useState(false);
+  const canPasskey = passkeysSupported();
+  const method = t(biometricKey());
+
+  const usePasskey = async (kind: "login" | "2fa") => {
+    setError("");
+    setBusy(true);
+    try {
+      if (kind === "login") await loginWithPasskey();
+      else await confirmWithPasskey();
+      sessionStorage.removeItem(OFFER_KEY);
+      await finish();
+    } catch (err) {
+      if (!isCancelled(err)) setError(err instanceof DOMException ? t("passkey.failed") : errorText(err));
+      if (/Увійдіть знову|sign in again/i.test(errorText(err))) setStep("password");
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const finish = async () => {
     await ensureCsrf(true);
@@ -44,12 +67,14 @@ export default function LoginPage() {
     }
     setBusy(true);
     try {
-      const r = await post<{ status: string }>("/api/auth/login/", { login: login.trim(), password });
+      const r = await post<{ status: string; passkey?: boolean }>("/api/auth/login/", { login: login.trim(), password });
       setPassword("");
       if (r.status === "2fa_required") {
         await ensureCsrf(true);
+        setHasPasskey2fa(!!r.passkey);
         setStep("2fa");
       } else {
+        sessionStorage.setItem(OFFER_KEY, "1");
         await finish();
       }
     } catch (err) {
@@ -78,6 +103,7 @@ export default function LoginPage() {
       if (r.backup_codes_remaining !== undefined && r.backup_codes_remaining < 3) {
         sessionStorage.setItem("bc_backup_warning", String(r.backup_codes_remaining));
       }
+      sessionStorage.setItem(OFFER_KEY, "1");
       await finish();
     } catch (err) {
       setError(errorText(err));
@@ -120,12 +146,33 @@ export default function LoginPage() {
             <button className="btn btn-primary btn-block" disabled={busy}>
               {busy ? t("login.signingIn") : t("login.signIn")}
             </button>
+            {canPasskey && (
+              <>
+                <div className="auth-divider">
+                  <span>{t("passkey.or")}</span>
+                </div>
+                <button type="button" className="btn btn-block passkey-btn" disabled={busy} onClick={() => usePasskey("login")}>
+                  <Icon name="lock" size={16} /> {t("passkey.loginButton")}
+                </button>
+                <div className="auth-foot small">{t("passkey.loginHint", { method })}</div>
+              </>
+            )}
             <div className="auth-foot">
               {t("login.noAccount")} <Link to="/register">{t("login.register")}</Link>
             </div>
           </form>
         ) : (
           <form onSubmit={submitCode} noValidate>
+            {hasPasskey2fa && canPasskey && (
+              <>
+                <button type="button" className="btn btn-primary btn-block passkey-btn" disabled={busy} onClick={() => usePasskey("2fa")}>
+                  <Icon name="lock" size={16} /> {t("passkey.secondFactor", { method })}
+                </button>
+                <div className="auth-divider">
+                  <span>{t("passkey.or")}</span>
+                </div>
+              </>
+            )}
             <div className="auth-hint">
               <Icon name="shield" />
               {useBackup ? t("login.backupHint") : t("login.totpHint")}

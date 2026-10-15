@@ -68,72 +68,78 @@ msgid "Невірний пароль."
 msgstr "Incorrect password."
 
 #: apps/accounts/views.py:173
+#: apps/accounts/views_passkeys.py:60
+#: apps/accounts/views_passkeys.py:72
 msgid "Забагато невдалих спроб. Спробуйте через 15 хвилин."
 msgstr "Too many failed attempts. Try again in 15 minutes."
 
-#: apps/accounts/views.py:211
+#: apps/accounts/views.py:212
+#: apps/accounts/views_passkeys.py:93
+#: apps/accounts/views_passkeys.py:100
 msgid "Сесія входу завершилась. Увійдіть знову."
 msgstr "The sign-in session has expired. Please sign in again."
 
-#: apps/accounts/views.py:214
+#: apps/accounts/views.py:215
+#: apps/accounts/views_passkeys.py:96
 msgid "Забагато спроб. Увійдіть знову."
 msgstr "Too many attempts. Please sign in again."
 
-#: apps/accounts/views.py:225
+#: apps/accounts/views.py:226
 #: apps/accounts/views.py:190
+#: apps/accounts/views_passkeys.py:103
 msgid "Забагато невдалих кодів. Спробуйте пізніше."
 msgstr "Too many failed codes. Try again later."
 
-#: apps/accounts/views.py:233
-#: apps/accounts/views.py:367
+#: apps/accounts/views.py:234
+#: apps/accounts/views.py:370
 msgid "Невірний код."
 msgstr "Invalid code."
 
-#: apps/accounts/views.py:270
+#: apps/accounts/views.py:271
 msgid "Запрошення недійсне або прострочене."
 msgstr "The invitation is invalid or expired."
 
-#: apps/accounts/views.py:272
+#: apps/accounts/views.py:273
 msgid "Запрошення видане на іншу адресу."
 msgstr "This invitation was issued to a different address."
 
-#: apps/accounts/views.py:274
+#: apps/accounts/views.py:275
 msgid "Реєстрація можлива лише за запрошенням."
 msgstr "Registration is by invitation only."
 
-#: apps/accounts/views.py:286
+#: apps/accounts/views.py:287
 msgid "Запрошення вже використано."
 msgstr "This invitation has already been used."
 
-#: apps/accounts/views.py:341
+#: apps/accounts/views.py:344
 msgid "2FA вже увімкнено. Спочатку вимкніть її."
 msgstr "2FA is already enabled. Disable it first."
 
-#: apps/accounts/views.py:354
+#: apps/accounts/views.py:357
 msgid "Невірний код. Перевірте час на телефоні."
 msgstr "Invalid code. Check the time on your phone."
 
-#: apps/accounts/views.py:371
+#: apps/accounts/views.py:374
 msgid "Двофакторну автентифікацію вимкнено"
 msgstr "Two-factor authentication disabled"
 
-#: apps/accounts/views.py:381
+#: apps/accounts/views.py:384
 msgid "Спочатку увімкніть 2FA."
 msgstr "Enable 2FA first."
 
-#: apps/accounts/views.py:436
+#: apps/accounts/views.py:439
 msgid "Невірний ідентифікатор."
 msgstr "Invalid identifier."
 
-#: apps/accounts/views.py:510
+#: apps/accounts/views.py:513
 msgid "Керувати адміністраторами може лише суперкористувач."
 msgstr "Only a superuser can manage administrators."
 
-#: apps/accounts/views.py:516
+#: apps/accounts/views.py:519
 msgid "Не можна деактивувати себе."
 msgstr "You cannot deactivate yourself."
 
-#: apps/accounts/views.py:518
+#: apps/accounts/views.py:521
 msgid "Лише суперкористувач може змінювати права адміністратора."
 msgstr "Only a superuser can change administrator rights."
 
@@ -141,27 +147,27 @@ msgstr "Only a superuser can change administrator rights."
 msgid "Невірний логін або пароль."
 msgstr "Invalid username or password."
 
-#: apps/accounts/views.py:532
+#: apps/accounts/views.py:535
 msgid "Не можна заблокувати себе."
 msgstr "You can't block yourself."
 
-#: apps/accounts/views.py:538
+#: apps/accounts/views.py:541
 msgid "Вкажіть причину блокування."
 msgstr "Enter a reason for blocking."
 
-#: apps/accounts/views.py:567
+#: apps/accounts/views.py:570
 msgid "Лише суперкористувач може створювати адміністраторів."
 msgstr "Only a superuser can create administrators."
 
-#: apps/accounts/views.py:577
+#: apps/accounts/views.py:580
 msgid "Використайте власні налаштування безпеки."
 msgstr "Use your own security settings."
 
-#: apps/accounts/views.py:586
+#: apps/accounts/views.py:589
 msgid "Адміністратор скинув вашу 2FA"
 msgstr "An administrator reset your 2FA"
 
-#: apps/accounts/views.py:587
+#: apps/accounts/views.py:590
 msgid "Увімкніть її знову в налаштуваннях безпеки."
 msgstr "Turn it back on in your security settings."
 
@@ -181,6 +187,49 @@ msgstr "2FA brute force"
 #, python-format
 msgid "Акаунт %(username)s: %(count)s невдалих кодів за годину."
 msgstr "Account %(username)s: %(count)s failed codes in an hour."
+
+#: apps/accounts/views_passkeys.py:157
+#, python-format
+msgid "Досягнуто максимуму ключів доступу (%(n)s)."
+msgstr "You have reached the maximum number of passkeys (%(n)s)."
+
+#: apps/accounts/views_passkeys.py:162
+msgid "Підтвердьте пароль."
+msgstr "Confirm your password."
+
+#: apps/accounts/views_passkeys.py:180
+msgid "Цей ключ доступу вже додано."
+msgstr "This passkey has already been added."
+
+#: apps/accounts/views_passkeys.py:181
+msgid "Не вдалося додати ключ доступу. Спробуйте ще раз."
+msgstr "Couldn't add the passkey. Please try again."
+
+#: apps/accounts/views_passkeys.py:186
+msgid "Додано ключ доступу"
+msgstr "Passkey added"
+
+#: apps/accounts/views_passkeys.py:187
+#, python-format
+msgid "«%(name)s». Якщо це не ви — видаліть його в налаштуваннях безпеки й змініть пароль."
+msgstr "“%(name)s”. If this wasn't you, remove it in security settings and change your password."
+
+#: apps/accounts/views_passkeys.py:205
+msgid "Вкажіть назву."
+msgstr "Enter a name."
+
+#: apps/accounts/views_passkeys.py:219
+msgid "Ключ доступу видалено"
+msgstr "Passkey removed"
+
+#: apps/accounts/views_passkeys.py:220
+#, python-format
+msgid "«%(name)s» більше не може входити в акаунт."
+msgstr "“%(name)s” can no longer sign in to your account."
+
+#: apps/accounts/views_passkeys.py:47
+msgid "Не вдалося увійти з ключем доступу. Спробуйте ще раз або увійдіть паролем."
+msgstr "Couldn't sign in with the passkey. Try again or sign in with your password."
 
 #: apps/calendars/ics.py:81
 msgid "Без назви"
@@ -356,7 +405,7 @@ msgstr "Request is too large."
 msgid "Внутрішня помилка сервера."
 msgstr "Internal server error."
 
-#: apps/core/permissions.py:24
+#: apps/core/permissions.py:25
 msgid "Потрібні права адміністратора та вхід з 2FA."
 msgstr "Administrator rights and a 2FA sign-in are required."
 

@@ -151,7 +151,7 @@ class MeView(APIView):
         user = request.user
         data = UserSerializer(user).data
         data["preferences"] = PreferencesSerializer(Preferences.objects.get_or_create(user=user)[0]).data
-        data["must_enroll_2fa"] = bool(user.is_staff and settings.REQUIRE_2FA_FOR_STAFF and not user.has_2fa)
+        data["must_enroll_2fa"] = bool(user.is_staff and settings.REQUIRE_2FA_FOR_STAFF and not user.has_strong_auth)
         data["features"] = {"office": bool(settings.OFFICE_ENABLED and settings.OFFICE_JWT_SECRET)}
         return Response({"authenticated": True, "user": data})
 
@@ -193,7 +193,8 @@ class LoginView(EnforceCsrfMixin, APIView):
             request.session.cycle_key()
             request.session[PRE2FA_KEY] = {"uid": str(user.pk), "ts": int(time.time()), "attempts": 0}
             audit(request, "login.password_ok", user=user)
-            return Response({"status": "2fa_required"})
+            # Другим фактором може бути і ключ доступу (Face ID / Touch ID), якщо він є
+            return Response({"status": "2fa_required", "passkey": user.has_passkeys})
 
         _complete_login(request, user, "password")
         return Response({"status": "ok"})
@@ -325,6 +326,8 @@ class SecurityView(APIView):
         return Response(
             {
                 "has_2fa": user.has_2fa,
+                "passkeys": user.passkeys.count(),
+                "has_strong_auth": user.has_strong_auth,
                 "backup_codes_remaining": user.backup_codes.filter(used_at__isnull=True).count(),
                 "password_changed_at": user.password_changed_at,
                 "require_2fa": bool(user.is_staff and settings.REQUIRE_2FA_FOR_STAFF),

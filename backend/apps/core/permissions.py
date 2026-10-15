@@ -4,7 +4,8 @@ from rest_framework.permissions import BasePermission
 
 
 def staff_mfa_ok(request) -> bool:
-    """Адмін-доступ: is_staff + 2FA у профілі + саме ця сесія пройшла другий фактор.
+    """Адмін-доступ: is_staff + 2FA або ключ доступу в профілі + саме ця сесія пройшла другий фактор
+    (код з додатка, резервний код або вхід ключем доступу з перевіркою користувача).
 
     Самого факту «2FA увімкнена» недостатньо: сесія, відкрита лише паролем
     (до увімкнення 2FA), не отримує адмін-прав, поки не пройде вхід з кодом."""
@@ -12,7 +13,7 @@ def staff_mfa_ok(request) -> bool:
     if not (user and user.is_authenticated and user.is_active and user.is_staff):
         return False
     if settings.REQUIRE_2FA_FOR_STAFF:
-        if not user.has_2fa:
+        if not user.has_strong_auth:
             return False
         session = getattr(request, "session", None)
         if session is None or not session.get("mfa"):

@@ -150,6 +150,9 @@ def _check_backup() -> dict | None:
     if status is None:
         return None
     when = backups.last_success(status)
+    if when is None and backups.is_running(status):
+        # Найперша копія ще виконується — це не збій (після неї стан стане звичайним)
+        return {"ok": True, "first_backup_running": True}
     age = int((timezone.now() - when).total_seconds() // 3600) if when else None
     return {"ok": not backups.is_stale(status), "age_hours": age}
 

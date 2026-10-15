@@ -10,6 +10,7 @@ import { applyAppearance, resolvedScheme } from "../lib/appearance";
 import { formatDate } from "../lib/format";
 import Avatar from "./Avatar";
 import Icon from "./Icon";
+import PasskeyPrompt from "./PasskeyPrompt";
 import MobileNav from "./MobileNav";
 import QuotaBar from "./QuotaBar";
 import { useToast } from "./Toast";
@@ -284,6 +285,7 @@ export default function Layout({ children }: { children: ReactNode }) {
           onMarkAll={markAll}
           onLogout={doLogout}
         />
+        <PasskeyPrompt />
       </div>
     </div>
   );
