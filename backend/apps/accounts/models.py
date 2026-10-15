@@ -111,8 +111,18 @@ class User(AbstractBaseUser, PermissionsMixin):
 
     @property
     def has_2fa(self) -> bool:
+        """Код з додатка (TOTP) увімкнено."""
         device = getattr(self, "totp_device", None)
         return bool(device and device.confirmed)
+
+    @property
+    def has_passkeys(self) -> bool:
+        return self.passkeys.exists()
+
+    @property
+    def has_strong_auth(self) -> bool:
+        """Є спосіб входу з другим фактором: TOTP або ключ доступу (passkey з біометрією/PIN)."""
+        return self.has_2fa or self.has_passkeys
 
     @property
     def avatar_url(self) -> str | None:
@@ -189,6 +199,33 @@ class BackupCode(models.Model):
     def hash_code(code: str) -> str:
         normalized = code.replace("-", "").replace(" ", "").lower()
         return hashlib.sha256(f"{settings.SECRET_KEY}:{normalized}".encode()).hexdigest()
+
+
+class Passkey(models.Model):
+    """Ключ доступу (WebAuthn/FIDO2): Face ID / Touch ID / Windows Hello / апаратний ключ.
+
+    Сервер зберігає лише публічний ключ; приватний ніколи не залишає пристрій або
+    менеджер паролів (iCloud Keychain, Google, 1Password…). Вхід вимагає перевірки
+    користувача на пристрої (біометрія або PIN), тож це вже два фактори."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="passkeys")
+    credential_id = models.BinaryField(unique=True)
+    public_key = models.BinaryField()
+    sign_count = models.PositiveBigIntegerField(default=0)
+    transports = models.JSONField(default=list, blank=True)
+    aaguid = models.CharField(max_length=36, blank=True)
+    # Синхронізується між пристроями (iCloud Keychain, Google Password Manager)
+    backed_up = models.BooleanField(default=False)
+    name = models.CharField(max_length=64)
+    created_at = models.DateTimeField(auto_now_add=True)
+    last_used_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["created_at"]
+
+    def __str__(self):
+        return f"{self.user} · {self.name}"
 
 
 class UserSession(models.Model):

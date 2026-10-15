@@ -12,6 +12,7 @@ import * as misc from "./parts/misc";
 import * as mail2 from "./parts/mail2";
 import * as admin2 from "./parts/admin2";
 import * as backup from "./parts/backup";
+import * as passkey from "./parts/passkey";
 import * as mailui from "./parts/mailui";
 import * as push from "./parts/push";
 import * as files2 from "./parts/files2";
@@ -373,6 +374,7 @@ const en: Record<keyof typeof uk, string> = {
   ...mail2.en,
   ...admin2.en,
   ...backup.en,
+  ...passkey.en,
   ...mailui.en,
   ...push.en,
   ...files2.en,

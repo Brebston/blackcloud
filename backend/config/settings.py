@@ -298,6 +298,7 @@ REST_FRAMEWORK = {
         # фото профілю (обробка у thumbnailer)
         "avatar": "20/hour",
         "backup_run": "6/hour",
+        "passkey_register": "20/hour",
     },
     "EXCEPTION_HANDLER": "apps.core.exceptions.exception_handler",
     # Ідентифікація клієнта для лімітів — лише REMOTE_ADDR (його вже виставив uvicorn
@@ -377,6 +378,14 @@ HEALTH_TLS_HOST = env("HEALTH_TLS_HOST", "172.31.250.2")
 HEALTH_MAIL_TLS_HOST = env("HEALTH_MAIL_TLS_HOST", "dovecot")
 HEALTH_MAIL_TLS_PORT = env_int("HEALTH_MAIL_TLS_PORT", 993)
 HEALTH_CELERY_MAX_AGE = env_int("HEALTH_CELERY_MAX_AGE", 300)
+
+# Ключі доступу (WebAuthn/passkeys): прив'язані до домену — ключ, створений для
+# brebston.com, не працюватиме на іншому сайті (захист від фішингу)
+WEBAUTHN_RP_ID = env("WEBAUTHN_RP_ID", DOMAIN)
+WEBAUTHN_RP_NAME = env("WEBAUTHN_RP_NAME", "BlackCloud")
+WEBAUTHN_ORIGIN = env("WEBAUTHN_ORIGIN", f"https://{DOMAIN}")
+# Без підтвердження пароля новий ключ можна додати лише одразу після входу
+PASSKEY_FRESH_LOGIN_SECONDS = env_int("PASSKEY_FRESH_LOGIN_SECONDS", 900)
 
 # Резервні копії (scripts/backup.sh на хості): каталог стану, змонтований у backend
 BACKUP_STATE_DIR = env("BACKUP_STATE_DIR", "/backup-state")

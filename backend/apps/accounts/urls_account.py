@@ -1,7 +1,7 @@
 from django.urls import path
 from rest_framework.routers import SimpleRouter
 
-from . import avatars, views
+from . import avatars, views, views_passkeys
 
 router = SimpleRouter()
 router.register("sessions", views.SessionsViewSet, basename="session")
@@ -15,6 +15,10 @@ urlpatterns = [
     path("security/totp/confirm/", views.TotpConfirmView.as_view()),
     path("security/2fa/disable/", views.TwoFactorDisableView.as_view()),
     path("security/backup-codes/", views.BackupCodesView.as_view()),
+    path("security/passkeys/", views_passkeys.PasskeyListView.as_view()),
+    path("security/passkeys/register/begin/", views_passkeys.PasskeyRegisterBeginView.as_view()),
+    path("security/passkeys/register/finish/", views_passkeys.PasskeyRegisterFinishView.as_view()),
+    path("security/passkeys/<uuid:pk>/", views_passkeys.PasskeyDetailView.as_view()),
     path("audit/", views.MyAuditLogView.as_view()),
     path("avatar/", avatars.MyAvatarView.as_view()),
 ] + router.urls
