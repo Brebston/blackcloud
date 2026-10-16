@@ -300,6 +300,8 @@ REST_FRAMEWORK = {
         "avatar": "20/hour",
         "backup_run": "6/hour",
         "passkey_register": "20/hour",
+        "invite_send": "30/hour",
+        "mail_suggest": "120/min",
     },
     "EXCEPTION_HANDLER": "apps.core.exceptions.exception_handler",
     # Ідентифікація клієнта для лімітів — лише REMOTE_ADDR (його вже виставив uvicorn
@@ -412,6 +414,9 @@ IMAP_HOST = env("IMAP_HOST", "dovecot")
 IMAP_PORT = env_int("IMAP_PORT", 143)
 SMTP_HOST = env("SMTP_HOST", "postfix")
 SMTP_PORT = env_int("SMTP_PORT", 10025)
+# Системні листи (запрошення): відправник і назва сервісу в темі/тексті
+SYSTEM_MAIL_FROM = env("SYSTEM_MAIL_FROM", f"noreply@{MAIL_DOMAIN}")
+SITE_NAME = env("SITE_NAME", "BlackCloud")
 DOVECOT_MASTER_USER = "webmail"
 DOVECOT_MASTER_PASSWORD = read_secret("DOVECOT_MASTER_PASSWORD")
 MAIL_MAX_ATTACHMENTS_BYTES = 15 * 1024 * 1024

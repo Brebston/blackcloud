@@ -1174,3 +1174,30 @@ button.mail-av:focus-visible { outline: 2px solid var(--accent); outline-offset:
 .status-list { grid-template-columns: minmax(130px, max-content) 1fr; }
 .status-problems { margin: 0; padding-left: 18px; }
 .admin-delete-box { border-color: var(--danger); }
+
+/* Поле одержувачів із підказками (як у Gmail) */
+.recipient-input { position: relative; min-width: 0; }
+.recipient-input > input { width: 100%; }
+.recipient-input.grow { flex: 1; }
+.recipient-suggest { position: absolute; left: 0; right: 0; top: 100%; z-index: 30; list-style: none; margin: 4px 0 0; padding: 4px 0; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); max-height: 320px; overflow-y: auto; }
+.recipient-suggest li { display: flex; align-items: center; gap: 10px; padding: 6px 10px; cursor: pointer; }
+.recipient-suggest li.active { background: var(--surface-2); }
+.recipient-av { flex: none; width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; background: var(--accent-bg); color: var(--accent); font-size: 12px; font-weight: 600; object-fit: cover; }
+.recipient-text { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.recipient-tags { display: flex; align-items: center; gap: 4px; flex: none; }
+.recipient-tag { font-size: 11px; color: var(--text-3); border: 1px solid var(--border); border-radius: 99px; padding: 0 6px; }
+.recipient-forget { width: 22px; height: 22px; opacity: 0.6; }
+.recipient-forget:hover { opacity: 1; }
+@media (max-width: 820px) { .recipient-tags .recipient-tag { display: none; } }
+
+/* Адресна книга */
+.contact-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.contact-row { display: flex; align-items: center; gap: 10px; padding: 8px 4px; border-bottom: 1px solid var(--border); }
+.contact-row:last-child { border-bottom: none; }
+.contact-main { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; background: none; border: none; padding: 0; color: var(--text); font: inherit; text-align: left; cursor: pointer; }
+.contact-main > span { max-width: 100%; }
+.contact-row .icon-btn.starred { color: var(--warning); }
+.contact-multi { border: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 6px; }
+.contact-multi legend { padding: 0; margin-bottom: 4px; font-size: 13px; color: var(--text-2); }
+.contact-label { width: 130px; flex: none; }
+@media (max-width: 820px) { .contact-label { width: 96px; } }

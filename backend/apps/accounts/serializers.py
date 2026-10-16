@@ -202,11 +202,24 @@ class InviteSerializer(serializers.ModelSerializer):
     valid = serializers.BooleanField(source="is_valid", read_only=True)
     quota_gb = serializers.FloatField(write_only=True, required=False, min_value=0)
     days = serializers.IntegerField(write_only=True, required=False, min_value=1, max_value=30)
+    # Надіслати лист на email (за замовчуванням — так, якщо адресу вказано)
+    send_email = serializers.BooleanField(write_only=True, required=False, default=True)
+    created_by = serializers.CharField(source="created_by.username", read_only=True, default=None)
 
     class Meta:
         model = Invite
-        fields = ["id", "email", "quota_bytes", "created_at", "expires_at", "used_at", "valid", "quota_gb", "days"]
-        read_only_fields = ["id", "quota_bytes", "created_at", "expires_at", "used_at", "valid"]
+        fields = [
+            "id", "email", "quota_bytes", "created_at", "expires_at", "used_at", "valid", "quota_gb", "days",
+            "send_email", "sent_at", "send_count", "send_error", "created_by",
+        ]
+        read_only_fields = [
+            "id", "quota_bytes", "created_at", "expires_at", "used_at", "valid", "sent_at", "send_count", "send_error",
+        ]
+
+
+class ResendInviteSerializer(serializers.Serializer):
+    # Новий термін дії від цього моменту; без нього термін не змінюється
+    days = serializers.IntegerField(required=False, min_value=1, max_value=30)
 
 
 class PublicUserSerializer(serializers.ModelSerializer):

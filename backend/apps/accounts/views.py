@@ -1,4 +1,5 @@
 import time
+from datetime import timedelta
 
 from django.conf import settings
 from django.contrib.auth import authenticate, login, logout, update_session_auth_hash
@@ -36,6 +37,7 @@ from .serializers import (
     ChangePasswordSerializer,
     DisableTwoFactorSerializer,
     InviteSerializer,
+    ResendInviteSerializer,
     LoginSerializer,
     PasswordConfirmSerializer,
     PreferencesSerializer,
@@ -667,19 +669,70 @@ class AdminInviteViewSet(
     serializer_class = InviteSerializer
     queryset = Invite.objects.order_by("-created_at")
 
+    def get_queryset(self):
+        return Invite.objects.select_related("created_by").order_by("-created_at")
+
+    def get_throttles(self):
+        if self.action in ("create", "resend"):
+            self.throttle_scope = "invite_send"
+            return [ScopedRateThrottle()]
+        return super().get_throttles()
+
+    def _send(self, request, invite, token) -> None:
+        from . import invite_mail
+
+        try:
+            invite_mail.send(invite, token, request.user)
+        except invite_mail.InviteMailError as exc:
+            Invite.objects.filter(pk=invite.pk).update(send_error=str(exc)[:40])
+            audit(request, "admin.invite_send_failed", target=invite.email, error=str(exc))
+        else:
+            Invite.objects.filter(pk=invite.pk).update(
+                sent_at=timezone.now(), send_count=invite.send_count + 1, send_error=""
+            )
+            audit(request, "admin.invite_sent", target=invite.email)
+        invite.refresh_from_db()
+
+    def _response(self, invite, token, status_code=200):
+        from .invite_mail import invite_url
+
+        data = InviteSerializer(invite).data
+        data["token"] = token  # показується лише один раз
+        data["url"] = invite_url(token)
+        return Response(data, status=status_code)
+
     def create(self, request):
         ser = self.get_serializer(data=request.data)
         ser.is_valid(raise_exception=True)
         d = ser.validated_data
         quota = int(d["quota_gb"] * 1024**3) if d.get("quota_gb") is not None else None
-        invite, token = Invite.issue(
-            created_by=request.user, email=d.get("email", ""), quota_bytes=quota, days=d.get("days", 7)
-        )
+        email = d.get("email", "").lower()
+        if email and User.objects.filter(email=email).exists():
+            raise ValidationError({"email": [_("Користувач з цим email уже зареєстрований.")]})
+        invite, token = Invite.issue(created_by=request.user, email=email, quota_bytes=quota, days=d.get("days", 7))
         audit(request, "admin.invite_created", target=invite.email or str(invite.id))
-        data = InviteSerializer(invite).data
-        data["token"] = token  # показується лише один раз
-        data["url"] = f"https://{settings.DOMAIN}/register?invite={token}"
-        return Response(data, status=201)
+        if invite.email and d.get("send_email", True):
+            self._send(request, invite, token)
+        return self._response(invite, token, 201)
+
+    @action(detail=True, methods=["post"])
+    def resend(self, request, pk=None):
+        """Надіслати лист ще раз: новий токен (старе посилання більше не діє), за бажанням — новий термін."""
+        invite = self.get_object()
+        if invite.used_at is not None:
+            raise ValidationError({"detail": _("Запрошення вже використано.")})
+        if not invite.email:
+            raise ValidationError({"detail": _("Для запрошення не вказано email.")})
+        ser = ResendInviteSerializer(data=request.data)
+        ser.is_valid(raise_exception=True)
+        if ser.validated_data.get("days"):
+            invite.expires_at = timezone.now() + timedelta(days=ser.validated_data["days"])
+            invite.save(update_fields=["expires_at"])
+        elif not invite.is_valid:
+            raise ValidationError({"days": [_("Запрошення прострочене — вкажіть новий термін дії.")]})
+        token = invite.rotate_token()
+        self._send(request, invite, token)
+        return self._response(invite, token)
 
 
 class AdminAuditViewSet(viewsets.GenericViewSet, mixins.ListModelMixin):

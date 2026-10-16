@@ -234,6 +234,9 @@ class SendView(APIView):
             result = imap.schedule_message(request.user, mb, request.data, attachments, when)
         else:
             result = imap.send_message(request.user, mb, request.data, attachments)
+        from .contacts import record_recipients
+
+        record_recipients(request.user, [request.data.get(f) or "" for f in ("to", "cc", "bcc")])
         draft_uid = request.data.get("draft_uid")
         if draft_uid:
             try:

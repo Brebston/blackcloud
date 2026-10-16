@@ -253,6 +253,10 @@ class Invite(models.Model):
     expires_at = models.DateTimeField(default=_invite_expiry)
     used_by = models.OneToOneField(User, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
     used_at = models.DateTimeField(null=True, blank=True)
+    # Лист із запрошенням: коли надіслано востаннє, скільки разів, код останньої помилки
+    sent_at = models.DateTimeField(null=True, blank=True)
+    send_count = models.PositiveSmallIntegerField(default=0)
+    send_error = models.CharField(max_length=40, blank=True)
 
     @staticmethod
     def hash_token(token: str) -> str:
@@ -269,6 +273,13 @@ class Invite(models.Model):
             expires_at=timezone.now() + timedelta(days=days),
         )
         return invite, token
+
+    def rotate_token(self) -> str:
+        """Новий токен (старе посилання перестає працювати) — для повторного надсилання."""
+        token = secrets.token_urlsafe(32)
+        self.token_hash = self.hash_token(token)
+        self.save(update_fields=["token_hash"])
+        return token
 
     @property
     def is_valid(self) -> bool:
