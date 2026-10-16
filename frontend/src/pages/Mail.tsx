@@ -6,7 +6,9 @@ import ErrorBoundary from "../components/ErrorBoundary";
 import Icon from "../components/Icon";
 import MailAvatar, { parseSender, useSenderPhotos } from "../components/MailAvatar";
 import Modal from "../components/Modal";
+import ContactsDialog, { type ContactDraft } from "../components/ContactsDialog";
 import PullToRefresh from "../components/PullToRefresh";
+import RecipientInput from "../components/RecipientInput";
 import RichEditor, { type RichEditorHandle } from "../components/RichEditor";
 import SwipeRow from "../components/SwipeRow";
 import { useToast } from "../components/Toast";
@@ -248,6 +250,8 @@ export default function MailPage() {
   const [compose, setCompose] = useState<ComposeInit | null>(null);
   const [loading, setLoading] = useState(false);
   const [showSignatures, setShowSignatures] = useState(false);
+  // Адресна книга: {} — просто відкрити; draft — одразу новий контакт (напр., відправник листа)
+  const [contactsOpen, setContactsOpen] = useState<{ draft?: ContactDraft } | null>(null);
   const [showConfidential, setShowConfidential] = useState(false);
   const [showScheduled, setShowScheduled] = useState(false);
   const [passcodeInfo, setPasscodeInfo] = useState<SendResult["confidential"] | null>(null);
@@ -1183,7 +1187,22 @@ export default function MailPage() {
               <MailAvatar from={shown.from} photo={photoOf(shownSender)} size={40} />
               <div className="reader-meta-text">
                 <div className="row-between reader-from">
-                  <strong className="reader-addr">{shown.from}</strong>
+                  <span className="reader-addr">
+                    <strong>{shown.from}</strong>{" "}
+                    {shownSender && !ownAddresses.has(shownSender) && (
+                      <button
+                        type="button"
+                        className="link-btn small"
+                        onClick={() => {
+                          const p = parseSender(shown.from);
+                          const [first, ...rest] = p.name.split(/\s+/).filter(Boolean);
+                          setContactsOpen({ draft: { first_name: first || "", last_name: rest.join(" "), emails: [{ address: p.email, label: "" }] } });
+                        }}
+                      >
+                        {t("contacts.addSender")}
+                      </button>
+                    )}
+                  </span>
                   <span className="small muted nowrap">{formatDate(shown.date)}</span>
                 </div>
                 <div className="small muted reader-addr">
@@ -1282,6 +1301,9 @@ export default function MailPage() {
             <Icon name="search" size={16} />
             <input placeholder={t("mail.searchFolder")} value={query} onChange={(e) => setQuery(e.target.value)} />
           </form>
+          <button className="icon-btn" onClick={() => setContactsOpen({})} aria-label={t("contacts.open")} title={t("contacts.open")}>
+            <Icon name="users" />
+          </button>
           <button className="icon-btn" onClick={() => setShowSignatures(true)} aria-label={t("mail.signatures")} title={t("mail.signatures")}>
             <Icon name="signature" />
           </button>
@@ -1364,6 +1386,18 @@ export default function MailPage() {
       {showScheduled && mailbox && (
         <ErrorBoundary fallback={dialogFallback(() => setShowScheduled(false))}>
           <ScheduledDialog withBox={withBox} onClose={() => setShowScheduled(false)} />
+        </ErrorBoundary>
+      )}
+      {contactsOpen && (
+        <ErrorBoundary fallback={dialogFallback(() => setContactsOpen(null))}>
+          <ContactsDialog
+            draft={contactsOpen.draft}
+            onClose={() => setContactsOpen(null)}
+            onWrite={(to) => {
+              setContactsOpen(null);
+              setCompose({ to });
+            }}
+          />
         </ErrorBoundary>
       )}
       {showSignatures && (
@@ -1802,12 +1836,11 @@ function ComposeDialog({
           </span>
         </div>
         <div className="row gap">
-          <input
+          <RecipientInput
             className="grow"
-            inputMode="email"
             placeholder={t("compose.to")}
             value={form.to}
-            onChange={set("to")}
+            onChange={(v) => set("to")({ target: { value: v } })}
             autoFocus={!init.to}
           />
           {!showCc && (
@@ -1818,8 +1851,8 @@ function ComposeDialog({
         </div>
         {showCc && (
           <>
-            <input placeholder={t("mail.cc")} value={form.cc} onChange={set("cc")} inputMode="email" />
-            <input placeholder={t("compose.bcc")} value={form.bcc} onChange={set("bcc")} inputMode="email" />
+            <RecipientInput placeholder={t("mail.cc")} value={form.cc} onChange={(v) => set("cc")({ target: { value: v } })} />
+            <RecipientInput placeholder={t("compose.bcc")} value={form.bcc} onChange={(v) => set("bcc")({ target: { value: v } })} />
           </>
         )}
         <input placeholder={t("mail.subject")} value={form.subject} onChange={set("subject")} maxLength={300} />

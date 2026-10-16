@@ -165,3 +165,59 @@ class BlockedSender(models.Model):
     def save(self, *args, **kwargs):
         self.address = self.address.lower()
         super().save(*args, **kwargs)
+
+
+class Contact(models.Model):
+    """Запис адресної книги користувача (особистий: інші його не бачать)."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="contacts")
+    first_name = models.CharField(max_length=100, blank=True)
+    last_name = models.CharField(max_length=100, blank=True)
+    nickname = models.CharField(max_length=100, blank=True)
+    # [{"address": "...", "label": "робоча"}], перша адреса — основна
+    emails = models.JSONField(default=list, blank=True)
+    # [{"number": "...", "label": "мобільний"}]
+    phones = models.JSONField(default=list, blank=True)
+    company = models.CharField(max_length=150, blank=True)
+    job_title = models.CharField(max_length=100, blank=True)
+    birthday = models.DateField(null=True, blank=True)
+    address = models.CharField(max_length=300, blank=True)
+    notes = models.TextField(max_length=2000, blank=True)
+    starred = models.BooleanField(default=False)
+    # Ім'я + адреси в нижньому регістрі — для пошуку й підказок
+    search_text = models.TextField(blank=True, editable=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["first_name", "last_name"]
+        indexes = [models.Index(fields=["owner", "starred"])]
+
+    @property
+    def display_name(self) -> str:
+        full = " ".join(p for p in (self.first_name, self.last_name) if p).strip()
+        return full or self.nickname or (self.emails[0]["address"] if self.emails else "")
+
+    def save(self, *args, **kwargs):
+        parts = [self.first_name, self.last_name, self.nickname, self.company]
+        parts += [e.get("address", "") for e in self.emails or []]
+        self.search_text = " ".join(p for p in parts if p).lower()
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return self.display_name
+
+
+class RecipientStat(models.Model):
+    """Кому користувач пише найчастіше — для підказок у полі «Кому» (як у Gmail)."""
+
+    owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="+")
+    address = models.CharField(max_length=320)
+    name = models.CharField(max_length=200, blank=True)
+    count = models.PositiveIntegerField(default=0)
+    last_used = models.DateTimeField()
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["owner", "address"], name="uniq_recipient_stat")]
+        indexes = [models.Index(fields=["owner", "-count"])]

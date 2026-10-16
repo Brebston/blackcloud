@@ -6,7 +6,7 @@ import Icon from "../components/Icon";
 import Modal from "../components/Modal";
 import { useToast } from "../components/Toast";
 import { useAuth } from "../hooks/useAuth";
-import { useT } from "../i18n";
+import { TKey, useT } from "../i18n";
 import { formatBytes, formatDate } from "../lib/format";
 import { ServerStatusTab } from "./AdminStatus";
 import { AntivirusTab, BackupsTab, MailboxesTab, QuarantineTab } from "./AdminTabs";
@@ -46,7 +46,13 @@ interface Invite {
   used_at: string | null;
   valid: boolean;
   url?: string;
+  sent_at?: string | null;
+  send_count?: number;
+  send_error?: string;
+  created_by?: string | null;
 }
+
+const INVITE_DAYS = [1, 3, 7, 14, 30];
 
 interface Stats {
   total: number;
@@ -577,55 +583,96 @@ function InvitesTab() {
   const toast = useToast();
   const t = useT();
   const [invites, setInvites] = useState<Invite[]>([]);
-  const [form, setForm] = useState({ email: "", quota_gb: "", days: "7" });
+  const [form, setForm] = useState({ email: "", quota_gb: "", days: 7, send: true });
   const [created, setCreated] = useState<string | null>(null);
   const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
 
   const load = () => get<Paginated<Invite>>("/api/admin/invites/").then((r) => setInvites(r.results));
   useEffect(() => {
     load();
   }, []);
 
+  const sendError = (code?: string) =>
+    code === "smtp_unavailable" || code === "recipient_refused" ? t(`inv2.err.${code}` as TKey) : code || "?";
+
+  const report = (r: Invite, resent = false) => {
+    if (!r.email || !r.send_count) return;
+    if (r.send_error) toast(t("inv2.sendFailed", { error: sendError(r.send_error) }), "error");
+    else toast(resent ? t("inv2.resent") : t("inv2.sentTo", { email: r.email }), "success");
+  };
+
   const create = async (e: FormEvent) => {
     e.preventDefault();
     setError("");
-    const days = Number(form.days);
-    if (!Number.isInteger(days) || days < 1 || days > 30) return setError(t("admin.invites.badDays"));
+    const email = form.email.trim();
+    setBusy(true);
     try {
       const r = await post<Invite>("/api/admin/invites/", {
-        email: form.email,
-        days,
+        email,
+        days: form.days,
+        send_email: !!email && form.send,
         ...(form.quota_gb ? { quota_gb: Number(form.quota_gb) } : {}),
       });
       setCreated(r.url || null);
-      setForm({ email: "", quota_gb: "", days: "7" });
+      if (email && form.send && r.send_error) toast(t("inv2.sendFailed", { error: sendError(r.send_error) }), "error");
+      else report(r);
+      setForm({ email: "", quota_gb: "", days: 7, send: true });
       load();
     } catch (err) {
       setError(errorText(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const resend = async (i: Invite) => {
+    try {
+      const r = await post<Invite>(`/api/admin/invites/${i.id}/resend/`, i.valid ? {} : { days: 7 });
+      setCreated(r.url || null);
+      if (r.send_error) toast(t("inv2.sendFailed", { error: sendError(r.send_error) }), "error");
+      else report(r, true);
+      load();
+    } catch (err) {
+      toast(errorText(err), "error");
     }
   };
 
   return (
     <div className="stack">
-      <form className="card grid-4" onSubmit={create}>
-        <label>
-          {t("admin.invites.emailOptional")}
-          <input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
+      <form className="card stack" onSubmit={create}>
+        <div className="grid-4">
+          <label>
+            {t("admin.invites.emailOptional")}
+            <input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
+          </label>
+          <label>
+            {t("admin.edit.quotaGb")}
+            <input type="number" min={0} placeholder={t("admin.invites.quotaDefault")} value={form.quota_gb} onChange={(e) => setForm({ ...form, quota_gb: e.target.value })} />
+          </label>
+          <label>
+            {t("inv2.daysLabel")}
+            <select value={form.days} onChange={(e) => setForm({ ...form, days: Number(e.target.value) })}>
+              {INVITE_DAYS.map((d) => (
+                <option key={d} value={d}>
+                  {t("inv2.dayOption", { n: d })}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button className="btn btn-primary" disabled={busy}>
+            {t("admin.invites.create")}
+          </button>
+        </div>
+        <label className="check">
+          <input type="checkbox" checked={form.send} disabled={!form.email.trim()} onChange={(e) => setForm({ ...form, send: e.target.checked })} />
+          {t("inv2.sendEmail")}
         </label>
-        <label>
-          {t("admin.edit.quotaGb")}
-          <input type="number" min={0} placeholder={t("admin.invites.quotaDefault")} value={form.quota_gb} onChange={(e) => setForm({ ...form, quota_gb: e.target.value })} />
-        </label>
-        <label>
-          {t("admin.invites.days")}
-          <input type="number" min={1} max={30} value={form.days} onChange={(e) => setForm({ ...form, days: e.target.value })} />
-        </label>
-        <button className="btn btn-primary">{t("admin.invites.create")}</button>
       </form>
       {error && <div className="form-error">{error}</div>}
       {created && (
         <div className="secret-box">
-          <div className="small">{t("admin.invites.linkOnce")}</div>
+          <div className="small">{t("inv2.linkHint")}</div>
           <div className="row-between">
             <code className="break">{created}</code>
             <button className="btn btn-sm" onClick={() => navigator.clipboard.writeText(created).then(() => toast(t("admin.invites.copied"), "success"))}>
@@ -639,12 +686,32 @@ function InvitesTab() {
           <tbody>
             {invites.map((i) => (
               <tr key={i.id}>
-                <td>{i.email || <span className="muted">{t("admin.invites.anyone")}</span>}</td>
+                <td>
+                  {i.email || <span className="muted">{t("admin.invites.anyone")}</span>}
+                  {i.created_by && <div className="small muted">{t("inv2.by", { name: i.created_by })}</div>}
+                </td>
+                <td className="small muted">
+                  {i.email &&
+                    (i.sent_at ? (
+                      <>
+                        {t("inv2.sentAt", { date: formatDate(i.sent_at) })} {(i.send_count || 0) > 1 && t("inv2.sentTimes", { n: i.send_count || 0 })}
+                      </>
+                    ) : i.send_error ? (
+                      <span className="text-danger" title={sendError(i.send_error)}>
+                        {t("inv2.notSent")}
+                      </span>
+                    ) : null)}
+                </td>
                 <td className="small muted">{t("admin.invites.until", { date: formatDate(i.expires_at) })}</td>
                 <td>
                   {i.used_at ? <span className="pill">{t("admin.invites.used")}</span> : i.valid ? <span className="pill pill-success">{t("admin.invites.active")}</span> : <span className="pill">{t("admin.invites.expired")}</span>}
                 </td>
-                <td>
+                <td className="nowrap">
+                  {!i.used_at && i.email && (
+                    <button className="link-btn" onClick={() => resend(i)}>
+                      {i.valid ? t("inv2.resend") : t("inv2.resendExpired", { n: 7 })}
+                    </button>
+                  )}{" "}
                   {!i.used_at && (
                     <button className="link-btn danger" onClick={() => del(`/api/admin/invites/${i.id}/`).then(load)}>
                       {t("common.delete")}

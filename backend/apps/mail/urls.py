@@ -1,6 +1,6 @@
 from django.urls import path
 
-from . import views
+from . import views, views_contacts
 
 urlpatterns = [
     path("mailboxes/", views.MailboxesView.as_view()),
@@ -23,4 +23,8 @@ urlpatterns = [
     path("blocked/<int:pk>/", views.BlockedDetailView.as_view()),
     path("confidential/", views.ConfidentialListView.as_view()),
     path("confidential/<uuid:pk>/revoke/", views.ConfidentialRevokeView.as_view()),
+    path("contacts/", views_contacts.ContactsView.as_view()),
+    path("contacts/suggest/", views_contacts.SuggestView.as_view()),
+    path("contacts/recent/", views_contacts.RecentRecipientDeleteView.as_view()),
+    path("contacts/<uuid:pk>/", views_contacts.ContactDetailView.as_view()),
 ]
