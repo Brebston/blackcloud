@@ -31,7 +31,11 @@ msgstr "At most %(n)s addresses."
 msgid "Ім'я користувача: 3–40 символів, малі латинські літери, цифри, '.', '_', '-'."
 msgstr "Username: 3–40 characters, lowercase Latin letters, digits, '.', '_', '-'."
 
-#: apps/accounts/serializers.py:103
+#: apps/accounts/serializers.py:101
+msgid "Це ім'я належало видаленому акаунту й поки недоступне."
+msgstr "This name belonged to a deleted account and is not available yet."
+
+#: apps/accounts/serializers.py:107
 msgid "Цей email вже використовується."
 msgstr "This email is already in use."
 
@@ -47,143 +51,172 @@ msgstr "This name is reserved."
 msgid "Це ім'я вже зайняте."
 msgstr "This name is already taken."
 
-#: apps/accounts/views.py:113
+#: apps/accounts/views.py:114
 msgid "Новий вхід в акаунт"
 msgstr "New sign-in to your account"
 
-#: apps/accounts/views.py:114
+#: apps/accounts/views.py:115
 #, python-format
 msgid "Вхід з IP %(ip)s. Якщо це не ви — змініть пароль."
 msgstr "Sign-in from IP %(ip)s. If this wasn't you, change your password."
 
-#: apps/accounts/views.py:125
+#: apps/accounts/views.py:126
 #: apps/dav/views.py:174
 #: apps/mail/views.py:508
 msgid "Забагато невдалих спроб. Спробуйте пізніше."
 msgstr "Too many failed attempts. Try again later."
 
-#: apps/accounts/views.py:129
+#: apps/accounts/views.py:130
 #: apps/storage/views.py:798
 msgid "Невірний пароль."
 msgstr "Incorrect password."
 
-#: apps/accounts/views.py:173
+#: apps/accounts/views.py:174
 #: apps/accounts/views_passkeys.py:60
 #: apps/accounts/views_passkeys.py:72
 msgid "Забагато невдалих спроб. Спробуйте через 15 хвилин."
 msgstr "Too many failed attempts. Try again in 15 minutes."
 
-#: apps/accounts/views.py:212
+#: apps/accounts/views.py:213
 #: apps/accounts/views_passkeys.py:93
 #: apps/accounts/views_passkeys.py:100
 msgid "Сесія входу завершилась. Увійдіть знову."
 msgstr "The sign-in session has expired. Please sign in again."
 
-#: apps/accounts/views.py:215
+#: apps/accounts/views.py:216
 #: apps/accounts/views_passkeys.py:96
 msgid "Забагато спроб. Увійдіть знову."
 msgstr "Too many attempts. Please sign in again."
 
-#: apps/accounts/views.py:226
-#: apps/accounts/views.py:190
+#: apps/accounts/views.py:227
+#: apps/accounts/views.py:191
 #: apps/accounts/views_passkeys.py:103
 msgid "Забагато невдалих кодів. Спробуйте пізніше."
 msgstr "Too many failed codes. Try again later."
 
-#: apps/accounts/views.py:234
-#: apps/accounts/views.py:370
+#: apps/accounts/views.py:235
+#: apps/accounts/views.py:371
 msgid "Невірний код."
 msgstr "Invalid code."
 
-#: apps/accounts/views.py:271
+#: apps/accounts/views.py:272
 msgid "Запрошення недійсне або прострочене."
 msgstr "The invitation is invalid or expired."
 
-#: apps/accounts/views.py:273
+#: apps/accounts/views.py:274
 msgid "Запрошення видане на іншу адресу."
 msgstr "This invitation was issued to a different address."
 
-#: apps/accounts/views.py:275
+#: apps/accounts/views.py:276
 msgid "Реєстрація можлива лише за запрошенням."
 msgstr "Registration is by invitation only."
 
-#: apps/accounts/views.py:287
+#: apps/accounts/views.py:288
 msgid "Запрошення вже використано."
 msgstr "This invitation has already been used."
 
-#: apps/accounts/views.py:344
+#: apps/accounts/views.py:345
 msgid "2FA вже увімкнено. Спочатку вимкніть її."
 msgstr "2FA is already enabled. Disable it first."
 
-#: apps/accounts/views.py:357
+#: apps/accounts/views.py:358
 msgid "Невірний код. Перевірте час на телефоні."
 msgstr "Invalid code. Check the time on your phone."
 
-#: apps/accounts/views.py:374
+#: apps/accounts/views.py:375
 msgid "Двофакторну автентифікацію вимкнено"
 msgstr "Two-factor authentication disabled"
 
-#: apps/accounts/views.py:384
+#: apps/accounts/views.py:385
 msgid "Спочатку увімкніть 2FA."
 msgstr "Enable 2FA first."
 
-#: apps/accounts/views.py:439
+#: apps/accounts/views.py:440
 msgid "Невірний ідентифікатор."
 msgstr "Invalid identifier."
 
-#: apps/accounts/views.py:513
+#: apps/accounts/views.py:514
 msgid "Керувати адміністраторами може лише суперкористувач."
 msgstr "Only a superuser can manage administrators."
 
-#: apps/accounts/views.py:519
+#: apps/accounts/views.py:520
 msgid "Не можна деактивувати себе."
 msgstr "You cannot deactivate yourself."
 
-#: apps/accounts/views.py:521
+#: apps/accounts/views.py:522
 msgid "Лише суперкористувач може змінювати права адміністратора."
 msgstr "Only a superuser can change administrator rights."
 
-#: apps/accounts/views.py:53
-msgid "Невірний логін або пароль."
-msgstr "Invalid username or password."
-
-#: apps/accounts/views.py:535
+#: apps/accounts/views.py:538
 msgid "Не можна заблокувати себе."
 msgstr "You can't block yourself."
 
-#: apps/accounts/views.py:541
+#: apps/accounts/views.py:54
+msgid "Невірний логін або пароль."
+msgstr "Invalid username or password."
+
+#: apps/accounts/views.py:544
 msgid "Вкажіть причину блокування."
 msgstr "Enter a reason for blocking."
 
-#: apps/accounts/views.py:570
+#: apps/accounts/views.py:556
+msgid "Для акаунта заплановано видалення — спершу скасуйте його."
+msgstr "This account is scheduled for deletion — cancel the deletion first."
+
+#: apps/accounts/views.py:579
+msgid "Не можна видалити себе."
+msgstr "You cannot delete yourself."
+
+#: apps/accounts/views.py:584
+msgid "Введіть ім'я користувача для підтвердження."
+msgstr "Type the username to confirm."
+
+#: apps/accounts/views.py:587
+msgid "Видалення вже заплановано."
+msgstr "Deletion is already scheduled."
+
+#: apps/accounts/views.py:592
+msgid "Заплановано видалення акаунта"
+msgstr "Account deletion scheduled"
+
+#: apps/accounts/views.py:593
+#, python-format
+msgid "%(admin)s запланував видалення %(user)s разом з усіма даними. Скасувати можна до %(date)s."
+msgstr "%(admin)s scheduled deletion of %(user)s with all data. It can be cancelled until %(date)s."
+
+#: apps/accounts/views.py:607
+msgid "Немає видалення, яке можна скасувати."
+msgstr "There is no deletion to cancel."
+
+#: apps/accounts/views.py:621
 msgid "Лише суперкористувач може створювати адміністраторів."
 msgstr "Only a superuser can create administrators."
 
-#: apps/accounts/views.py:580
+#: apps/accounts/views.py:631
 msgid "Використайте власні налаштування безпеки."
 msgstr "Use your own security settings."
 
-#: apps/accounts/views.py:589
+#: apps/accounts/views.py:640
 msgid "Адміністратор скинув вашу 2FA"
 msgstr "An administrator reset your 2FA"
 
-#: apps/accounts/views.py:590
+#: apps/accounts/views.py:641
 msgid "Увімкніть її знову в налаштуваннях безпеки."
 msgstr "Turn it back on in your security settings."
 
-#: apps/accounts/views.py:82
+#: apps/accounts/views.py:83
 msgid "Хтось підбирає код 2FA до вашого акаунта"
 msgstr "Someone is trying to guess the 2FA code for your account"
 
-#: apps/accounts/views.py:83
+#: apps/accounts/views.py:84
 msgid "Пароль введено правильно, але код — ні. Вхід тимчасово заблоковано. Змініть пароль."
 msgstr "The password was correct but the code was not. Sign-in is temporarily blocked. Change your password."
 
-#: apps/accounts/views.py:87
+#: apps/accounts/views.py:88
 msgid "Підбір 2FA"
 msgstr "2FA brute force"
 
-#: apps/accounts/views.py:88
+#: apps/accounts/views.py:89
 #, python-format
 msgid "Акаунт %(username)s: %(count)s невдалих кодів за годину."
 msgstr "Account %(username)s: %(count)s failed codes in an hour."
@@ -323,7 +356,7 @@ msgstr "You can't delete your last calendar."
 
 #: apps/calendars/views.py:80
 #: apps/chat/views.py:270
-#: apps/mail/views_admin.py:105
+#: apps/mail/views_admin.py:110
 msgid "Користувача не знайдено."
 msgstr "User not found."
 
@@ -812,42 +845,42 @@ msgstr "Incorrect passcode."
 msgid "Задовга назва теки."
 msgstr "Folder name is too long."
 
-#: apps/mail/views_admin.py:108
+#: apps/mail/views_admin.py:113
 #, python-format
 msgid "Максимум %(n)s скриньок на користувача."
 msgstr "Maximum %(n)s mailboxes per user."
 
-#: apps/mail/views_admin.py:112
-#: apps/mail/views_admin.py:287
+#: apps/mail/views_admin.py:117
+#: apps/mail/views_admin.py:292
 msgid "Ця адреса вже зайнята скринькою або псевдонімом."
 msgstr "This address is already used by a mailbox or alias."
 
-#: apps/mail/views_admin.py:123
-#: apps/mail/views_admin.py:298
+#: apps/mail/views_admin.py:128
+#: apps/mail/views_admin.py:303
 msgid "Ця адреса вже зайнята."
 msgstr "This address is already taken."
 
-#: apps/mail/views_admin.py:212
+#: apps/mail/views_admin.py:217
 msgid "Службові скриньки видаляє лише суперкористувач."
 msgstr "Only a superuser can delete service mailboxes."
 
-#: apps/mail/views_admin.py:218
+#: apps/mail/views_admin.py:223
 msgid "Введіть адресу скриньки для підтвердження."
 msgstr "Type the mailbox address to confirm."
 
-#: apps/mail/views_admin.py:220
+#: apps/mail/views_admin.py:225
 msgid "Примусове видалення доступне лише суперкористувачу."
 msgstr "Only a superuser can force deletion."
 
-#: apps/mail/views_admin.py:236
+#: apps/mail/views_admin.py:241
 msgid "Не вдалося стерти листи через IMAP — скриньку не видалено. Спробуйте пізніше."
 msgstr "Couldn't erase the messages via IMAP — the mailbox was not deleted. Try again later."
 
-#: apps/mail/views_admin.py:266
+#: apps/mail/views_admin.py:271
 msgid "Поштову скриньку видалено"
 msgstr "Mailbox deleted"
 
-#: apps/mail/views_admin.py:267
+#: apps/mail/views_admin.py:272
 #, python-format
 msgid "Адміністратор видалив скриньку %(address)s разом з усіма листами."
 msgstr "An administrator deleted the mailbox %(address)s together with all its messages."
@@ -856,7 +889,7 @@ msgstr "An administrator deleted the mailbox %(address)s together with all its m
 msgid "Скриньками адміністраторів керує лише суперкористувач."
 msgstr "Only a superuser can manage administrators' mailboxes."
 
-#: apps/mail/views_admin.py:69
+#: apps/mail/views_admin.py:74
 msgid "Невідомий або вимкнений поштовий домен."
 msgstr "Unknown or disabled mail domain."
 

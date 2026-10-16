@@ -18,3 +18,11 @@ def process_avatar_task(user_id: str, pending_id: str):
     from .avatars import process_avatar
 
     process_avatar(user_id, pending_id)
+
+
+@shared_task
+def purge_deleted_accounts():
+    """Остаточно видаляє акаунти, для яких минув термін відкладеного видалення."""
+    from .deletion import purge_due
+
+    return purge_due()

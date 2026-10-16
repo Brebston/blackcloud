@@ -180,6 +180,7 @@ CELERY_BEAT_SCHEDULE = {
     "prune-file-versions": {"task": "apps.storage.tasks.prune_file_versions", "schedule": timedelta(hours=24)},
     "event-reminders": {"task": "apps.calendars.tasks.send_due_reminders", "schedule": timedelta(minutes=1)},
     "cleanup-sessions": {"task": "apps.accounts.tasks.cleanup_sessions", "schedule": timedelta(hours=12)},
+    "purge-deleted-accounts": {"task": "apps.accounts.tasks.purge_deleted_accounts", "schedule": timedelta(hours=1)},
     "purge-old-audit": {"task": "apps.core.tasks.purge_old_audit", "schedule": timedelta(days=1)},
     # Мітка живості beat+worker для /api/health/deep/ (застарілі не накопичуються в черзі)
     "celery-heartbeat": {
@@ -317,6 +318,10 @@ MAX_FILE_SIZE = env_int("MAX_FILE_SIZE_GB", 10) * GB
 UPLOAD_CHUNK_SIZE = 8 * 1024 * 1024
 UPLOAD_SESSION_TTL = timedelta(hours=24)
 TRASH_RETENTION = timedelta(days=env_int("TRASH_RETENTION_DAYS", 30))
+# Видалення акаунта адміністратором: спершу блок, остаточно — через стільки днів (можна скасувати)
+ACCOUNT_DELETION_DELAY_DAYS = env_int("ACCOUNT_DELETION_DELAY_DAYS", 7)
+# Ім'я та поштові адреси видаленого акаунта не видаються іншим ще стільки днів
+ACCOUNT_NAME_HOLD_DAYS = env_int("ACCOUNT_NAME_HOLD_DAYS", 30)
 PUBLIC_LINK_MAX_DAYS = env_int("PUBLIC_LINK_MAX_DAYS", 30)
 PUBLIC_LINK_MIN_PASSWORD = 8
 PUBLIC_LINK_MAX_FAILURES = 10  # невдалих паролів на посилання за годину → блокування

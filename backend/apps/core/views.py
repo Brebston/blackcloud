@@ -72,13 +72,19 @@ def _check_clamav() -> dict:
     return {"ok": bool(st.get("reachable")), "enabled": True}
 
 
-def _check_disk() -> dict:
+def disk_usage():
+    """(usage, відсоток зайнятого) для диска зі сховищем файлів."""
     path = Path(settings.LOCAL_OBJECT_STORE_DIR)
     # Каталог може ще не існувати — міряємо найближчий наявний батьківський
     while not path.exists() and path != path.parent:
         path = path.parent
     usage = shutil.disk_usage(path)
     percent = round(usage.used * 100 / usage.total, 1) if usage.total else 0.0
+    return usage, percent
+
+
+def _check_disk() -> dict:
+    usage, percent = disk_usage()
     return {
         "ok": percent < settings.HEALTH_DISK_ALERT_PERCENT,
         "percent": percent,
@@ -169,9 +175,11 @@ HEALTH_CHECKS = {
 }
 
 
-def run_health_checks() -> tuple[bool, dict]:
+def run_health_checks(only: list[str] | None = None) -> tuple[bool, dict]:
     results = {}
     for name, check in HEALTH_CHECKS.items():
+        if only and name not in only:
+            continue
         try:
             result = check()
             if result is None:
@@ -202,7 +210,11 @@ class HealthDeepView(APIView):
         expected = settings.HEALTH_TOKEN
         if scheme.lower() != "bearer" or not hmac.compare_digest(token.strip().encode(), expected.encode()):
             raise PermissionDenied()
-        ok, checks = run_health_checks()
+        # ?only=disk (або disk,backup) — окремий монітор у Kuma з власною назвою в Telegram
+        only = [n.strip() for n in request.query_params.get("only", "").split(",") if n.strip()]
+        if only and not set(only) <= set(HEALTH_CHECKS):
+            return Response({"detail": "unknown check"}, status=400)
+        ok, checks = run_health_checks(only or None)
         return Response({"status": "ok" if ok else "fail", "checks": checks}, status=200 if ok else 503)
 
 

@@ -106,12 +106,22 @@ ssh -L 3001:127.0.0.1:3001 brebston@blkbox
 | 4 | TCP Port | SMTPS 465 | Host `host.docker.internal`, Port `465` |
 | 5 | TCP Port | Submission 587 | Host `host.docker.internal`, Port `587` |
 | 6 | TCP Port | IMAPS 993 | Host `host.docker.internal`, Port `993` |
+| 2a | HTTP(s) | Диск ≥ 85% | URL `https://brebston.com/api/health/deep/?only=disk`; ті самі **Headers**; Accepted Status Codes `200-299`. Окрема тривога з назвою «Диск ≥ 85%» (поріг — `HEALTH_DISK_ALERT_PERCENT`); інтервал можна 300 с |
+| 2b | HTTP(s) | Резервні копії | URL `https://brebston.com/api/health/deep/?only=backup`; ті самі **Headers**. Тривога, якщо немає вдалої копії понад 26 год |
 | 7 | DNS (необов'язково) | DNS | Hostname `brebston.com`, Resolver `1.1.1.1`, Record A — перевіряє, що домен резолвиться (і зміну IP, якщо задати очікуване значення) |
 
 Щоб у Telegram одразу було видно **що саме** зламалось, монітор №2 можна зробити типу
 **HTTP(s) – Json Query**: Json Query `status`, Expected Value `ok`. Kuma покаже у сповіщенні
 фактичну відповідь. Альтернатива — кілька Json Query-моніторів на ту ж адресу, напр.
 `checks.disk.ok` = `true`, `checks.clamav.ok` = `true` (окремі тривоги «диск», «ClamAV»).
+
+Параметр `?only=` приймає назви перевірок через кому: `db`, `cache`, `clamav`, `disk`, `cert_web`,
+`cert_mail`, `celery`, `backup` (невідома назва → 400). Так кожна важлива тривога приходить
+у Telegram з власною назвою монітора, а не загальним «Стан сервісів — Down».
+
+Подивитися все одразу (диск, пам'ять, процесор, черги антивірусу й мініатюр, резервні копії,
+сертифікати, служби) можна в **Адмінка → Стан сервера**. Ця сторінка сповіщень не надсилає —
+їх надсилає Kuma за моніторами вище.
 
 Якщо TCP-монітори на `host.docker.internal` не проходять, а ззовні порти відкриті (буває через
 правила файрволу хоста), вкажіть замість нього LAN-адресу сервера (напр. `192.168.1.10`).
@@ -123,7 +133,7 @@ ssh -L 3001:127.0.0.1:3001 brebston@blkbox
   (`clamav.ok=false`) і прийде повідомлення; `docker compose start clamav` → прийде «UP».
   Після старту ClamAV завантажує бази 1–2 хв.
 - **Диск:** тимчасово `HEALTH_DISK_ALERT_PERCENT=1` у `.env` → `docker compose up -d backend` →
-  тривога; поверніть 85 і знову `docker compose up -d backend`.
+  тривога «Диск ≥ 85%» (і червоний диск в Адмінка → Стан сервера); поверніть 85 і знову `docker compose up -d backend`.
 - **Сайт:** `docker compose stop frontend` → DOWN монітора «Сайт»; потім `docker compose start frontend`.
 - **Пошта:** `docker compose stop dovecot` → DOWN «IMAPS 993» і `cert_mail` у «Стан сервісів».
 

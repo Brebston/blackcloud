@@ -1167,3 +1167,10 @@ button.mail-av:focus-visible { outline: 2px solid var(--accent); outline-offset:
 .passkey-actions { display: flex; gap: 4px; }
 .passkey-prompt-icon { width: 56px; height: 56px; border-radius: 16px; display: grid; place-items: center; background: var(--accent-bg); color: var(--accent); margin: 0 auto 4px; }
 .passkey-add { display: flex; flex-wrap: wrap; gap: 8px; }
+
+/* Адмінка → «Стан сервера» */
+.text-warning { color: var(--warning); }
+.status-meter { height: 8px; }
+.status-list { grid-template-columns: minmax(130px, max-content) 1fr; }
+.status-problems { margin: 0; padding-left: 18px; }
+.admin-delete-box { border-color: var(--danger); }

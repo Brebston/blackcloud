@@ -32,6 +32,7 @@ from .serializers import (
     AdminCreateUserSerializer,
     AdminUserSerializer,
     BlockUserSerializer,
+    DeleteUserSerializer,
     ChangePasswordSerializer,
     DisableTwoFactorSerializer,
     InviteSerializer,
@@ -497,7 +498,7 @@ class AdminUserViewSet(
     serializer_class = AdminUserSerializer
 
     def get_queryset(self):
-        qs = User.objects.select_related("totp_device", "blocked_by").order_by("username")
+        qs = User.objects.select_related("totp_device", "blocked_by", "deletion", "deletion__requested_by").order_by("username")
         q = self.request.query_params.get("q")
         if q:
             qs = qs.filter(Q(username__icontains=q) | Q(email__icontains=q) | Q(display_name__icontains=q))
@@ -519,6 +520,8 @@ class AdminUserViewSet(
             raise ValidationError({"is_active": [_("Не можна деактивувати себе.")]})
         if "is_staff" in serializer.validated_data and not self.request.user.is_superuser:
             raise PermissionDenied(_("Лише суперкористувач може змінювати права адміністратора."))
+        if serializer.validated_data.get("is_active") and not target.is_active:
+            self._refuse_if_deleting(target)
         was_active = target.is_active
         user = serializer.save()
         if user.is_active is False and was_active:
@@ -546,16 +549,64 @@ class AdminUserViewSet(
         audit(request, "admin.user_blocked", target=user.username, reason=reason)
         return Response(AdminUserSerializer(user).data)
 
+    def _refuse_if_deleting(self, user):
+        from .deletion import pending_for
+
+        if pending_for(user) is not None:
+            raise ValidationError({"detail": _("Для акаунта заплановано видалення — спершу скасуйте його.")})
+
     @action(detail=True, methods=["post"])
     def unblock(self, request, pk=None):
         user = self.get_object()
         self._check_target(user)
+        self._refuse_if_deleting(user)
         if user.is_active:
             return Response(AdminUserSerializer(user).data)
         user.is_active = True
         user.save(update_fields=["is_active"])
         _mark_unblocked(user)
         audit(request, "admin.user_unblocked", target=user.username)
+        return Response(AdminUserSerializer(user).data)
+
+    @action(detail=True, methods=["post"])
+    def schedule_delete(self, request, pk=None):
+        """Видалити акаунт з усіма даними: одразу блок, остаточно — через ACCOUNT_DELETION_DELAY_DAYS.
+        Потрібні пароль адміністратора й введене ім'я користувача."""
+        from . import deletion
+
+        user = self.get_object()
+        if user == request.user:
+            raise ValidationError({"detail": _("Не можна видалити себе.")})
+        self._check_target(user)
+        ser = DeleteUserSerializer(data=request.data)
+        ser.is_valid(raise_exception=True)
+        if ser.validated_data["confirm"].strip().lower() != user.username:
+            raise ValidationError({"confirm": [_("Введіть ім'я користувача для підтвердження.")]})
+        _require_password(request, ser.validated_data["password"])
+        if deletion.pending_for(user) is not None:
+            raise ValidationError({"detail": _("Видалення вже заплановано.")})
+        reason = ser.validated_data.get("reason", "").strip()
+        d = deletion.schedule(user, request.user, reason)
+        audit(request, "admin.user_delete_scheduled", target=user.username, purge_after=d.purge_after.isoformat(), reason=reason)
+        alert_staff(
+            gettext_noop("Заплановано видалення акаунта"),
+            gettext_noop("%(admin)s запланував видалення %(user)s разом з усіма даними. Скасувати можна до %(date)s."),
+            params={"admin": request.user.username, "user": user.username, "date": d.purge_after.date().isoformat()},
+        )
+        user.refresh_from_db()
+        return Response(AdminUserSerializer(user).data)
+
+    @action(detail=True, methods=["post"])
+    def cancel_delete(self, request, pk=None):
+        """Скасувати заплановане видалення. Акаунт лишається заблокованим — розблокування окремо."""
+        from . import deletion
+
+        user = self.get_object()
+        self._check_target(user)
+        if not deletion.cancel(user):
+            raise ValidationError({"detail": _("Немає видалення, яке можна скасувати.")})
+        audit(request, "admin.user_delete_cancelled", target=user.username)
+        user.refresh_from_db()
         return Response(AdminUserSerializer(user).data)
 
     def create(self, request):
@@ -604,6 +655,8 @@ class AdminUserViewSet(
         )
         agg["files"] = File.objects.filter(deleted_at__isnull=True).count()
         agg["infected"] = File.objects.filter(status=File.Status.INFECTED).count()
+        agg["deletion_delay_days"] = settings.ACCOUNT_DELETION_DELAY_DAYS
+        agg["name_hold_days"] = settings.ACCOUNT_NAME_HOLD_DAYS
         return Response(agg)
 
 
