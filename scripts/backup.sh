@@ -137,9 +137,19 @@ elif action == "refresh":
     schedule = {}
     for key, unit in (("next_backup", "blackcloud-backup.timer"), ("next_check", "blackcloud-backup-check.timer")):
         r = run(["systemctl", "show", unit, "--property=NextElapseUSecRealtime", "--value"])
-        value = (r.stdout.strip() if r is not None else "") or "n/a"
+        value = r.stdout.strip() if r is not None and r.returncode == 0 else ""
         schedule[key] = None
-        if value != "n/a":
+        if value in ("", "n/a", "0", "infinity"):
+            # Поки таймер щойно запустив службу (а стан пишеться саме під час копії), systemd
+            # ще не порахував наступний запуск — рахуємо з розкладу таймера (OnCalendar).
+            value = ""
+            c = run(["systemctl", "show", unit, "--property=TimersCalendar", "--value"])
+            m = re.search(r"OnCalendar=([^;}]+)", c.stdout if c is not None else "")
+            if m:
+                a = run(["systemd-analyze", "calendar", m.group(1).strip()])
+                n = re.search(r"Next elapse:\s*(.+)", a.stdout if a is not None and a.returncode == 0 else "")
+                value = n.group(1).strip() if n else ""
+        if value:
             d = run(["date", "-u", "-d", value, "+%Y-%m-%dT%H:%M:%SZ"])
             schedule[key] = d.stdout.strip() if d is not None and d.returncode == 0 else None
     data["schedule"] = schedule

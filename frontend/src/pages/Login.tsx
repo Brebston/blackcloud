@@ -154,7 +154,6 @@ export default function LoginPage() {
                 <button type="button" className="btn btn-block passkey-btn" disabled={busy} onClick={() => usePasskey("login")}>
                   <Icon name="lock" size={16} /> {t("passkey.loginButton")}
                 </button>
-                <div className="auth-foot small">{t("passkey.loginHint", { method })}</div>
               </>
             )}
             <div className="auth-foot">

@@ -44,7 +44,12 @@ def _address_taken(local_part: str, domain: MailDomain, exclude_pk=None) -> bool
     qs = Mailbox.objects.filter(domain=domain, local_part=local_part)
     if exclude_pk:
         qs = qs.exclude(pk=exclude_pk)
-    return qs.exists() or Alias.objects.filter(source=address).exists()
+    if qs.exists() or Alias.objects.filter(source=address).exists():
+        return True
+    from apps.accounts.deletion import address_on_hold
+
+    # Адреса нещодавно видаленого акаунта ще якийсь час не видається іншим
+    return address_on_hold(address)
 
 
 def _serialize(mb: Mailbox) -> dict:

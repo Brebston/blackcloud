@@ -291,3 +291,31 @@ class UserAvatar(models.Model):
     pending_id = models.UUIDField(null=True, blank=True)
     failed = models.BooleanField(default=False)
     updated_at = models.DateTimeField(auto_now=True)
+
+
+class AccountDeletion(models.Model):
+    """Видалення акаунта, заплановане адміністратором (див. accounts/deletion.py).
+
+    До purge_after акаунт заблокований, а видалення можна скасувати. Після виконання рядок
+    лишається з user=NULL: ім'я й поштові адреси ще ACCOUNT_NAME_HOLD_DAYS не видаються
+    іншим — щоб листи, адресовані колишньому власнику, не потрапили новому."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.OneToOneField(User, null=True, blank=True, on_delete=models.SET_NULL, related_name="deletion")
+    username = models.CharField(max_length=40, db_index=True)
+    addresses = models.JSONField(default=list, blank=True)
+    reason = models.CharField(max_length=500, blank=True)
+    requested_by = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    requested_at = models.DateTimeField(auto_now_add=True)
+    purge_after = models.DateTimeField(db_index=True)
+    # Не NULL лише під час стирання: поки так, Dovecot бачить скриньки (щоб стерти листи)
+    started_at = models.DateTimeField(null=True, blank=True)
+    purged_at = models.DateTimeField(null=True, blank=True)
+    attempts = models.PositiveSmallIntegerField(default=0)
+    last_error = models.CharField(max_length=200, blank=True)
+
+    class Meta:
+        ordering = ["-requested_at"]
+
+    def __str__(self):
+        return self.username

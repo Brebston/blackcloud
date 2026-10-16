@@ -8,6 +8,7 @@ import { useToast } from "../components/Toast";
 import { useAuth } from "../hooks/useAuth";
 import { useT } from "../i18n";
 import { formatBytes, formatDate } from "../lib/format";
+import { ServerStatusTab } from "./AdminStatus";
 import { AntivirusTab, BackupsTab, MailboxesTab, QuarantineTab } from "./AdminTabs";
 
 interface AdminUser {
@@ -26,6 +27,14 @@ interface AdminUser {
   blocked_reason?: string;
   blocked_at?: string | null;
   blocked_by?: string | null;
+  deletion?: {
+    purge_after: string;
+    requested_at: string;
+    requested_by: string | null;
+    in_progress: boolean;
+    attempts: number;
+    last_error: string;
+  } | null;
 }
 
 interface Invite {
@@ -47,19 +56,22 @@ interface Stats {
   allocated: number | null;
   files: number;
   infected: number;
+  deletion_delay_days?: number;
+  name_hold_days?: number;
 }
 
 export default function AdminPage() {
   const { user } = useAuth();
   const toast = useToast();
   const t = useT();
-  const [tab, setTab] = useState<"users" | "invites" | "audit" | "mailboxes" | "quarantine" | "antivirus" | "backups">("users");
+  const [tab, setTab] = useState<"users" | "invites" | "audit" | "mailboxes" | "quarantine" | "antivirus" | "backups" | "status">("users");
   const [stats, setStats] = useState<Stats | null>(null);
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [q, setQ] = useState("");
   const [editing, setEditing] = useState<AdminUser | null>(null);
   const [creating, setCreating] = useState(false);
   const [blocking, setBlocking] = useState<AdminUser | null>(null);
+  const [deleting, setDeleting] = useState<AdminUser | null>(null);
   const [denied, setDenied] = useState("");
 
   const loadUsers = useCallback(async () => {
@@ -76,6 +88,19 @@ export default function AdminPage() {
     const timer = setTimeout(loadUsers, 250);
     return () => clearTimeout(timer);
   }, [loadUsers]);
+
+  const cancelDeletion = async (u: AdminUser) => {
+    if (!window.confirm(t("userdel.cancelConfirm", { name: u.username }))) return false;
+    try {
+      await post(`/api/admin/users/${u.id}/cancel_delete/`);
+      toast(t("userdel.cancelled", { name: u.username }), "success");
+      loadUsers();
+      return true;
+    } catch (err) {
+      toast(errorText(err), "error");
+      return false;
+    }
+  };
 
   if (denied) {
     return (
@@ -138,6 +163,9 @@ export default function AdminPage() {
         <button className={`tab ${tab === "backups" ? "active" : ""}`} onClick={() => setTab("backups")}>
           <Icon name="archive" size={16} /> {t("backup.tab")}
         </button>
+        <button className={`tab ${tab === "status" ? "active" : ""}`} onClick={() => setTab("status")}>
+          <Icon name="activity" size={16} /> {t("status.tab")}
+        </button>
       </div>
 
       {tab === "users" && (
@@ -174,6 +202,11 @@ export default function AdminPage() {
                             <div>
                               <strong>{u.username}</strong> {u.is_staff && <span className="pill">{t("admin.users.pillAdmin")}</span>}
                               {!u.is_active && <BlockedPill user={u} />}
+                              {u.deletion && (
+                                <span className="pill pill-danger" title={t("userdel.pending", { date: formatDate(u.deletion.purge_after) })}>
+                                  {t("userdel.pill", { date: formatDate(u.deletion.purge_after, false) })}
+                                </span>
+                              )}
                             </div>
                             <div className="small muted truncate">{u.email}</div>
                           </div>
@@ -194,7 +227,12 @@ export default function AdminPage() {
                           <button className="btn btn-sm" onClick={() => setEditing(u)}>
                             {t("admin.users.manage")}
                           </button>
-                          {u.id !== user?.id && (u.is_active ? (
+                          {u.id !== user?.id && u.deletion && !u.deletion.in_progress && (
+                            <button className="btn btn-sm" onClick={() => cancelDeletion(u)}>
+                              {t("userdel.cancel")}
+                            </button>
+                          )}
+                          {u.id !== user?.id && !u.deletion && (u.is_active ? (
                             <button className="btn btn-sm btn-danger-outline" onClick={() => setBlocking(u)}>
                               <Icon name="lock" size={14} /> {t("admin2.block.block")}
                             </button>
@@ -232,6 +270,7 @@ export default function AdminPage() {
       {tab === "quarantine" && <QuarantineTab />}
       {tab === "antivirus" && <AntivirusTab />}
       {tab === "backups" && <BackupsTab />}
+      {tab === "status" && <ServerStatusTab onOpenBackups={() => setTab("backups")} />}
 
       {editing && (
         <EditUserDialog
@@ -241,6 +280,13 @@ export default function AdminPage() {
           onBlock={() => {
             setBlocking(editing);
             setEditing(null);
+          }}
+          onDelete={() => {
+            setDeleting(editing);
+            setEditing(null);
+          }}
+          onCancelDelete={async () => {
+            if (await cancelDeletion(editing)) setEditing(null);
           }}
           onSaved={() => {
             setEditing(null);
@@ -256,6 +302,19 @@ export default function AdminPage() {
           onDone={() => {
             toast(t("admin2.block.blocked", { name: blocking.username }), "success");
             setBlocking(null);
+            loadUsers();
+          }}
+        />
+      )}
+      {deleting && (
+        <DeleteUserDialog
+          user={deleting}
+          delayDays={stats?.deletion_delay_days ?? 7}
+          holdDays={stats?.name_hold_days ?? 30}
+          onClose={() => setDeleting(null)}
+          onDone={(u) => {
+            toast(t("userdel.scheduled", { name: u.username, date: formatDate(u.deletion?.purge_after, false) }), "success");
+            setDeleting(null);
             loadUsers();
           }}
         />
@@ -344,12 +403,16 @@ function EditUserDialog({
   onClose,
   onSaved,
   onBlock,
+  onDelete,
+  onCancelDelete,
 }: {
   user: AdminUser;
   isSelf: boolean;
   onClose: () => void;
   onSaved: () => void;
   onBlock: () => void;
+  onDelete: () => void;
+  onCancelDelete: () => void;
 }) {
   const [quotaGb, setQuotaGb] = useState(String(Math.round((user.quota_bytes / 1024 ** 3) * 100) / 100));
   const t = useT();
@@ -404,7 +467,7 @@ function EditUserDialog({
           {t("admin.edit.quotaGb")}
           <input type="number" min={0} step="0.5" value={quotaGb} onChange={(e) => setQuotaGb(e.target.value)} />
         </label>
-        {!isSelf && (
+        {!isSelf && !user.deletion && (
           <div className={`admin-block-box ${user.is_active ? "" : "is-blocked"}`}>
             {user.is_active ? (
               <>
@@ -422,6 +485,39 @@ function EditUserDialog({
                 </div>
                 <button type="button" className="btn" onClick={unblock}>
                   {t("admin2.block.unblock")}
+                </button>
+              </>
+            )}
+          </div>
+        )}
+        {!isSelf && (
+          <div className="admin-block-box admin-delete-box is-blocked">
+            {user.deletion ? (
+              <>
+                <div className="small">
+                  <strong>
+                    {user.deletion.in_progress
+                      ? t("userdel.inProgress")
+                      : t("userdel.pending", { date: formatDate(user.deletion.purge_after) })}
+                  </strong>
+                  {user.deletion.requested_by && (
+                    <div className="muted">{t("admin2.block.whenTip", { date: formatDate(user.deletion.requested_at), by: user.deletion.requested_by })}</div>
+                  )}
+                  {user.deletion.last_error && (
+                    <div className="text-danger">{t("userdel.retry", { n: user.deletion.attempts, error: user.deletion.last_error })}</div>
+                  )}
+                </div>
+                {!user.deletion.in_progress && (
+                  <button type="button" className="btn" onClick={onCancelDelete}>
+                    {t("userdel.cancel")}
+                  </button>
+                )}
+              </>
+            ) : (
+              <>
+                <div className="small muted">{t("userdel.dangerHint")}</div>
+                <button type="button" className="btn btn-danger" onClick={onDelete}>
+                  <Icon name="trash" size={16} /> {t("userdel.delete")}
                 </button>
               </>
             )}
@@ -596,5 +692,75 @@ function AuditTab() {
         </table>
       </div>
     </div>
+  );
+}
+
+function DeleteUserDialog({
+  user,
+  delayDays,
+  holdDays,
+  onClose,
+  onDone,
+}: {
+  user: AdminUser;
+  delayDays: number;
+  holdDays: number;
+  onClose: () => void;
+  onDone: (u: AdminUser) => void;
+}) {
+  const t = useT();
+  const [reason, setReason] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const matches = confirm.trim().toLowerCase() === user.username;
+
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    setError("");
+    if (!matches) return setError(t("userdel.confirmMismatch"));
+    if (!password) return setError(t("admin.passwordRequired"));
+    setBusy(true);
+    try {
+      const r = await post<AdminUser>(`/api/admin/users/${user.id}/schedule_delete/`, { reason: reason.trim(), confirm: confirm.trim(), password });
+      onDone(r);
+    } catch (err) {
+      setError(errorText(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Modal title={t("userdel.title", { name: user.username })} onClose={onClose}>
+      <form className="stack" onSubmit={submit}>
+        <div className="banner banner-warning small">{t("userdel.explain", { days: delayDays })}</div>
+        <p className="small muted">
+          {t("userdel.shared")} {t("userdel.hold", { days: holdDays })}
+        </p>
+        <label>
+          {t("userdel.reason")}
+          <textarea rows={2} maxLength={500} value={reason} onChange={(e) => setReason(e.target.value)} />
+        </label>
+        <label>
+          {t("userdel.confirm", { name: user.username })}
+          <input value={confirm} autoFocus autoComplete="off" spellCheck={false} onChange={(e) => setConfirm(e.target.value)} />
+        </label>
+        <label>
+          {t("admin.yourPassword")}
+          <input type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} />
+        </label>
+        {error && <div className="form-error">{error}</div>}
+        <div className="modal-actions">
+          <button type="button" className="btn" onClick={onClose}>
+            {t("common.cancel")}
+          </button>
+          <button className="btn btn-danger" disabled={busy || !matches}>
+            <Icon name="trash" size={16} /> {t("userdel.submit")}
+          </button>
+        </div>
+      </form>
+    </Modal>
   );
 }

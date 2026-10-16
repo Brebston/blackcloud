@@ -95,6 +95,10 @@ class RegisterSerializer(serializers.Serializer):
             raise serializers.ValidationError(_("Це ім'я зарезервоване."))
         if User.objects.filter(username=value).exists():
             raise serializers.ValidationError(_("Це ім'я вже зайняте."))
+        from .deletion import name_on_hold
+
+        if name_on_hold(value):
+            raise serializers.ValidationError(_("Це ім'я належало видаленому акаунту й поки недоступне."))
         return value
 
     def validate_email(self, value):
@@ -137,6 +141,7 @@ class AdminUserSerializer(serializers.ModelSerializer):
     has_2fa = serializers.BooleanField(read_only=True)
     avatar_url = serializers.CharField(read_only=True)
     blocked_by = serializers.CharField(source="blocked_by.username", read_only=True, default=None)
+    deletion = serializers.SerializerMethodField()
     quota_gb = serializers.FloatField(write_only=True, required=False, min_value=0, max_value=100000)
 
     class Meta:
@@ -158,11 +163,27 @@ class AdminUserSerializer(serializers.ModelSerializer):
             "blocked_reason",
             "blocked_at",
             "blocked_by",
+            "deletion",
         ]
         read_only_fields = [
             "id", "username", "email", "has_2fa", "used_bytes", "date_joined", "last_login", "quota_bytes",
             "blocked_reason", "blocked_at",
         ]
+
+    def get_deletion(self, obj):
+        from .deletion import pending_for
+
+        d = pending_for(obj)
+        if d is None:
+            return None
+        return {
+            "purge_after": d.purge_after,
+            "requested_at": d.requested_at,
+            "requested_by": d.requested_by.username if d.requested_by else None,
+            "in_progress": d.started_at is not None,
+            "attempts": d.attempts,
+            "last_error": d.last_error,
+        }
 
     def update(self, instance, validated_data):
         quota_gb = validated_data.pop("quota_gb", None)
@@ -194,6 +215,12 @@ class PublicUserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = ["id", "username", "display_name", "avatar_url"]
+
+
+class DeleteUserSerializer(serializers.Serializer):
+    password = serializers.CharField(max_length=1024, trim_whitespace=False)
+    confirm = serializers.CharField(max_length=40)
+    reason = serializers.CharField(max_length=500, required=False, allow_blank=True, default="")
 
 
 class BlockUserSerializer(serializers.Serializer):

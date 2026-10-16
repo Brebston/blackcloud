@@ -27,7 +27,11 @@ VIEWS_SQL = [
         FROM mail_mailbox m
         JOIN mail_maildomain d ON d.id = m.domain_id
         JOIN accounts_user u ON u.id = m.user_id
-       WHERE m.active AND d.active AND u.is_active
+       WHERE m.active AND d.active
+         AND (u.is_active
+              -- видалення акаунта: листи стираються через IMAP, поки триває очищення
+              OR EXISTS (SELECT 1 FROM accounts_accountdeletion x
+                          WHERE x.user_id = u.id AND x.started_at IS NOT NULL))
     """,
     """
     CREATE OR REPLACE VIEW mail_aliases_v AS
