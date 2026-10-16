@@ -518,14 +518,14 @@ msgid "Файл заблоковано антивірусом."
 msgstr "The file has been blocked by the antivirus."
 
 #: apps/dav/views.py:386
-#: apps/storage/services.py:311
+#: apps/storage/services.py:317
 #, python-format
 msgid "Файл недоступний для завантаження (статус: %(status)s)."
 msgstr "File can't be downloaded (status: %(status)s)."
 
 #: apps/dav/views.py:464
-#: apps/storage/services.py:545
-#: apps/storage/services.py:590
+#: apps/storage/services.py:558
+#: apps/storage/services.py:603
 msgid "Файл завеликий."
 msgstr "File is too large."
 
@@ -545,7 +545,7 @@ msgstr "This is a folder."
 
 #: apps/dav/views.py:485
 #: apps/storage/services.py:177
-#: apps/storage/services.py:712
+#: apps/storage/services.py:725
 #, python-format
 msgid "Максимальний розмір файлу — %(n)s ГБ."
 msgstr "Maximum file size is %(n)s GB."
@@ -605,7 +605,7 @@ msgstr "The destination already exists (Overwrite: F)."
 
 #: apps/dav/views.py:617
 #: apps/storage/services.py:179
-#: apps/storage/services.py:722
+#: apps/storage/services.py:735
 msgid "Недостатньо місця у сховищі."
 msgstr "Not enough storage space."
 
@@ -929,6 +929,24 @@ msgstr "Enter a name or an email."
 msgid "Досягнуто максимуму контактів (%(n)s)."
 msgstr "Contact limit reached (%(n)s)."
 
+#: apps/photos/views.py:152
+msgid "Вкажіть назву альбому."
+msgstr "Enter an album name."
+
+#: apps/photos/views.py:189
+#, python-format
+msgid "Забагато альбомів (максимум %(n)s)."
+msgstr "Too many albums (maximum %(n)s)."
+
+#: apps/photos/views.py:213
+msgid "Обкладинка має бути з цього альбому."
+msgstr "The cover must be from this album."
+
+#: apps/photos/views.py:226
+#, python-format
+msgid "Передайте від 1 до %(n)s файлів."
+msgstr "Pass from 1 to %(n)s files."
+
 #: apps/push/mailwatch.py:95
 #: apps/push/service.py:85
 msgid "Новий лист"
@@ -990,90 +1008,90 @@ msgstr "You can't move a folder into itself."
 
 #: apps/storage/services.py:156
 #: apps/storage/services.py:166
-#: apps/storage/services.py:749
+#: apps/storage/services.py:762
 msgid "Файл не знайдено."
 msgstr "File not found."
 
 #: apps/storage/services.py:197
-#: apps/storage/services.py:755
+#: apps/storage/services.py:768
 msgid "Завантаження вже завершено або скасовано."
 msgstr "Upload is already finished or canceled."
 
 #: apps/storage/services.py:199
-#: apps/storage/services.py:757
+#: apps/storage/services.py:770
 msgid "Сесія завантаження прострочена."
 msgstr "Upload session has expired."
 
 #: apps/storage/services.py:201
-#: apps/storage/services.py:759
+#: apps/storage/services.py:772
 msgid "Невірний порядок чанків."
 msgstr "Chunks are out of order."
 
 #: apps/storage/services.py:203
-#: apps/storage/services.py:761
+#: apps/storage/services.py:774
 msgid "Зайвий чанк."
 msgstr "Unexpected extra chunk."
 
 #: apps/storage/services.py:205
-#: apps/storage/services.py:763
+#: apps/storage/services.py:776
 #, python-format
 msgid "Очікувалось %(expected)s байт, отримано %(got)s."
 msgstr "Expected %(expected)s bytes, got %(got)s."
 
 #: apps/storage/services.py:219
-#: apps/storage/services.py:775
+#: apps/storage/services.py:788
 msgid "Конфлікт завантаження, повторіть."
 msgstr "Upload conflict, please try again."
 
 #: apps/storage/services.py:226
-#: apps/storage/services.py:782
-#: apps/storage/services.py:815
+#: apps/storage/services.py:795
+#: apps/storage/services.py:828
 msgid "Завантаження вже завершено."
 msgstr "Upload is already finished."
 
 #: apps/storage/services.py:228
-#: apps/storage/services.py:784
+#: apps/storage/services.py:797
 msgid "Отримано не всі чанки."
 msgstr "Not all chunks have been received."
 
 #: apps/storage/services.py:233
-#: apps/storage/services.py:789
+#: apps/storage/services.py:802
 msgid "Конфлікт завантаження."
 msgstr "Upload conflict."
 
-#: apps/storage/services.py:421
+#: apps/storage/services.py:434
 msgid "Недостатньо місця у сховищі для збереження."
 msgstr "Not enough storage space to save."
 
-#: apps/storage/services.py:528
-#: apps/storage/services.py:518
+#: apps/storage/services.py:541
+#: apps/storage/services.py:531
 msgid "Розмір даних не збігається з оголошеним."
 msgstr "The data size does not match the declared size."
-
-#: apps/storage/services.py:549
-#: apps/storage/services.py:718
-#: apps/storage/services.py:791
-msgid "Файл недоступний для зміни."
-msgstr "The file cannot be modified."
 
 #: apps/storage/services.py:55
 msgid "Ім'я не може містити / або \\."
 msgstr "Name can't contain / or \\."
 
+#: apps/storage/services.py:562
+#: apps/storage/services.py:731
+#: apps/storage/services.py:804
+msgid "Файл недоступний для зміни."
+msgstr "The file cannot be modified."
+
 #: apps/storage/services.py:57
 msgid "Невірне ім'я (1–255 символів, без / і \\)."
 msgstr "Invalid name (1–255 characters, no / or \\)."
 
-#: apps/storage/services.py:621
-#: apps/storage/services.py:682
+#: apps/storage/services.py:634
+#: apps/storage/services.py:695
 msgid "Версію не знайдено."
 msgstr "Version not found."
 
-#: apps/storage/services.py:674
+#: apps/storage/services.py:687
 msgid "Відновити можна лише версію, перевірену антивірусом."
 msgstr "Only a version that passed the antivirus check can be restored."
 
-#: apps/storage/services.py:689
+#: apps/storage/services.py:702
 #, python-format
 msgid "Версія недоступна для завантаження (статус: %(status)s)."
 msgstr "This version is not available for download (status: %(status)s)."

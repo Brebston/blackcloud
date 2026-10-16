@@ -7,6 +7,8 @@ import AdminPage from "./pages/Admin";
 import CalendarPage from "./pages/Calendar";
 import ConfidentialPage from "./pages/Confidential";
 import ChatPage from "./pages/Chat";
+import ContactsPage from "./pages/Contacts";
+import PhotosPage from "./pages/Photos";
 import FilesPage from "./pages/Files";
 import LoginPage from "./pages/Login";
 import MailPage from "./pages/Mail";
@@ -50,6 +52,9 @@ export default function App() {
       <Route path="/calendar" element={<Protected><CalendarPage /></Protected>} />
       <Route path="/mail" element={<Protected><MailPage /></Protected>} />
       <Route path="/chat" element={<Protected><ChatPage /></Protected>} />
+      <Route path="/contacts" element={<Protected><ContactsPage /></Protected>} />
+      <Route path="/photos" element={<Protected><PhotosPage /></Protected>} />
+      <Route path="/photos/albums/:albumId" element={<Protected><PhotosPage /></Protected>} />
       <Route path="/chat/:id" element={<Protected><ChatPage /></Protected>} />
       <Route path="/settings" element={<Protected><SettingsPage /></Protected>} />
       <Route path="/edit/:id" element={<ProtectedBare><OfficeEditorPage /></ProtectedBare>} />

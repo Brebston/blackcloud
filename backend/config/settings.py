@@ -70,6 +70,7 @@ INSTALLED_APPS = [
     "apps.mail",
     "apps.push",
     "apps.dav",
+    "apps.photos",
 ]
 
 MIDDLEWARE = [
@@ -178,6 +179,8 @@ CELERY_BEAT_SCHEDULE = {
     "cleanup-macos-metadata": {"task": "apps.storage.tasks.cleanup_macos_metadata", "schedule": timedelta(hours=1)},
     "expire-public-links": {"task": "apps.storage.tasks.expire_public_links", "schedule": timedelta(hours=1)},
     "prune-file-versions": {"task": "apps.storage.tasks.prune_file_versions", "schedule": timedelta(hours=24)},
+    # Галерея «Фото»: нові фото/відео в стрічку й читання EXIF для тих, що ще не оброблені
+    "index-photos": {"task": "apps.photos.tasks.index_photos", "schedule": timedelta(minutes=10), "kwargs": {"limit": 300}},
     "event-reminders": {"task": "apps.calendars.tasks.send_due_reminders", "schedule": timedelta(minutes=1)},
     "cleanup-sessions": {"task": "apps.accounts.tasks.cleanup_sessions", "schedule": timedelta(hours=12)},
     "purge-deleted-accounts": {"task": "apps.accounts.tasks.purge_deleted_accounts", "schedule": timedelta(hours=1)},

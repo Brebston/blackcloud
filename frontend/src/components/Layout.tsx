@@ -17,9 +17,11 @@ import { useToast } from "./Toast";
 
 const NAV: { to: string; icon: string; label: TKey }[] = [
   { to: "/files", icon: "folder", label: "nav.files" },
+  { to: "/photos", icon: "image", label: "nav.photos" },
   { to: "/shared", icon: "share", label: "nav.shared" },
   { to: "/calendar", icon: "calendar", label: "nav.calendar" },
   { to: "/mail", icon: "mail", label: "nav.mail" },
+  { to: "/contacts", icon: "users", label: "nav.contacts" },
   { to: "/chat", icon: "chat", label: "nav.chat" },
   { to: "/trash", icon: "trash", label: "nav.trash" },
   { to: "/settings", icon: "settings", label: "nav.settings" },

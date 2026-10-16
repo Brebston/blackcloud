@@ -16,6 +16,7 @@ urlpatterns = [
     path("api/admin/", include("apps.core.urls_admin")),
     path("api/users/", include("apps.accounts.urls_users")),
     path("api/files/", include("apps.storage.urls")),
+    path("api/photos/", include("apps.photos.urls")),
     path("api/preview/<str:ticket>/", PreviewServeView.as_view()),
     path("api/public/calendar/", include("apps.calendars.urls_public")),
     path("api/public/confidential/", include("apps.mail.urls_public")),
