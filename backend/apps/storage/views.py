@@ -815,4 +815,5 @@ class PublicLinkDownloadView(PublicView):
         if q.update(download_count=F("download_count") + 1) != 1:
             raise NotFound(_("Ліміт завантажень вичерпано."))
         audit(request, "public_link.download", user=link.owner, target=str(link.pk))
-        return services.file_response(link.file)
+        # Публічно — завжди без геолокації (координати з EXIF/XMP/відео затираються)
+        return services.file_response(link.file, scrub_location=True)

@@ -1,11 +1,13 @@
 """Ізольований HTTP-сервіс мініатюр (див. apps/storage/thumbrender.py).
 
 POST /render?kind=image|preview|pdf|avatar|video  (тіло — відкриті байти файлу)  →  200 image/webp | 422
+POST /meta?kind=image|video  →  200 application/json (дата зйомки, камера, розміри, координати) | 422
 Відео не читається в пам'ять: тіло пишеться у тимчасовий файл у /tmp (tmpfs).
 Працює без Django, без секретів і в окремій внутрішній мережі `thumbs`,
 до якої підключений лише worker.
 """
 
+import json
 import logging
 import os
 import resource
@@ -43,8 +45,9 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         url = urlsplit(self.path)
-        if url.path != "/render":
+        if url.path not in ("/render", "/meta"):
             return self._reply(404)
+        meta = url.path == "/meta"
         kind = (parse_qs(url.query).get("kind") or [""])[0]
         try:
             length = int(self.headers.get("Content-Length") or -1)
@@ -56,11 +59,14 @@ class Handler(BaseHTTPRequestHandler):
         if length > limit:
             return self._reply(413)
         if kind == "video":
-            return self._render_video(length)
+            return self._render_video(length, meta)
         data = self.rfile.read(length)
         if not SLOTS.acquire(timeout=120):
             return self._reply(503)
         try:
+            if meta:
+                body = json.dumps(thumbrender.extract_meta(kind, data)).encode()
+                return self._reply(200, body, "application/json")
             out = thumbrender.render(kind, data)
         except Exception as exc:
             log.info("render %s failed: %s %s", kind, exc.__class__.__name__, str(exc)[:120])
@@ -69,7 +75,7 @@ class Handler(BaseHTTPRequestHandler):
             SLOTS.release()
         return self._reply(200, out, "image/webp")
 
-    def _render_video(self, length: int):
+    def _render_video(self, length: int, meta: bool = False):
         with tempfile.TemporaryDirectory(prefix="bc-video-") as tmp:
             path = os.path.join(tmp, "in.video")
             fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
@@ -84,6 +90,9 @@ class Handler(BaseHTTPRequestHandler):
             if not SLOTS.acquire(timeout=120):
                 return self._reply(503)
             try:
+                if meta:
+                    body = json.dumps(thumbrender.video_meta_file(path)).encode()
+                    return self._reply(200, body, "application/json")
                 out = thumbrender.render_video_file(path)
             except Exception as exc:
                 log.info("render video failed: %s %s", exc.__class__.__name__, str(exc)[:120])

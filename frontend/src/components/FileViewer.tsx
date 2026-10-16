@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { ReactNode, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import type { FileItem } from "../api/types";
 import { useT } from "../i18n";
@@ -16,12 +16,18 @@ export default function FileViewer({
   officeEnabled,
   onIndex,
   onClose,
+  info,
+  extraActions,
 }: {
   files: FileItem[];
   index: number;
   officeEnabled: boolean;
   onIndex: (i: number) => void;
   onClose: () => void;
+  /** Панель «Інформація» (галерея «Фото»: дата зйомки, камера, координати) */
+  info?: (file: FileItem) => ReactNode;
+  /** Додаткові кнопки в панелі переглядача */
+  extraActions?: (file: FileItem) => ReactNode;
 }) {
   const t = useT();
   const navigate = useNavigate();
@@ -29,6 +35,7 @@ export default function FileViewer({
   const kind = file ? viewKind(file, officeEnabled) : null;
   const preview = usePreviewUrl(file, kind);
   const [videoFailed, setVideoFailed] = useState<string | null>(null);
+  const [showInfo, setShowInfo] = useState(false);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -59,6 +66,18 @@ export default function FileViewer({
           </span>
         </div>
         <div className="viewer-actions">
+          {extraActions?.(file)}
+          {info && (
+            <button
+              className={`icon-btn ${showInfo ? "active" : ""}`}
+              onClick={() => setShowInfo((v) => !v)}
+              aria-pressed={showInfo}
+              aria-label={t("photos.info")}
+              title={t("photos.info")}
+            >
+              <Icon name="info" />
+            </button>
+          )}
           {kind === "office" && (
             <button className="btn btn-sm btn-primary" onClick={() => navigate(`/edit/${file.id}`)}>
               <Icon name="edit" size={14} /> {t("files.viewer.openEditor")}
@@ -75,7 +94,7 @@ export default function FileViewer({
         </div>
       </header>
 
-      <div className="viewer-body">
+      <div className={`viewer-body ${info && showInfo ? "with-info" : ""}`}>
         {index > 0 && (
           <button className="viewer-nav prev" onClick={() => onIndex(index - 1)} aria-label={t("files.viewer.prev")}>
             <Icon name="chevronLeft" size={28} />
@@ -131,6 +150,17 @@ export default function FileViewer({
           <button className="viewer-nav next" onClick={() => onIndex(index + 1)} aria-label={t("files.viewer.next")}>
             <Icon name="chevronRight" size={28} />
           </button>
+        )}
+        {info && showInfo && (
+          <aside className="viewer-info" aria-label={t("photos.info")}>
+            <div className="row-between">
+              <strong>{t("photos.info")}</strong>
+              <button className="icon-btn" onClick={() => setShowInfo(false)} aria-label={t("files.viewer.close")}>
+                <Icon name="x" size={16} />
+              </button>
+            </div>
+            {info(file)}
+          </aside>
         )}
       </div>
     </div>

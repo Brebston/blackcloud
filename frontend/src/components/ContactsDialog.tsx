@@ -58,14 +58,16 @@ function recipientOf(c: Contact): string {
   return name ? `${/[,;<>"@]/.test(name) ? `"${name.replace(/["\\]/g, "")}"` : name} <${addr}>, ` : `${addr}, `;
 }
 
-export default function ContactsDialog({
+/** Адресна книга без обгортки: і у вікні з пошти, і як окрема сторінка «Контакти». */
+export function ContactsBook({
   draft,
-  onClose,
   onWrite,
+  onCancelDraft,
 }: {
   draft?: ContactDraft;
-  onClose: () => void;
   onWrite: (to: string) => void;
+  /** Скасування нового контакту, відкритого одразу (напр., «Додати до контактів» з листа). */
+  onCancelDraft?: () => void;
 }) {
   const t = useT();
   const toast = useToast();
@@ -150,7 +152,8 @@ export default function ContactsDialog({
     const emails = editing.emails || [];
     const phones = editing.phones || [];
     return (
-      <Modal title={editing.id ? t("contacts.edit") : t("contacts.add")} onClose={() => (draft && !editing.id ? onClose() : setEditing(null))} wide>
+      <div className="stack">
+        <h3>{editing.id ? t("contacts.edit") : t("contacts.add")}</h3>
         <form className="stack contact-form" onSubmit={save}>
           <div className="grid-2">
             <label>
@@ -267,7 +270,7 @@ export default function ContactsDialog({
               </button>
             )}
             <div className="spacer" />
-            <button type="button" className="btn" onClick={() => (draft && !editing.id ? onClose() : setEditing(null))}>
+            <button type="button" className="btn" onClick={() => (draft && !editing.id && onCancelDraft ? onCancelDraft() : setEditing(null))}>
               {t("common.cancel")}
             </button>
             <button className="btn btn-primary" disabled={busy}>
@@ -275,13 +278,12 @@ export default function ContactsDialog({
             </button>
           </div>
         </form>
-      </Modal>
+      </div>
     );
   }
 
   return (
-    <Modal title={t("contacts.title")} onClose={onClose} wide>
-      <div className="stack">
+    <div className="stack">
         <div className="toolbar">
           <div className="search grow">
             <Icon name="search" size={16} />
@@ -318,15 +320,31 @@ export default function ContactsDialog({
                 <Icon name="star" size={16} />
               </button>
               {c.emails.length > 0 && (
-                <button type="button" className="btn btn-sm" onClick={() => onWrite(recipientOf(c))}>
-                  <Icon name="send" size={14} /> {t("contacts.write")}
+                <button type="button" className="btn btn-sm contact-write" onClick={() => onWrite(recipientOf(c))} aria-label={t("contacts.write")} title={t("contacts.write")}>
+                  <Icon name="send" size={14} /> <span className="contact-write-label">{t("contacts.write")}</span>
                 </button>
               )}
             </li>
           ))}
         </ul>
         {list && list.length > 0 && <p className="small muted">{t("contacts.count", { n: list.length })}</p>}
-      </div>
+    </div>
+  );
+}
+
+export default function ContactsDialog({
+  draft,
+  onClose,
+  onWrite,
+}: {
+  draft?: ContactDraft;
+  onClose: () => void;
+  onWrite: (to: string) => void;
+}) {
+  const t = useT();
+  return (
+    <Modal title={t("contacts.title")} onClose={onClose} wide>
+      <ContactsBook draft={draft} onWrite={onWrite} onCancelDraft={onClose} />
     </Modal>
   );
 }

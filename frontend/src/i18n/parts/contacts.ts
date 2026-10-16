@@ -1,6 +1,7 @@
 // Рядки інтерфейсу: адресна книга й підказки одержувачів (contacts.*), запрошення на email (inv2.*).
 // en має містити ті самі ключі, що й uk.
 export const uk = {
+  "nav.contacts": "Контакти",
   "contacts.title": "Контакти",
   "contacts.open": "Адресна книга",
   "contacts.search": "Пошук за ім'ям, email, компанією",
@@ -57,6 +58,7 @@ export const uk = {
 };
 
 export const en: Record<keyof typeof uk, string> = {
+  "nav.contacts": "Contacts",
   "contacts.title": "Contacts",
   "contacts.open": "Address book",
   "contacts.search": "Search by name, email, company",

@@ -20,6 +20,8 @@ const TABS: { to: string; icon: string; label: TKey }[] = [
 ];
 
 const MORE: { to: string; icon: string; label: TKey; staff?: boolean }[] = [
+  { to: "/photos", icon: "image", label: "nav.photos" },
+  { to: "/contacts", icon: "users", label: "nav.contacts" },
   { to: "/shared", icon: "share", label: "nav.shared" },
   { to: "/trash", icon: "trash", label: "nav.trash" },
   { to: "/settings", icon: "settings", label: "nav.settings" },

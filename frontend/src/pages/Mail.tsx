@@ -252,6 +252,15 @@ export default function MailPage() {
   const [showSignatures, setShowSignatures] = useState(false);
   // Адресна книга: {} — просто відкрити; draft — одразу новий контакт (напр., відправник листа)
   const [contactsOpen, setContactsOpen] = useState<{ draft?: ContactDraft } | null>(null);
+  // «Написати» з розділу «Контакти»: navigate("/mail", { state: { compose: { to } } })
+  useEffect(() => {
+    const state = location.state as { compose?: ComposeInit } | null;
+    if (state?.compose) {
+      setCompose(state.compose);
+      navigate(location.pathname + location.search + location.hash, { replace: true, state: null });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.state]);
   const [showConfidential, setShowConfidential] = useState(false);
   const [showScheduled, setShowScheduled] = useState(false);
   const [passcodeInfo, setPasscodeInfo] = useState<SendResult["confidential"] | null>(null);

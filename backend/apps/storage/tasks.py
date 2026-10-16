@@ -79,6 +79,12 @@ def _scan_and_store(f: File, version: int, *, inline: bool = False) -> None:
         else:
             f.refresh_from_db()
             thumbnails.generate(f)
+    if updated and status == File.Status.CLEAN and (f.mime_type in thumbnails.IMAGE_MIME or f.mime_type in thumbnails.VIDEO_MIME):
+        # Галерея «Фото»: дата зйомки, камера, координати (читає worker через thumbnailer)
+        from apps.photos.tasks import index_photo
+
+        photo_id = str(f.pk)
+        transaction.on_commit(lambda: index_photo.delay(photo_id))
     push_to_user(f.owner_id, "file.updated", {"id": str(f.pk), "status": status})
     if status == File.Status.INFECTED:
         _notify_infected(f, detail)

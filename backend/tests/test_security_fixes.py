@@ -509,11 +509,18 @@ def test_worker_uses_thumbnailer_service(alice, client_for, settings, monkeypatc
 
     def fake_urlopen(req, timeout):
         calls.append(req.full_url)
+        if "/meta?" in req.full_url:  # галерея «Фото»: метадані теж читає thumbnailer
+            import json
+
+            return Resp(json.dumps(thumbrender.extract_meta("image", req.data)).encode())
         return Resp(thumbrender.render("image", req.data))
 
     monkeypatch.setattr(thumbnails.urllib.request, "urlopen", fake_urlopen)
     info = upload(client_for(alice), png_bytes(), name="p.png")
-    assert calls == ["http://thumbnailer:8100/render?kind=image"]
+    assert calls == ["http://thumbnailer:8100/render?kind=image", "http://thumbnailer:8100/meta?kind=image"]
+    from apps.photos.models import PhotoMeta
+
+    assert PhotoMeta.objects.get(file_id=info["id"]).status == "ok"
     from apps.storage.models import File
 
     assert File.objects.get(pk=info["id"]).has_thumbnail

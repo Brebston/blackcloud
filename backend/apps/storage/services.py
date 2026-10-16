@@ -303,10 +303,16 @@ def content_disposition(disposition: str, filename: str) -> str:
 
 
 def file_response(
-    f: File, *, inline: bool = False, frame_ancestor: str | None = None, range_header: str = ""
+    f: File,
+    *,
+    inline: bool = False,
+    frame_ancestor: str | None = None,
+    range_header: str = "",
+    scrub_location: bool = False,
 ) -> StreamingHttpResponse:
     """inline=True використовується лише на usercontent-піддомені (окремий origin).
-    range_header (лише inline) — перемотування відео й аудіо; Safari без 206 відео не відтворює."""
+    range_header (лише inline) — перемотування відео й аудіо; Safari без 206 відео не відтворює.
+    scrub_location — публічні посилання: фото й відео без геолокації (geoscrub, розмір той самий)."""
     if not f.is_downloadable:
         raise PermissionDenied(_("Файл недоступний для завантаження (статус: %(status)s).") % {"status": f.get_status_display()})
     show_inline = inline and f.mime_type in SAFE_INLINE_MIME
@@ -318,8 +324,15 @@ def file_response(
         response = HttpResponse(status=416)
         response["Content-Range"] = f"bytes */{f.size}"
         return response
+    if scrub_location and f.mime_type.split("/")[0] in ("image", "video"):
+        from . import geoscrub
+
+        rng = None  # затирання — для всього файлу
+        body = geoscrub.ascrub_chunks(aiter_plaintext(f))
+    else:
+        body = aiter_plaintext(f)
     if rng is None:
-        response = StreamingHttpResponse(aiter_plaintext(f), content_type=content_type)
+        response = StreamingHttpResponse(body, content_type=content_type)
         response["Content-Length"] = str(f.size)
     else:
         start, end = rng
