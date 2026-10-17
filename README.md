@@ -1,91 +1,409 @@
-# Brebston Cloud (BlackCloud)
+<div align="center">
 
-Self-hosted хмара з акцентом на безпеку: файли, календар, пошта, чат, 2FA. Працює на власному сервері (зокрема домашньому за NAT) і розгортається однією командою Docker Compose.
+# ☁️ BlackCloud
 
-## Технології
+**Self-hosted хмара з акцентом на безпеку: файли, фото, пошта, календар, чат і контакти на власному сервері.**
+
+[![CI](https://github.com/Brebston/blackcloud/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Brebston/blackcloud/actions/workflows/ci.yml)
+[![Deploy](https://github.com/Brebston/blackcloud/actions/workflows/deploy.yml/badge.svg?branch=main)](https://github.com/Brebston/blackcloud/actions/workflows/deploy.yml)
+
+[![Python](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+[![Django](https://img.shields.io/badge/Django-5.2-092E20?logo=django&logoColor=white)](https://www.djangoproject.com/)
+[![DRF](https://img.shields.io/badge/DRF-3.18-A30000?logo=django&logoColor=white)](https://www.django-rest-framework.org/)
+[![Celery](https://img.shields.io/badge/Celery-5-37814A?logo=celery&logoColor=white)](https://docs.celeryq.dev/)
+[![React](https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=black)](https://react.dev/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.6-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![Vite](https://img.shields.io/badge/Vite-5-646CFF?logo=vite&logoColor=white)](https://vitejs.dev/)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169E1?logo=postgresql&logoColor=white)](https://www.postgresql.org/)
+[![Redis](https://img.shields.io/badge/Redis-7-DC382D?logo=redis&logoColor=white)](https://redis.io/)
+<br>
+[![Docker](https://img.shields.io/badge/Docker_Compose-v2-2496ED?logo=docker&logoColor=white)](https://docs.docker.com/compose/)
+[![Traefik](https://img.shields.io/badge/Traefik-v3-24A1C1?logo=traefikproxy&logoColor=white)](https://traefik.io/)
+[![Let's Encrypt](https://img.shields.io/badge/Let's_Encrypt-TLS-003A70?logo=letsencrypt&logoColor=white)](https://letsencrypt.org/)
+[![Postfix](https://img.shields.io/badge/Postfix%20·%20Dovecot%20·%20Rspamd-mail-4B5563)](https://www.postfix.org/)
+[![ClamAV](https://img.shields.io/badge/ClamAV-antivirus-6B7280)](https://www.clamav.net/)
+[![ONLYOFFICE](https://img.shields.io/badge/ONLYOFFICE-docs-FF6F3D?logo=onlyoffice&logoColor=white)](https://www.onlyoffice.com/)
+[![Uptime Kuma](https://img.shields.io/badge/Uptime_Kuma-monitoring-5CDD8B?logo=uptimekuma&logoColor=white)](https://uptime.kuma.pet/)
+[![restic](https://img.shields.io/badge/restic-backups-00ADD8)](https://restic.net/)
+[![Hetzner](https://img.shields.io/badge/Hetzner-Storage_Box-D50C2D?logo=hetzner&logoColor=white)](https://www.hetzner.com/storage/storage-box/)
+[![GitHub Actions](https://img.shields.io/badge/GitHub_Actions-CI%2FCD-2088FF?logo=githubactions&logoColor=white)](https://github.com/features/actions)
+
+[Можливості](#-можливості) ·
+[Архітектура](#-архітектура) ·
+[Встановлення на сервер](#-встановлення-на-сервер-з-нуля) ·
+[Резервні копії](#крок-11-резервні-копії-в-hetzner-storage-box) ·
+[Оновлення](#-оновлення) ·
+[Розробка](#-локальна-розробка) ·
+[Налаштування](#%EF%B8%8F-змінні-оточення) ·
+[Безпека](SECURITY.md)
+
+</div>
+
+---
+
+## Зміст
+
+- [Можливості](#-можливості)
+- [Технології](#-технології)
+- [Архітектура](#-архітектура)
+- [Вимоги](#-вимоги)
+- [Встановлення на сервер з нуля](#-встановлення-на-сервер-з-нуля)
+- [Оновлення](#-оновлення)
+- [Локальна розробка](#-локальна-розробка)
+- [Тести й CI/CD](#-тести-й-cicd)
+- [Змінні оточення й секрети](#%EF%B8%8F-змінні-оточення)
+- [Корисні команди](#-корисні-команди)
+- [Документація модулів](#-документація-модулів)
+- [Мова інтерфейсу](#-мова-інтерфейсу)
+- [Структура репозиторію](#-структура-репозиторію)
+- [Безпека й ліцензія](#-безпека-й-ліцензія)
+
+---
+
+## ✨ Можливості
+
+| Модуль | Що вміє |
+|---|---|
+| **Акаунти** | Вхід за логіном або email, Argon2id, 2FA (TOTP + 10 одноразових резервних кодів), ключі доступу (passkeys: Face ID / Touch ID / Windows Hello / апаратні ключі — вхід без пароля або як другий фактор), блокування після 5 невдалих спроб, список пристроїв із віддаленим виходом, журнал подій безпеки, запрошення на email |
+| **Файли** | Будь-які типи до 10 ГБ, чанкове завантаження з відновленням, шифрування AES-256-GCM на рівні застосунку, антивірус ClamAV і карантин, папки, пошук, кошик (30 днів), історія версій, ZIP теки, WebDAV (Finder, Windows, мобільні застосунки) |
+| **Доступ** | Спільний доступ користувачам (читання), публічні посилання на файли й **теки** (пароль, термін, ZIP), «**скринька для файлів**» (гості лише надсилають файли в підтеку зі своїм ім'ям), **обране**, особисті кольорові **теги**, «**Нещодавні**» |
+| **Перегляд** | Мініатюри фото, PDF і відео; повноекранний переглядач з масштабуванням і гортанням; HEIC/TIFF через велике зображення; відео з перемотуванням; Word/Excel/PowerPoint в ONLYOFFICE (кожне збереження — нова версія, перевірена антивірусом) |
+| **Фото** | Стрічка фото й відео з усіх тек за датою зйомки (EXIF), групування за місяцями й днями, альбоми-посилання, камера/об'єктив/координати в панелі «Інформація»; у публічних посиланнях геолокація **завжди прибрана** |
+| **Пошта** | Власний поштовий сервер (Postfix, Dovecot, Rspamd, DKIM, антиспам, антивірус), веб-пошта як у Gmail, кілька скриньок, редактор листів (TipTap), чернетки, відкладене надсилання, конфіденційний режим, адресна книга й підказки одержувачів з 2 літер, паролі застосунків для IMAP/SMTP |
+| **Календар** | Кілька календарів, повторювані події (RRULE), нагадування, спільний доступ, імпорт/експорт .ics, приватна ICS-підписка |
+| **Чат** | Особисті й групові розмови в реальному часі (WebSocket), набір тексту, редагування, вкладення зі сховища |
+| **Адмінка** | Користувачі, квоти, блокування й видалення акаунтів (через 7 днів, можна скасувати), запрошення, журнал аудиту, поштові скриньки, карантин, **резервні копії** (стан і кнопка «Зробити копію зараз»), **«Стан сервера»** (диск, пам'ять, процесор, черги, сертифікати, служби) |
+| **Застосунок** | PWA (встановлення на телефон і комп'ютер), Web Push, світла/темна тема, 8 акцентних кольорів, українська та англійська |
+
+## 🧰 Технології
 
 | Шар | Що використовується |
 |---|---|
 | Бекенд | Python 3.12, Django 5.2, Django REST Framework, Channels (WebSocket), Celery + beat |
-| Фронтенд | React 18, TypeScript, Vite, TipTap (редактор листів), власні CSS-змінні (теми й акценти) |
-| Дані | PostgreSQL 16, Redis, зашифроване сховище файлів (Docker-том або S3) |
-| Пошта | Postfix, Dovecot, Rspamd (антиспам, DKIM), ClamAV |
-| Інфраструктура | Traefik v3 (TLS Let's Encrypt, заголовки безпеки), Docker Compose, GitHub Actions |
+| Фронтенд | React 18, TypeScript, Vite, TipTap, власні CSS-змінні (теми й акценти), PWA |
+| Дані | PostgreSQL 16, Redis 7, зашифроване сховище файлів (Docker-том або S3) |
+| Пошта | Postfix, Dovecot (mail_crypt), Rspamd (антиспам, DKIM), ClamAV |
+| Інфраструктура | Traefik v3 (Let's Encrypt, заголовки безпеки, rate limit), Docker Compose, GitHub Actions + self-hosted runner |
+| Експлуатація | Uptime Kuma + Telegram, restic → Hetzner Storage Box, Trivy, pip-audit / npm audit |
 
-## Можливості
-
-| Модуль | Що вміє |
-|---|---|
-| Акаунти | Вхід за логіном або email, Argon2id, 2FA (TOTP + 10 одноразових резервних кодів), ключі доступу (passkeys: Face ID / Touch ID / Windows Hello / апаратні ключі — вхід без пароля або як другий фактор; після входу паролем пропонується ввімкнути на цьому пристрої), блокування після 5 невдалих спроб, список пристроїв із віддаленим виходом, журнал подій безпеки, запрошення, налаштування (часовий пояс, приватність) |
-| Оформлення | Світла, темна або системна тема, 8 акцентних кольорів, перемикач мови (українська / English). Вибір застосовується одразу і зберігається в акаунті та браузері |
-| Файли | Будь-які типи файлів, чанкове завантаження з відновленням (до 10 ГБ на файл), шифрування AES-256-GCM на рівні застосунку, антивірус ClamAV, карантин, папки, пошук, перейменування й переміщення, кошик (30 днів), перегляд зображень, PDF, відео й аудіо |
-| Перегляд | Мініатюри фото, PDF і відео (кадр) у списку та в режимі «сітка»; повноекранний переглядач: фото вписується в екран, масштабування (колесо, pinch, перетягування), гортання ← →; HEIC/TIFF — через велике зображення 2560 px з сервера; відео MP4/WebM/MOV з перемотуванням; PDF у вбудованому переглядачі браузера |
-| Документи | Перегляд і редагування Word, Excel і PowerPoint прямо в браузері (ONLYOFFICE, вмикається в `.env`). Кожне збереження стає новою зашифрованою версією файлу, яка проходить антивірус |
-| Квоти | Квота для кожного користувача, атомарне резервування місця (обійти паралельними завантаженнями неможливо), кошик теж враховується |
-| Спільний доступ | Доступ користувачам (лише читання), публічні посилання з терміном дії, паролем і лімітом завантажень (у БД зберігається лише хеш токена) |
-| Календар | Кілька календарів, повторювані події (RRULE), нагадування, спільний доступ (перегляд або редагування), імпорт і експорт .ics, приватна ICS-підписка |
-| Файли: доступ | Публічні посилання на теки (пароль, термін, перегляд і ZIP без геолокації), «скринька для файлів» (гості лише надсилають файли в підтеку зі своїм ім'ям), обране, особисті кольорові теги, «Нещодавні» |
-| Фото | Стрічка фото й відео з усіх тек за датою зйомки (EXIF), групування за місяцями й днями, альбоми-посилання, дата/камера/об'єктив/координати в панелі «Інформація» (посилання на OpenStreetMap), у публічних посиланнях геолокація завжди прибрана |
-| Пошта | Інтерфейс як у Gmail (список або лист на всю ширину, кнопка «Назад», зірочки в рядках). Власний поштовий сервер (Postfix, Dovecot, Rspamd, DKIM, антиспам, антивірус), веб-пошта з безпечним рендерингом HTML, кілька скриньок на користувача з перемикачем, окремі паролі застосунків для IMAP/SMTP-клієнтів, адресна книга (ім'я, прізвище, кілька email і телефонів, компанія, нотатки, зірочки) і підказки одержувачів з 2 літер — з контактів, тих, кому писали найчастіше, і користувачів BlackCloud |
-| Редактор листів | TipTap (ProseMirror): шрифт, розмір, колір тексту, жирний / курсив / підкреслення / закреслення, вирівнювання, списки, цитати, таблиці, посилання (лише http(s)/mailto), вбудовані зображення (стають cid-вкладеннями), емоджі, скасування/повтор, підписи, конфіденційний режим |
-| Чернетки й планування | Автозбереження чернетки кожні кілька секунд у теку «Чернетки» (IMAP, видно й у поштових клієнтах), разом із вкладеннями; відкладене надсилання (пресети або власна дата), список запланованих зі скасуванням |
-| Чат | Особисті та групові розмови, доставка в реальному часі (WebSocket), індикатор набору тексту, редагування й видалення, непрочитані, вкладення файлів зі сховища |
-| Адмінка | Користувачі, квоти, блокування, видалення акаунта з усіма файлами й поштою (через 7 днів, можна скасувати; ім'я й адреса 30 днів не видаються іншим), скидання 2FA, запрошення (лист на вказаний email із посиланням на реєстрацію, дійсне 1–30 днів, повторне надсилання), статистика, журнал аудиту, поштові скриньки (створення, перейменування зі збереженням старої адреси як псевдоніма, ім'я відправника, квота), карантин і стан антивірусу, резервні копії, сторінка «Стан сервера» (диск, пам'ять, процесор, черги антивірусу й мініатюр, копії, сертифікати, служби), а також Django admin на прихованому шляху (лише з 2FA) |
-
-## Архітектура
+## 🏗 Архітектура
 
 ```
-Інтернет ─► Traefik (TLS, HSTS, CSP, rate limit)
-              ├─► frontend  (nginx, статичний React SPA)
-              ├─► backend   (Django ASGI: REST API + WebSocket; usercontent.DOMAIN — лише перегляд файлів)
-              ├─► dav       (той самий код, окремі процеси лише для /dav/ — WebDAV не забирає воркери веб-інтерфейсу)
+Інтернет ─► Traefik :80/:443 (TLS, HSTS, CSP, rate limit)
+              ├─► frontend   (nginx, статичний React SPA)
+              ├─► backend    (Django ASGI: REST API + WebSocket; usercontent.DOMAIN — лише перегляд файлів)
+              ├─► dav        (той самий код, окремі процеси лише для /dav/)
               └─► onlyoffice (office.DOMAIN, окремий origin)
                               ├─ PostgreSQL  ─┐
                               ├─ Redis        │  мережа internal
-                              ├─ том objects (шифротекст) (без виходу
+                              ├─ том objects (шифротекст)  (без виходу
                               ├─ ClamAV       │   в інтернет)
                               ├─ Dovecot ◄────┤
                               └─ Postfix ◄────┘
-             worker / beat (Celery): антивірус, очищення кошика, нагадування
+             worker / beat (Celery): антивірус, мініатюри, EXIF, кошик, нагадування, видалення акаунтів
              worker ─► thumbnailer (мережа thumbs: без секретів і інтернету)
-             migrate (одноразово): міграції від власника БД, веб працює як bc_app
-Інтернет ─► Postfix :25/465/587, Dovecot :993  (мережа mailnet)
+             pusher  ─► Web Push (єдиний сервіс з виходом в інтернет, без ключів шифрування)
+             migrate (одноразово): міграції від власника БД, веб працює як обмежена роль bc_app
+Інтернет ─► Postfix :25/465/587, Dovecot :993 (мережа mailnet)
+Хост (systemd, root): restic → Hetzner Storage Box щоночі; Uptime Kuma на 127.0.0.1:3001
 ```
 
-## Швидкий старт (продакшн)
+## 📋 Вимоги
 
-Вимоги: Linux-сервер, Docker 24+ з Compose v2, домен, відкриті порти 80, 443, 25, 465, 587 і 993.
-DNS: окрім `DOMAIN` потрібні записи для `office.DOMAIN` (редактор документів) і `usercontent.DOMAIN` (перегляд файлів). Це окремі origin, щоб вміст файлів і редактор не мали доступу до сесії основного сайту.
+| | Мінімум | Рекомендовано |
+|---|---|---|
+| ОС | Ubuntu 22.04 LTS | **Ubuntu 24.04 LTS** (x86_64) |
+| CPU | 2 ядра | 4+ ядра |
+| RAM | 4 ГБ (без ONLYOFFICE) | 8 ГБ (з ONLYOFFICE ~2–3 ГБ, ClamAV ~1,5 ГБ) |
+| Диск | 40 ГБ + ваші дані | SSD для системи й БД, окремий великий диск для даних |
+| Мережа | Публічна IP-адреса (статична), відкриті порти 80, 443, 25, 465, 587, 993 | Провайдер, що дозволяє вихідний порт 25 і налаштовує PTR |
+| Домен | Свій домен із керуванням DNS | DNS у Cloudflare (режим **DNS only**) |
+| Резервні копії | — | Hetzner Storage Box **BX11** (1 ТБ) |
+
+> Домашній сервер за NAT підходить: потрібна статична публічна IP-адреса і переадресація портів на роутері. Автодеплой працює без вхідного SSH (self-hosted runner сам підключається до GitHub).
+
+---
+
+## 🚀 Встановлення на сервер з нуля
+
+Нижче — повний шлях від чистого сервера до робочої хмари з поштою, моніторингом і резервними копіями. Приклад: домен `example.com`, веб-інтерфейс на `cloud.example.com`, пошта на `mail.example.com`, проєкт у `/opt/blackcloud`. Підставте свої значення.
+
+### Крок 1. Підготовка системи
 
 ```bash
-git clone <repo> blackcloud && cd blackcloud
-make secrets            # генерує ./secrets/* і .env
-nano .env               # DOMAIN, ACME_EMAIL, MAIL_DOMAIN, MAIL_HOSTNAME, ADMIN_URL_PREFIX
-make lock && make pin   # (рекомендовано) залежності з хешами та образи за digest
-make init               # збірка, migrate (окремий сервіс), запуск
-make superuser          # перший адміністратор
+sudo apt update && sudo apt full-upgrade -y
+sudo apt install -y git make curl ca-certificates gnupg ufw unattended-upgrades fail2ban
+sudo timedatectl set-timezone Europe/Kyiv
+sudo dpkg-reconfigure -plow unattended-upgrades   # автоматичні оновлення безпеки
 ```
 
-Міграції вже в репозиторії. Після першої збірки закомітьте `frontend/package-lock.json`.
+Окремий користувач для проєкту (якщо працюєте від root):
 
-Відкрийте `https://DOMAIN`, увійдіть адміністратором і **одразу увімкніть 2FA** (Налаштування → Безпека): без неї адмін-функції заблоковані.
+```bash
+sudo adduser brebston
+sudo usermod -aG sudo brebston
+```
 
-### DNS для пошти
+**SSH лише за ключем.** На своєму комп'ютері: `ssh-copy-id brebston@<IP-сервера>`, перевірте вхід, потім на сервері в `/etc/ssh/sshd_config` встановіть `PasswordAuthentication no` і `PermitRootLogin no`, далі `sudo systemctl restart ssh`.
 
-| Запис | Значення |
-|---|---|
-| `A mail.example.com` | IP сервера |
-| `MX example.com` | `10 mail.example.com` |
-| `TXT example.com` (SPF) | `v=spf1 mx -all` |
-| `TXT mail._domainkey.example.com` (DKIM) | вивід `make dkim` |
-| `TXT _dmarc.example.com` | `v=DMARC1; p=quarantine; rua=mailto:postmaster@example.com` |
-| PTR (у хостера) | `mail.example.com` |
+### Крок 2. Брандмауер і мережа
 
-TLS-сертифікат для пошти покладіть у `certs/fullchain.pem` і `certs/privkey.pem` (наприклад, через certbot). Без нього Postfix і Dovecot стартують із самопідписаним сертифікатом.
+```bash
+sudo ufw default deny incoming
+sudo ufw default allow outgoing
+sudo ufw allow OpenSSH
+sudo ufw allow 80,443/tcp          # веб і Let's Encrypt
+sudo ufw allow 25,465,587/tcp      # пошта: прийом і надсилання
+sudo ufw allow 993/tcp             # IMAP для поштових клієнтів
+sudo ufw enable
+```
 
-> Багато VPS-провайдерів блокують вихідний порт 25: перевірте це до запуску. Публічні RBL (Spamhaus) не відповідають на запити через публічні DNS-резолвери, тож для повноцінного антиспаму варто підняти локальний резолвер (наприклад, unbound).
+> Docker сам відкриває опубліковані порти в обхід `ufw`. У проєкті опубліковано лише перелічені вище порти, а Uptime Kuma прив'язана до `127.0.0.1`.
 
-## Локальна розробка
+**Домашній сервер.** Закріпіть за сервером постійну LAN-адресу (DHCP reservation) і переадресуйте на неї на роутері TCP-порти **80, 443, 25, 465, 587, 993**. SSH назовні відкривати не потрібно.
+
+**Порт 25.** Багато провайдерів і VPS блокують вихідний порт 25. Перевірте до встановлення:
+
+```bash
+timeout 7 bash -c '</dev/tcp/gmail-smtp-in.l.google.com/25' && echo "25 відкритий" || echo "25 ЗАБЛОКОВАНИЙ"
+```
+
+### Крок 3. Docker
+
+Офіційний репозиторій Docker (Compose v2 входить у пакет):
+
+```bash
+sudo install -m 0755 -d /etc/apt/keyrings
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo $VERSION_CODENAME) stable" \
+  | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+sudo apt update
+sudo apt install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+sudo usermod -aG docker $USER      # потім вийдіть і зайдіть знову
+docker compose version             # має бути v2.x
+```
+
+### Крок 4. DNS
+
+Створіть записи в DNS-провайдера (у Cloudflare — **«DNS only», сіра хмаринка**: Let's Encrypt використовує TLS-ALPN-перевірку на порту 443, а пошта взагалі не проходить через проксі Cloudflare).
+
+| Тип | Ім'я | Значення | Навіщо |
+|---|---|---|---|
+| A | `cloud.example.com` | IP сервера | веб-інтерфейс (`DOMAIN`) |
+| A | `office.cloud.example.com` | IP сервера | редактор документів (окремий origin) |
+| A | `usercontent.cloud.example.com` | IP сервера | перегляд файлів (окремий origin) |
+| A | `mail.example.com` | IP сервера | поштовий сервер (`MAIL_HOSTNAME`) |
+| MX | `example.com` | `10 mail.example.com` | куди доставляти пошту |
+| TXT | `example.com` | `v=spf1 mx -all` | SPF |
+| TXT | `mail.example.com` | `v=spf1 a -all` | SPF для HELO |
+| TXT | `_dmarc.example.com` | `v=DMARC1; p=none; rua=mailto:dmarc@example.com; adkim=s; aspf=s` | DMARC (через тиждень — `p=quarantine`) |
+| TXT | `mail._domainkey.example.com` | з `make dkim` (крок 8) | DKIM |
+| PTR | IP сервера | `mail.example.com` | зворотний запис — **налаштовує провайдер** (напишіть у підтримку) |
+
+Перевірка:
+
+```bash
+dig +short cloud.example.com
+dig +short MX example.com
+dig +short -x <IP-сервера>        # має бути mail.example.com.
+```
+
+### Крок 5. Код проєкту
+
+Репозиторій приватний, тож потрібен **deploy key** (лише читання):
+
+```bash
+ssh-keygen -t ed25519 -f ~/.ssh/blackcloud_deploy -N "" -C "blkbox deploy key"
+cat ~/.ssh/blackcloud_deploy.pub
+```
+
+Додайте ключ у GitHub → репозиторій → Settings → Deploy keys → Add deploy key (без «Allow write access»). Потім:
+
+```bash
+cat >> ~/.ssh/config <<'CFG'
+Host github.com
+    IdentityFile ~/.ssh/blackcloud_deploy
+    IdentitiesOnly yes
+CFG
+sudo mkdir -p /opt/blackcloud && sudo chown $USER:$USER /opt/blackcloud
+git clone git@github.com:Brebston/blackcloud.git /opt/blackcloud
+cd /opt/blackcloud && git checkout main
+```
+
+### Крок 6. Секрети й `.env`
+
+```bash
+cd /opt/blackcloud
+make secrets       # створює secrets/* (ключі шифрування, паролі БД, Redis, Dovecot…) і .env з шаблону
+nano .env
+```
+
+Обов'язково змініть у `.env`:
+
+| Змінна | Приклад | Примітка |
+|---|---|---|
+| `DOMAIN` | `cloud.example.com` | домен веб-інтерфейсу |
+| `ACME_EMAIL` | `admin@example.com` | для Let's Encrypt |
+| `MAIL_DOMAIN` | `example.com` | адреси користувачів: `ім'я@example.com` |
+| `MAIL_HOSTNAME` | `mail.example.com` | має збігатися з A, MX і PTR |
+| `ADMIN_URL_PREFIX` | випадковий рядок | прихований шлях Django admin |
+| `COMPOSE_PROFILES` | `office,mailcert,monitoring` | ONLYOFFICE, сертифікат пошти, Uptime Kuma |
+| `SPAMHAUS_DQS_KEY` | ключ із spamhaus.com | безкоштовний (Data Query Service → Free) |
+
+> **Збережіть копію каталогу `secrets/` поза сервером** (у менеджері паролів чи на зашифрованому носії). Без `secrets/file_master_keys` файли розшифрувати неможливо — це не відновлюється.
+
+### Крок 7. Перший запуск
+
+```bash
+make lock && make pin   # (рекомендовано) залежності з хешами й образи, закріплені за digest
+make init               # збірка, міграції (окремий сервіс migrate), запуск усіх сервісів
+make superuser          # перший адміністратор
+docker compose ps       # усі сервіси мають бути Up / healthy
+```
+
+Перший старт триває кілька хвилин: ClamAV завантажує бази, ONLYOFFICE стартує 1–2 хв, Let's Encrypt видає сертифікати.
+
+Відкрийте `https://cloud.example.com`, увійдіть адміністратором і **одразу увімкніть 2FA** (Налаштування → Безпека): без неї адмін-функції заблоковані.
+
+### Крок 8. Пошта
+
+```bash
+make dkim          # покаже TXT-запис mail._domainkey — додайте його в DNS (одним рядком, без лапок)
+```
+
+Перевірка (через 10–30 хв після змін DNS):
+
+```bash
+dig +short TXT mail._domainkey.example.com
+```
+
+Надішліть лист зі своєї скриньки на адресу з [mail-tester.com](https://www.mail-tester.com) — ціль 9–10/10 (SPF, DKIM, DMARC, PTR). Перевірте IP на [check.spamhaus.org](https://check.spamhaus.org). Новий домен перші 1–3 тижні може потрапляти в «Спам» у Gmail: це репутація, а не налаштування. Докладно — [docs/MAIL.md](docs/MAIL.md).
+
+### Крок 9. Моніторинг (Uptime Kuma + Telegram)
+
+Kuma слухає лише `127.0.0.1:3001`. З **вашого комп'ютера**:
+
+```bash
+ssh -L 3001:127.0.0.1:3001 brebston@<IP-сервера>   # потім http://localhost:3001
+```
+
+1. Створіть обліковий запис Kuma.
+2. Settings → Notifications → **Telegram** (токен від @BotFather і ваш chat id) → Test.
+3. Монітори: «Сайт» (HTTPS `https://cloud.example.com`), «Глибока перевірка» `…/api/health/deep/`, «Диск ≥ 85%» `…/api/health/deep/?only=disk` — з заголовком `{"Authorization": "Bearer <токен>"}`, токен: `sudo cat /opt/blackcloud/secrets/health_token`; TCP-монітори 25/465/587/993.
+
+Покроково — [docs/MONITORING.md](docs/MONITORING.md).
+
+### Крок 10. Автодеплой (необов'язково)
+
+Після кожного зеленого CI на `main` сервер сам оновлюється.
+
+1. GitHub → Settings → Actions → Runners → **New self-hosted runner** (Linux x64). Виконайте показані команди в `~/actions-runner` під користувачем, якому належить `/opt/blackcloud` (група `docker`). Під час `./config.sh` додайте мітку: `--labels blackcloud`.
+2. Запустіть як сервіс: `sudo ./svc.sh install && sudo ./svc.sh start`.
+3. (Рекомендовано) Settings → Environments → `production` → Deployment branches: лише `main`.
+4. Якщо проєкт не в `/opt/blackcloud` — змінна репозиторію `DEPLOY_PATH`.
+
+Деплой зупиняється, якщо в `/opt/blackcloud` є незакомічені зміни, і перевіряє `https://DOMAIN/api/health/` після старту.
+
+### Крок 11. Резервні копії в Hetzner Storage Box
+
+Щоночі (03:30) сервер робить **зашифровану інкрементальну** копію (restic, AES-256) усіх даних на Hetzner Storage Box, а щонеділі (05:00) перевіряє її пробним відновленням БД і випадкового файлу. Зберігаються 7 щоденних, 4 щотижневі й 12 щомісячних станів.
+
+У копію потрапляють: дамп усіх баз PostgreSQL, файли користувачів (уже зашифровані), пошта (зашифрована mail_crypt), ключі DKIM, сертифікати, а також `secrets/` і `.env`.
+
+**11.1. Storage Box.** Hetzner Console → Storage Box → замовте **BX11**. У налаштуваннях увімкніть **SSH support** і **External reachability**, задайте пароль. Запишіть логін `uXXXXX` і хост `uXXXXX.your-storagebox.de`. SMB і WebDAV Storage Box тримайте вимкненими.
+
+**11.2. restic і скрипт:**
+
+```bash
+sudo apt install -y restic
+restic version                   # потрібно 0.14+ (Ubuntu 24.04 — 0.16)
+cd /opt/blackcloud
+make backup-install              # скрипт → /usr/local/sbin/blackcloud-backup (власник root), таймери systemd
+sudo blackcloud-backup init      # створить пароль restic і ПОКАЖЕ ЙОГО ОДИН РАЗ
+```
+
+> **Збережіть пароль restic у менеджері паролів** разом із логіном і паролем Storage Box. Без нього копії не розшифрувати — Hetzner його не має.
+
+**11.3. Підключення до Storage Box.** `sudo nano /root/.ssh/config`:
+
+```
+Host storagebox
+    HostName uXXXXX.your-storagebox.de
+    User uXXXXX
+    Port 23
+    IdentityFile /etc/blackcloud-backup/id_ed25519
+    IdentitiesOnly yes
+    ServerAliveInterval 60
+```
+
+Далі один зі способів входу:
+
+- **За ключем (рекомендовано):**
+  ```bash
+  sudo sh -c 'cat /etc/blackcloud-backup/id_ed25519.pub | ssh -p 23 uXXXXX@uXXXXX.your-storagebox.de install-ssh-key'
+  ```
+- **За паролем Storage Box:** у блоці вище замініть `IdentityFile …` і `IdentitiesOnly yes` на `PubkeyAuthentication no`, потім
+  ```bash
+  sudo blackcloud-backup set-password    # пароль зберігається лише в /etc/blackcloud-backup (600, root)
+  ```
+
+Перше підключення й створення сховища:
+
+```bash
+sudo sftp storagebox             # підтвердіть відбиток: yes → ls → exit
+sudo blackcloud-backup init      # створить сховище restic на Storage Box
+```
+
+**11.4. Сповіщення в Telegram.** В Uptime Kuma додайте два монітори типу **Push**:
+
+| Монітор | Heartbeat Interval | Змінна в `/etc/blackcloud-backup/backup.env` |
+|---|---|---|
+| «Резервні копії» (щоночі) | `93600` (26 год) | `KUMA_PUSH_URL=http://127.0.0.1:3001/api/push/…` |
+| «Перевірка копій» (щотижня) | `691200` (8 днів) | `KUMA_CHECK_PUSH_URL=http://127.0.0.1:3001/api/push/…` |
+
+У Push URL замініть адресу на `http://127.0.0.1:3001`. Kuma повідомить і про невдалу копію, і про копію, яка взагалі не запустилася.
+
+**11.5. Перша копія й розклад:**
+
+```bash
+make backup-now      # перша копія (кілька хвилин; надалі — секунди)
+make backup-list     # список копій
+make backup-check    # цілісність + пробне відновлення БД і файлу
+make backup-enable   # щоночі о 03:30, перевірка щонеділі о 05:00
+```
+
+Стан копій і кнопка «Зробити копію зараз» — в **Адмінка → Резервні копії**. Відновлення й видалення копій з вебінтерфейсу свідомо неможливі: лише з терміналу сервера. Повне відновлення на новому сервері — [docs/BACKUP.md](docs/BACKUP.md#повне-відновлення-на-новому-сервері).
+
+### Крок 12. Фінальна перевірка
+
+- [ ] `https://cloud.example.com` відкривається з дійсним сертифікатом, адміністратор має 2FA
+- [ ] Завантаження файлу → статус «Готовий» (антивірус працює), мініатюра з'являється
+- [ ] Лист на Gmail: у «Показати оригінал» — `SPF: PASS`, `DKIM: PASS`, `DMARC: PASS`
+- [ ] Адмінка → Стан сервера: «Усе гаразд»
+- [ ] Адмінка → Резервні копії: є свіжа копія, перевірка «Пройдено»
+- [ ] Uptime Kuma: усі монітори зелені, тестове сповіщення прийшло в Telegram
+- [ ] Копія `secrets/` і пароль restic збережені **поза** сервером
+
+---
+
+## 🔄 Оновлення
+
+**З автодеплоєм:** злийте зміни в `main` — після зеленого CI сервер оновиться сам.
+
+**Вручну:**
+
+```bash
+cd /opt/blackcloud
+make backup-now                    # перед міграціями БД — обов'язково
+git pull --ff-only
+sh scripts/init-secrets.sh --secrets-only   # додасть нові секрети, наявні не змінює
+docker compose build && docker compose up -d   # міграції виконає сервіс migrate
+docker compose ps
+```
+
+Після оновлення скрипта копій: `make backup-install`.
+
+## 💻 Локальна розробка
 
 ```bash
 make secrets
@@ -93,58 +411,53 @@ make secrets
 # /etc/hosts (Safari/Firefox; Chrome резолвить *.localhost сам):
 #   127.0.0.1 office.localhost usercontent.localhost
 make up-dev             # https://localhost
-# Самопідписаний сертифікат треба один раз прийняти для кожного хоста:
-#   https://localhost, https://office.localhost/healthcheck, https://usercontent.localhost
 ```
 
-**Довірений сертифікат для localhost (рекомендовано).** Із самопідписаним сертифікатом браузер не реєструє service worker (push-сповіщення, встановлення застосунку), а Finder не підключає WebDAV. Один раз на Mac:
+**Довірений сертифікат для localhost (рекомендовано)** — без нього браузер не реєструє service worker, а Finder не підключає WebDAV:
 
 ```bash
-brew install mkcert nss          # nss — для Firefox
-mkcert -install                  # додає локальний CA у системну в'язку (тільки на цьому Mac)
+brew install mkcert nss
+mkcert -install
 mkdir -p certs/dev
 mkcert -cert-file certs/dev/localhost.pem -key-file certs/dev/localhost-key.pem \
   localhost office.localhost usercontent.localhost 127.0.0.1 ::1
-make up-dev                      # або: docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d traefik
+make up-dev
 ```
-
-Сертифікат і ключ лежать у `certs/dev/` (у git не потрапляють). На сервері це не потрібно — там Let's Encrypt.
 
 Фронтенд з hot-reload: `cd frontend && npm install && npm run dev` (API проксіюється на `https://localhost`).
 
-## Тести
+Після зміни моделей: `make migrations` (закомітьте створені міграції).
+
+## 🧪 Тести й CI/CD
 
 ```bash
-make test
+make test                                   # тести бекенду в Docker
 ```
 
-Тести покривають: вхід і блокування, 2FA (зокрема повторне використання TOTP і одноразовість резервних кодів), запрошення, права адміністратора, атомарність квот, шифрування й цілісність чанків, ізоляцію файлів між користувачами, спільний доступ, кошик, публічні посилання (пароль, ліміт, підпис), санітизацію імен і HTML листів, календар і чат, карантин і антивірус (права, повторна перевірка, видалення з паролем), кілька скриньок і перейменування, підписи, HTML-листи з вбудованими зображеннями, конфіденційний режим.
-
-Без Docker (потрібні Python 3.12, `libmagic`, `poppler-utils`):
+Без Docker (Python 3.12, `libmagic`, `poppler-utils`, за бажанням `ffmpeg`):
 
 ```bash
 cd backend && pip install -r requirements.txt
 DJANGO_TEST=1 python -m pytest
+python scripts/i18n.py check
 cd ../frontend && npm install && npm run typecheck && npm run build
 ```
 
-## Онлайн-редактор документів (ONLYOFFICE)
+| Workflow | Коли | Що робить |
+|---|---|---|
+| `ci.yml` | push у `main`/`develop`, pull request, вручну | **Backend:** `manage.py check`, `makemigrations --check`, `i18n.py check`, `pytest`. **Frontend:** `npm run typecheck`, `npm run build`. **Compose:** `docker compose config`, `sh -n` для скриптів |
+| `deploy.yml` | після зеленого CI на `main`, вручну | self-hosted runner на сервері: fast-forward до перевіреного коміту → `docker compose build` → `up -d` → перевірка здоров'я |
 
-`make secrets` додає в `.env` рядки `OFFICE_ENABLED=true`, `COMPOSE_PROFILES=office` та випадковий `OFFICE_JWT_SECRET`. Після цього:
+Для CI й автодеплою **жодних секретів у GitHub не потрібно**. Workflow для PR виконуються лише на хмарних runner-ах GitHub, ніколи — на сервері.
 
-```bash
-docker compose up -d --build
-```
+Ланцюг постачання: `make lock` (залежності з хешами), `make pin` (образи за digest), `make audit` (pip-audit, npm audit), `make scan` (Trivy).
 
-Document Server займає ~2–3 ГБ RAM і стартує 1–2 хвилини. Він доступний через Traefik на піддомені `office.DOMAIN`, бачить лише backend (мережа `edge`), а запити підписуються JWT. Щоб вимкнути редактор, постав `OFFICE_ENABLED=false` і прибери `office` з `COMPOSE_PROFILES`.
+## ⚙️ Змінні оточення
 
-Мініатюри для файлів, завантажених до оновлення: `make thumbnails`. Також щопівгодини їх дотворює фонове завдання (до 200 за раз; файл, що не вдався 3 рази, пропускається — повторити: `docker compose exec worker python manage.py generate_thumbnails --retry`).
+Значення — у `.env` (шаблон `.env.example`) і у файлах `secrets/` (Docker secrets). **Реальні значення не комітяться**: `.env`, `secrets/*` і `certs/*` — у `.gitignore`.
 
-## Змінні оточення
-
-Значення задаються у `.env` (шаблон — `.env.example`) або у файлах `secrets/` (Docker secrets). **Реальні значення секретів не комітяться** і в цьому README не наводяться: `.env`, `secrets/*` і `certs/*` занесені в `.gitignore`, а `make secrets` генерує їх локально.
-
-### `.env`
+<details>
+<summary><b><code>.env</code> — усі змінні</b></summary>
 
 | Змінна | Призначення |
 |---|---|
@@ -156,126 +469,101 @@ Document Server займає ~2–3 ГБ RAM і стартує 1–2 хвили�
 | `TIME_ZONE`, `LANGUAGE_CODE` | Часовий пояс і мова сервера за замовчуванням |
 | `REGISTRATION_OPEN` | Відкрита реєстрація (`false` — лише за запрошеннями) |
 | `DEFAULT_QUOTA_GB`, `MAX_FILE_SIZE_GB` | Квота нового користувача і максимальний розмір файлу |
-| `REQUIRE_2FA_FOR_STAFF` | Обов'язкова 2FA для адміністраторів |
-| `UNSCANNED_POLICY` | Що робити з файлами, які ClamAV не може перевірити (`block` / `allow`) |
-| `CLAMAV_ENABLED`, `CLAMAV_MAX_STREAM_MB` | Увімкнення антивірусу і ліміт перевірки (змінюється лише тут, не з вебінтерфейсу) |
+| `REQUIRE_2FA_FOR_STAFF` | Обов'язкова 2FA (або ключ доступу) для адміністраторів |
+| `UNSCANNED_POLICY` | Файли, які ClamAV не може перевірити: `block` / `allow` |
+| `CLAMAV_ENABLED`, `CLAMAV_MAX_STREAM_MB` | Антивірус і ліміт перевірки |
 | `OBJECT_STORE`, `S3_BUCKET`, `S3_ENDPOINT_URL` | Сховище файлів: `local` (Docker-том) або `s3` |
 | `MAIL_DOMAIN`, `MAIL_HOSTNAME` | Поштовий домен і хост MX |
 | `MAIL_AUTO_CREATE`, `MAIL_DEFAULT_QUOTA_MB` | Автоматична скринька для нового користувача та її квота |
-| `SPAMHAUS_DQS_KEY` | Ключ Spamhaus DQS для антиспаму (секрет) |
-| `OFFICE_ENABLED`, `OFFICE_HOST`, `OFFICE_JWT_SECRET` | Онлайн-редактор документів (ONLYOFFICE); JWT — секрет |
+| `SYSTEM_MAIL_FROM`, `SITE_NAME` | Відправник системних листів (запрошення) і назва сервісу в них |
+| `SPAMHAUS_DQS_KEY` | Ключ Spamhaus DQS для антиспаму |
+| `OFFICE_ENABLED`, `OFFICE_HOST`, `OFFICE_JWT_SECRET` | ONLYOFFICE; JWT — секрет |
 | `USERCONTENT_HOST` | Окремий origin для перегляду файлів |
-| `COMPOSE_PROFILES` | Додаткові сервіси: `office`, `mailcert` |
+| `COMPOSE_PROFILES` | Додаткові сервіси: `office`, `mailcert`, `monitoring` |
+| `WEB_WORKERS`, `DAV_WORKERS` | Кількість процесів веб-інтерфейсу й WebDAV |
+| `HEALTH_DISK_ALERT_PERCENT`, `HEALTH_CERT_MIN_DAYS`, `BACKUP_MAX_AGE_HOURS` | Пороги для моніторингу |
+| `ACCOUNT_DELETION_DELAY_DAYS`, `ACCOUNT_NAME_HOLD_DAYS` | Відкладене видалення акаунта (7) і утримання імені/адреси (30) |
 | `*_IMAGE` | Закріплені за digest образи (`make pin`) |
-| Додатково (є значення за замовчуванням) | `AUDIT_RETENTION_DAYS`, `TRASH_RETENTION_DAYS`, `PUBLIC_LINK_MAX_DAYS`, `SESSION_AGE_HOURS`, `LOGIN_MAX_FAILURES`, `LOGIN_LOCKOUT_SECONDS`, `TWO_FACTOR_MAX_FAILURES`, `MAX_RECURRING_EVENTS_PER_USER`, `THUMBNAILS_ENABLED` |
+| Додатково | `AUDIT_RETENTION_DAYS`, `TRASH_RETENTION_DAYS`, `PUBLIC_LINK_MAX_DAYS`, `SESSION_AGE_HOURS`, `LOGIN_MAX_FAILURES`, `LOGIN_LOCKOUT_SECONDS`, `TWO_FACTOR_MAX_FAILURES`, `THUMBNAILS_ENABLED` |
 
-### `secrets/` (генерує `make secrets`)
+</details>
+
+<details>
+<summary><b><code>secrets/</code> — файли, які створює <code>make secrets</code></b></summary>
 
 | Файл | Призначення |
 |---|---|
 | `django_secret_key` | Ключ підпису Django |
-| `postgres_password`, `app_db_password`, `mail_db_password` | Паролі власника БД, обмеженої ролі застосунку і ролі пошти |
+| `postgres_password`, `app_db_password`, `mail_db_password` | Власник БД, обмежена роль застосунку, роль пошти |
 | `redis_password` | Пароль Redis |
-| `file_master_keys` | Майстер-ключі шифрування файлів (втрата = втрата файлів) |
-| `field_encryption_key` | Шифрування чутливих полів БД (TOTP, конфіденційні листи) |
+| `file_master_keys` | **Майстер-ключі шифрування файлів (втрата = втрата файлів)** |
+| `field_encryption_key` | Шифрування чутливих полів БД (TOTP, координати фото, конфіденційні листи) |
 | `dovecot_master_password` | Доступ веб-пошти до Dovecot |
 | `mail_crypt_private_key`, `mail_crypt_public_key` | Шифрування листів на диску |
+| `health_token` | Токен для `/api/health/deep/` (моніторинг) |
+| `vapid_private_key`, `vapid_public_key` | Web Push |
 | `s3_access_key`, `s3_secret_key` | Лише для `OBJECT_STORE=s3` |
 
-Для CI і автодеплою **жодних секретів у GitHub не потрібно** (див. нижче).
+Налаштування резервних копій (пароль restic, ключ SSH, Push URL Kuma) лежать окремо — у `/etc/blackcloud-backup` (700, root).
 
-## CI (GitHub Actions)
+</details>
 
-`.github/workflows/ci.yml` запускається на push у `main`/`develop`, на pull request і вручну. Виконуються лише перевірки, налаштовані в репозиторії:
-
-| Job | Кроки |
-|---|---|
-| Backend | Python 3.12 + `libmagic1`, `poppler-utils` → `pip install -r requirements.txt` → `manage.py check` → `makemigrations --check --dry-run` → `scripts/i18n.py check` → `pytest` (налаштування з `backend/pytest.ini`, `DJANGO_TEST=1`: SQLite, без зовнішніх сервісів) |
-| Frontend | Node 22 → `npm install --ignore-scripts` (або `npm ci`, якщо є lock-файл) → `npm run typecheck` → `npm run build` |
-| Compose | Тимчасові секрети (`scripts/init-secrets.sh`) → `docker compose config` (основний і dev) → `sh -n` для всіх `*.sh` |
-
-Лінтери (ruff, eslint) у проєкті не налаштовані, тому в CI їх немає.
-
-## Автодеплой
-
-`.github/workflows/deploy.yml` розгортає `main` після **успішного** CI для push у `main` (не для PR) або вручну (Actions → Deploy → Run workflow на гілці `main`).
-
-Сервер стоїть за NAT, і SSH ззовні закритий, тому деплой виконує **self-hosted runner на самому сервері**: він сам підключається до GitHub, вхідні порти не потрібні. Workflow:
-
-1. перевіряє, що в `/opt/blackcloud` немає локальних змін відстежуваних файлів (інакше зупиняється, нічого не перезаписуючи);
-2. `git fetch` і fast-forward до **саме того коміту, що пройшов CI** (через наявний deploy key сервера);
-3. `docker compose build` і `docker compose up -d` (міграції виконує сервіс `migrate` автоматично);
-4. чекає, доки `backend` стане `healthy`, і перевіряє `https://DOMAIN/api/health/` через Traefik.
-
-### Одноразове налаштування
-
-1. **Сервер на гілку `main`:** `cd /opt/blackcloud && git status && git fetch origin && git checkout main && git pull --ff-only`.
-2. **Runner:** GitHub → репозиторій → Settings → Actions → Runners → New self-hosted runner (Linux x64). Виконайте показані команди під користувачем, якому належить `/opt/blackcloud` і який є в групі `docker`, а під час `./config.sh` додайте мітку `blackcloud` (`--labels blackcloud`). Потім `sudo ./svc.sh install && sudo ./svc.sh start`, щоб runner працював як сервіс.
-3. **(Рекомендовано) середовище `production`:** Settings → Environments → `production` → Deployment branches: лише `main`; за бажанням Required reviewers для ручного підтвердження кожного деплою.
-4. **(Необов'язково) змінна репозиторію `DEPLOY_PATH`**, якщо проєкт лежить не в `/opt/blackcloud`.
-5. Додаткові сервіси (`office`, `mailcert`) вмикаються через `COMPOSE_PROFILES` у `.env` на сервері — деплой їх враховує.
-
-> Безпека runner-а: реєструйте його лише в цьому (приватному) репозиторії. Workflow для PR виконуються на хмарних runner-ах GitHub і ніколи — на сервері.
-
-## Конфіденційний режим листів
-
-Отримувачі одержують лише лист-повідомлення з посиланням `https://DOMAIN/c#токен`. Вміст зберігається на сервері зашифрованим (Fernet), у БД — лише SHA-256 токена. Можна задати термін (1, 7, 30 або 90 днів) і 6-значний код доступу (його треба передати іншим каналом). Відправник бачить список таких листів і може відкликати доступ: вміст одразу видаляється. Після терміну вміст стирає періодичне завдання.
-
-Обмеження: вкладення в цьому режимі не підтримуються; знімок екрана чи копіювання тексту отримувачем запобігти неможливо (як і в Gmail).
-
-## Мова інтерфейсу
-
-Українська та англійська — повністю: інтерфейс і повідомлення сервера. Перемикач — у верхній панелі, на сторінці входу та в Налаштування → Профіль → Оформлення; вибір зберігається в браузері й в акаунті.
-
-- **Фронтенд:** рядки — у `frontend/src/i18n/uk.ts`, `en.ts` і `frontend/src/i18n/parts/*.ts`; TypeScript не дасть пропустити ключ. Множина: `{n|файл|файли|файлів}` / `{n|file|files}`.
-- **Бекенд:** рядки в коді українською, позначені `gettext`; SPA надсилає `Accept-Language`, Django (`LocaleMiddleware`) відповідає цією мовою. Сповіщення створюються мовою з налаштувань отримувача. Переклад — `backend/locale/en/LC_MESSAGES/django.po`:
-  ```bash
-  cd backend
-  python scripts/i18n.py extract   # нові рядки → .po (порожній msgstr)
-  # перекласти порожні msgstr
-  python scripts/i18n.py compile   # .po → .mo (GNU gettext не потрібен)
-  python scripts/i18n.py check     # те саме перевіряє CI
-  ```
-- Не перекладаються дані користувачів (назви файлів, календарів, листи), коди журналу аудиту й Django admin.
-
-## Додаткові модулі
-
-| Модуль | Коротко | Докладно |
-|---|---|---|
-| Моніторинг | Uptime Kuma (профіль `monitoring`) + сповіщення в Telegram; `GET /api/health/deep/` з токеном перевіряє БД, Redis, ClamAV, диск (≥85%), сертифікати сайту й пошти, Celery | [docs/MONITORING.md](docs/MONITORING.md) |
-| PWA і push | Встановлення на телефон/комп'ютер, Web Push про нові листи, чат та інші події; окремий сервіс `pusher` — єдиний з виходом в інтернет, без ключів шифрування й пароля БД | [docs/PUSH.md](docs/PUSH.md) |
-| Версії файлів і ZIP | Історія версій із відновленням (усі версії перевіряє антивірус, займають квоту, до 20 / 90 днів), «Завантажити новою версією», завантаження папки як ZIP (потоково, до 10 ГБ) | [docs/FILES.md](docs/FILES.md) |
-| Галерея «Фото» | Стрічка за датою зйомки, альбоми, EXIF, прибирання геолокації в публічних посиланнях | [docs/PHOTOS.md](docs/PHOTOS.md) |
-| Пошта: групові дії | Вибір кількох листів, «З зірочкою», заблоковані відправники (у «Спам»), аватари відправників і фото профілів | [docs/MAIL.md](docs/MAIL.md) |
-| Логотип у Gmail (BIMI) | DNS + SVG Tiny PS + сертифікат VMC/CMC | [docs/BIMI.md](docs/BIMI.md) |
-| WebDAV | Підключення як мережевого диска (Finder, Windows, Linux, мобільні застосунки) за адресою `https://DOMAIN/dav/` з окремим паролем застосунку | [docs/WEBDAV.md](docs/WEBDAV.md) |
-
-Нові секрети (`health_token`, `vapid_private_key`, `vapid_public_key`) створює `make secrets`; автодеплой сам додає відсутні (`scripts/init-secrets.sh --secrets-only`, наявні файли й `.env` не змінюються).
-
-## Корисні команди
+## 🛠 Корисні команди
 
 | Команда | Дія |
 |---|---|
+| `make init` / `make up` / `make down` | перший запуск / запуск / зупинка |
 | `make logs` | логи всіх сервісів |
+| `make superuser` / `make shell` | адміністратор / Django shell |
+| `make migrate` / `make migrations` | застосувати / створити міграції |
 | `make dkim` | DKIM-запис для DNS |
-| `make backup` | дамп PostgreSQL у `backups/` |
-| `make backup-install` / `backup-now` / `backup-check` / `backup-list` | резервні копії поза сервером (restic → Hetzner Storage Box), щоночі + щотижнева перевірка відновленням — [docs/BACKUP.md](docs/BACKUP.md) |
-| `make migrate` | міграції (одноразовий сервіс від імені власника БД) |
-| `make lock` / `make pin` | залежності з хешами / образи за digest |
-| `make scan` / `make audit` | сканування образів (Trivy) / перевірка залежностей |
-| `make shell` | Django shell |
+| `make thumbnails` | мініатюри для старих файлів |
+| `docker compose exec backend python manage.py index_photos` | додати всі фото в «Фото» одразу |
+| `make backup-install` / `backup-now` / `backup-check` / `backup-list` / `backup-enable` | резервні копії restic → Hetzner |
+| `make backup` | локальний дамп PostgreSQL у `backups/` (не замінює копії поза сервером) |
+| `make lock` / `make pin` / `make audit` / `make scan` | ланцюг постачання |
 
-**Бекап** = дамп БД + том `objects_data` + том `mail_data` + **каталог `secrets/`**. Без `file_master_keys` файли розшифрувати неможливо: зберігайте копію ключів окремо від даних.
+## 📚 Документація модулів
 
-## Структура
+| Документ | Про що |
+|---|---|
+| [docs/BACKUP.md](docs/BACKUP.md) | Резервні копії, що в них, повне відновлення на новому сервері |
+| [docs/MONITORING.md](docs/MONITORING.md) | Uptime Kuma, Telegram, монітори, `/api/health/deep/` |
+| [docs/FILES.md](docs/FILES.md) | Версії файлів, ZIP, публічні теки, скринька, обране й теги |
+| [docs/PHOTOS.md](docs/PHOTOS.md) | Галерея «Фото», EXIF, альбоми, прибирання геолокації |
+| [docs/MAIL.md](docs/MAIL.md) | Веб-пошта, групові дії, заблоковані відправники |
+| [docs/WEBDAV.md](docs/WEBDAV.md) | Мережевий диск у Finder, Windows, Linux, на телефоні |
+| [docs/PUSH.md](docs/PUSH.md) | PWA і Web Push |
+| [docs/BIMI.md](docs/BIMI.md) | Логотип у Gmail (BIMI) |
+| [SECURITY.md](SECURITY.md) | Модель загроз і захист |
+
+## 🌐 Мова інтерфейсу
+
+Українська й англійська — повністю, включно з повідомленнями сервера. Перемикач — у верхній панелі, на сторінці входу і в налаштуваннях.
+
+- **Фронтенд:** `frontend/src/i18n/uk.ts`, `en.ts` і `parts/*.ts`; TypeScript не дає пропустити ключ.
+- **Бекенд:** рядки в коді українською з `gettext`, переклад — `backend/locale/en/LC_MESSAGES/django.po`:
+  ```bash
+  cd backend
+  python scripts/i18n.py extract   # нові рядки → .po
+  python scripts/i18n.py compile   # .po → .mo
+  python scripts/i18n.py check     # те саме перевіряє CI
+  ```
+
+## 📁 Структура репозиторію
 
 ```
-backend/            Django: apps/{core,accounts,storage,calendars,chat,mail}, tests/
-frontend/           React SPA (Vite + TS), nginx.conf
+backend/            Django: apps/{core,accounts,storage,photos,calendars,chat,mail,push,dav}, tests/, thumbsvc.py
+frontend/           React SPA (Vite + TypeScript), nginx.conf
 mailserver/         postfix/, dovecot/, rspamd/, clamav/, postgres-init/
 traefik/dynamic/    маршрути, заголовки безпеки, TLS
-scripts/            init-secrets.sh, pin-images.sh
+scripts/            init-secrets.sh, pin-images.sh, backup.sh, systemd/
+docs/               документація модулів
 .github/workflows/  ci.yml (перевірки), deploy.yml (автодеплой)
 ```
 
-Модель загроз і деталі захисту описані в [SECURITY.md](SECURITY.md).
+## 🔒 Безпека й ліцензія
+
+- Модель загроз і деталі захисту — [SECURITY.md](SECURITY.md). Знайшли вразливість — повідомте власника репозиторію напряму, не через публічні issue.
+- Секрети ніколи не комітяться; для CI/CD вони не потрібні.
+- Приватний проєкт. Ліцензію не визначено — усі права застережено.
