@@ -2,7 +2,7 @@ import { FormEvent, useEffect, useState } from "react";
 import { del, errorText, get, post } from "../api/client";
 import type { PublicLink, Share } from "../api/types";
 import { useT } from "../i18n";
-import { formatDate } from "../lib/format";
+import { formatBytes, formatDate } from "../lib/format";
 import Icon from "./Icon";
 import Modal from "./Modal";
 import { useToast } from "./Toast";
@@ -21,12 +21,13 @@ export default function ShareDialog({
   const [links, setLinks] = useState<PublicLink[]>([]);
   const [newUrl, setNewUrl] = useState("");
   const [linkForm, setLinkForm] = useState({ expires_days: 7, password: "", max_downloads: "" });
+  const [folderForm, setFolderForm] = useState({ kind: "folder" as "folder" | "drop", expires_days: 7, password: "", note: "", max_mb: "" });
   const [error, setError] = useState("");
 
   const load = async () => {
     const all = await get<Share[]>("/api/files/shares/");
     setShares(all.filter((s) => (target.type === "file" ? s.file === target.id : s.folder === target.id)));
-    if (target.type === "file") setLinks(await get<PublicLink[]>(`/api/files/links/?file=${target.id}`));
+    setLinks(await get<PublicLink[]>(`/api/files/links/?${target.type}=${target.id}`));
   };
 
   useEffect(() => {
@@ -66,6 +67,65 @@ export default function ShareDialog({
       setError(errorText(err));
     }
   };
+
+  const createFolderLink = async (e: FormEvent) => {
+    e.preventDefault();
+    setError("");
+    if (folderForm.password && folderForm.password.length < 8) {
+      setError(t("files.shareDlg.passwordShort"));
+      return;
+    }
+    try {
+      const r = await post<PublicLink>("/api/files/links/", {
+        kind: folderForm.kind,
+        folder: target.id,
+        expires_days: Number(folderForm.expires_days),
+        password: folderForm.password || undefined,
+        note: folderForm.note.trim(),
+        max_upload_mb: folderForm.kind === "drop" && folderForm.max_mb ? Number(folderForm.max_mb) : null,
+      });
+      setNewUrl(r.url || "");
+      setFolderForm({ ...folderForm, password: "", note: "", max_mb: "" });
+      load();
+    } catch (err) {
+      setError(errorText(err));
+    }
+  };
+
+  const linkList = links.length > 0 && (
+    <ul className="plain-list">
+      {links.map((l) => (
+        <li key={l.id} className="row-between">
+          <span className="small">
+            {l.kind !== "file" && <span className="pill">{l.kind === "drop" ? t("pubf.labelDrop") : t("pubf.labelFolder")}</span>}{" "}
+            {t("files.shareDlg.until", { date: formatDate(l.expires_at) })} ·{" "}
+            {l.kind === "drop"
+              ? t("pubf.uploads", { n: l.upload_count, size: formatBytes(l.upload_bytes) })
+              : l.kind === "folder"
+                ? t("pubf.downloads", { n: l.download_count })
+                : `${l.download_count}${l.max_downloads ? `/${l.max_downloads}` : ""} ${t("files.shareDlg.downloads")}`}{" "}
+            {l.has_password && t("files.shareDlg.withPassword")}
+            {!l.active && t("files.shareDlg.inactive")}
+          </span>
+          <button className="link-btn danger" onClick={() => del(`/api/files/links/${l.id}/`).then(load)}>
+            {t("files.shareDlg.revoke")}
+          </button>
+        </li>
+      ))}
+    </ul>
+  );
+
+  const newUrlBox = newUrl && (
+    <div className="secret-box">
+      <div className="small muted">{t("files.shareDlg.copyNow")}</div>
+      <div className="row-between">
+        <code className="break">{newUrl}</code>
+        <button className="btn btn-sm" onClick={() => navigator.clipboard.writeText(newUrl).then(() => toast(t("files.shareDlg.copied"), "success"))}>
+          {t("files.shareDlg.copy")}
+        </button>
+      </div>
+    </div>
+  );
 
   return (
     <Modal title={t("files.shareDlg.title", { name: target.name })} onClose={onClose}>
@@ -130,36 +190,56 @@ export default function ShareDialog({
               </button>
             </form>
           )}
-          {newUrl && (
-            <div className="secret-box">
-              <div className="small muted">{t("files.shareDlg.copyNow")}</div>
-              <div className="row-between">
-                <code className="break">{newUrl}</code>
-                <button
-                  className="btn btn-sm"
-                  onClick={() => navigator.clipboard.writeText(newUrl).then(() => toast(t("files.shareDlg.copied"), "success"))}
-                >
-                  {t("files.shareDlg.copy")}
-                </button>
-              </div>
-            </div>
-          )}
-          {links.length > 0 && (
-            <ul className="plain-list">
-              {links.map((l) => (
-                <li key={l.id} className="row-between">
-                  <span className="small">
-                    {t("files.shareDlg.until", { date: formatDate(l.expires_at) })} · {l.download_count}
-                    {l.max_downloads ? `/${l.max_downloads}` : ""} {t("files.shareDlg.downloads")} {l.has_password && t("files.shareDlg.withPassword")}
-                    {!l.active && t("files.shareDlg.inactive")}
+          {newUrlBox}
+          {linkList}
+        </section>
+      )}
+
+      {target.type === "folder" && (
+        <section className="stack">
+          <h4>{t("pubf.folderLinks")}</h4>
+          <form className="stack" onSubmit={createFolderLink}>
+            <div className="link-kinds" role="radiogroup">
+              {(["folder", "drop"] as const).map((k) => (
+                <label key={k} className={`link-kind ${folderForm.kind === k ? "active" : ""}`}>
+                  <input type="radio" name="link-kind" checked={folderForm.kind === k} onChange={() => setFolderForm({ ...folderForm, kind: k })} />
+                  <span>
+                    <strong>
+                      <Icon name={k === "drop" ? "upload" : "folder"} size={15} /> {k === "drop" ? t("pubf.kindDrop") : t("pubf.kindFolder")}
+                    </strong>
+                    <span className="small muted">{k === "drop" ? t("pubf.kindDropHint") : t("pubf.kindFolderHint")}</span>
                   </span>
-                  <button className="link-btn danger" onClick={() => del(`/api/files/links/${l.id}/`).then(load)}>
-                    {t("files.shareDlg.revoke")}
-                  </button>
-                </li>
+                </label>
               ))}
-            </ul>
-          )}
+            </div>
+            <div className="grid-3">
+              <label>
+                {t("files.shareDlg.days")}
+                <input type="number" min={1} max={30} value={folderForm.expires_days} onChange={(e) => setFolderForm({ ...folderForm, expires_days: Number(e.target.value) })} />
+              </label>
+              <label>
+                {t("files.shareDlg.password")}
+                <input type="password" autoComplete="new-password" value={folderForm.password} onChange={(e) => setFolderForm({ ...folderForm, password: e.target.value })} />
+              </label>
+              {folderForm.kind === "drop" && (
+                <label>
+                  {t("pubf.maxMb")}
+                  <input type="number" min={1} placeholder={t("files.shareDlg.unlimited")} value={folderForm.max_mb} onChange={(e) => setFolderForm({ ...folderForm, max_mb: e.target.value })} />
+                </label>
+              )}
+            </div>
+            <label>
+              {t("pubf.note")}
+              <input maxLength={300} placeholder={folderForm.kind === "drop" ? t("pubf.notePlaceholder") : ""} value={folderForm.note} onChange={(e) => setFolderForm({ ...folderForm, note: e.target.value })} />
+            </label>
+            <div>
+              <button className="btn btn-primary">
+                <Icon name="link" size={16} /> {t("pubf.create")}
+              </button>
+            </div>
+          </form>
+          {newUrlBox}
+          {linkList}
         </section>
       )}
       {error && <div className="form-error">{error}</div>}

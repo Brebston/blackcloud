@@ -67,7 +67,7 @@ msgid "Забагато невдалих спроб. Спробуйте пізн
 msgstr "Too many failed attempts. Try again later."
 
 #: apps/accounts/views.py:132
-#: apps/storage/views.py:798
+#: apps/storage/views.py:856
 msgid "Невірний пароль."
 msgstr "Incorrect password."
 
@@ -478,7 +478,7 @@ msgstr "At most %(n)s WebDAV passwords. Delete the ones you no longer need."
 
 #: apps/dav/ops.py:164
 #: apps/storage/services.py:127
-#: apps/storage/views.py:163
+#: apps/storage/views.py:164
 msgid "Надто велика вкладеність папок."
 msgstr "Folders are nested too deeply."
 
@@ -518,14 +518,14 @@ msgid "Файл заблоковано антивірусом."
 msgstr "The file has been blocked by the antivirus."
 
 #: apps/dav/views.py:386
-#: apps/storage/services.py:317
+#: apps/storage/services.py:339
 #, python-format
 msgid "Файл недоступний для завантаження (статус: %(status)s)."
 msgstr "File can't be downloaded (status: %(status)s)."
 
 #: apps/dav/views.py:464
-#: apps/storage/services.py:558
-#: apps/storage/services.py:603
+#: apps/storage/services.py:581
+#: apps/storage/services.py:626
 msgid "Файл завеликий."
 msgstr "File is too large."
 
@@ -545,7 +545,7 @@ msgstr "This is a folder."
 
 #: apps/dav/views.py:485
 #: apps/storage/services.py:177
-#: apps/storage/services.py:725
+#: apps/storage/services.py:748
 #, python-format
 msgid "Максимальний розмір файлу — %(n)s ГБ."
 msgstr "Maximum file size is %(n)s GB."
@@ -605,7 +605,7 @@ msgstr "The destination already exists (Overwrite: F)."
 
 #: apps/dav/views.py:617
 #: apps/storage/services.py:179
-#: apps/storage/services.py:735
+#: apps/storage/services.py:758
 msgid "Недостатньо місця у сховищі."
 msgstr "Not enough storage space."
 
@@ -993,10 +993,19 @@ msgstr "Invalid subscription key."
 msgid "Push-сповіщення не налаштовано на сервері."
 msgstr "Push notifications are not configured on the server."
 
-#: apps/storage/serializers.py:130
+#: apps/storage/serializers.py:141
 #, python-format
 msgid "Пароль посилання — щонайменше %(n)s символів."
 msgstr "Link password must be at least %(n)s characters."
+
+#: apps/storage/serializers.py:147
+msgid "Оберіть файл."
+msgstr "Choose a file."
+
+#: apps/storage/serializers.py:149
+#: apps/storage/views.py:724
+msgid "Оберіть теку."
+msgstr "Choose a folder."
 
 #: apps/storage/serializers.py:92
 msgid "Вкажіть або file, або folder."
@@ -1008,90 +1017,90 @@ msgstr "You can't move a folder into itself."
 
 #: apps/storage/services.py:156
 #: apps/storage/services.py:166
-#: apps/storage/services.py:762
+#: apps/storage/services.py:785
 msgid "Файл не знайдено."
 msgstr "File not found."
 
 #: apps/storage/services.py:197
-#: apps/storage/services.py:768
+#: apps/storage/services.py:791
 msgid "Завантаження вже завершено або скасовано."
 msgstr "Upload is already finished or canceled."
 
 #: apps/storage/services.py:199
-#: apps/storage/services.py:770
+#: apps/storage/services.py:793
 msgid "Сесія завантаження прострочена."
 msgstr "Upload session has expired."
 
 #: apps/storage/services.py:201
-#: apps/storage/services.py:772
+#: apps/storage/services.py:795
 msgid "Невірний порядок чанків."
 msgstr "Chunks are out of order."
 
 #: apps/storage/services.py:203
-#: apps/storage/services.py:774
+#: apps/storage/services.py:797
 msgid "Зайвий чанк."
 msgstr "Unexpected extra chunk."
 
 #: apps/storage/services.py:205
-#: apps/storage/services.py:776
+#: apps/storage/services.py:799
 #, python-format
 msgid "Очікувалось %(expected)s байт, отримано %(got)s."
 msgstr "Expected %(expected)s bytes, got %(got)s."
 
 #: apps/storage/services.py:219
-#: apps/storage/services.py:788
+#: apps/storage/services.py:811
 msgid "Конфлікт завантаження, повторіть."
 msgstr "Upload conflict, please try again."
 
 #: apps/storage/services.py:226
-#: apps/storage/services.py:795
-#: apps/storage/services.py:828
+#: apps/storage/services.py:818
+#: apps/storage/services.py:851
 msgid "Завантаження вже завершено."
 msgstr "Upload is already finished."
 
 #: apps/storage/services.py:228
-#: apps/storage/services.py:797
+#: apps/storage/services.py:820
 msgid "Отримано не всі чанки."
 msgstr "Not all chunks have been received."
 
 #: apps/storage/services.py:233
-#: apps/storage/services.py:802
+#: apps/storage/services.py:825
 msgid "Конфлікт завантаження."
 msgstr "Upload conflict."
 
-#: apps/storage/services.py:434
+#: apps/storage/services.py:457
 msgid "Недостатньо місця у сховищі для збереження."
 msgstr "Not enough storage space to save."
-
-#: apps/storage/services.py:541
-#: apps/storage/services.py:531
-msgid "Розмір даних не збігається з оголошеним."
-msgstr "The data size does not match the declared size."
 
 #: apps/storage/services.py:55
 msgid "Ім'я не може містити / або \\."
 msgstr "Name can't contain / or \\."
 
-#: apps/storage/services.py:562
-#: apps/storage/services.py:731
-#: apps/storage/services.py:804
-msgid "Файл недоступний для зміни."
-msgstr "The file cannot be modified."
+#: apps/storage/services.py:564
+#: apps/storage/services.py:554
+msgid "Розмір даних не збігається з оголошеним."
+msgstr "The data size does not match the declared size."
 
 #: apps/storage/services.py:57
 msgid "Невірне ім'я (1–255 символів, без / і \\)."
 msgstr "Invalid name (1–255 characters, no / or \\)."
 
-#: apps/storage/services.py:634
-#: apps/storage/services.py:695
+#: apps/storage/services.py:585
+#: apps/storage/services.py:754
+#: apps/storage/services.py:827
+msgid "Файл недоступний для зміни."
+msgstr "The file cannot be modified."
+
+#: apps/storage/services.py:657
+#: apps/storage/services.py:718
 msgid "Версію не знайдено."
 msgstr "Version not found."
 
-#: apps/storage/services.py:687
+#: apps/storage/services.py:710
 msgid "Відновити можна лише версію, перевірену антивірусом."
 msgstr "Only a version that passed the antivirus check can be restored."
 
-#: apps/storage/services.py:702
+#: apps/storage/services.py:725
 #, python-format
 msgid "Версія недоступна для завантаження (статус: %(status)s)."
 msgstr "This version is not available for download (status: %(status)s)."
@@ -1101,8 +1110,8 @@ msgid "Забагато файлів з таким ім'ям."
 msgstr "Too many files with this name."
 
 #: apps/storage/services.py:92
-#: apps/storage/views.py:454
-#: apps/storage/views.py:457
+#: apps/storage/views.py:478
+#: apps/storage/views.py:481
 msgid "Папку не знайдено."
 msgstr "Folder not found."
 
@@ -1115,105 +1124,110 @@ msgstr "File blocked by antivirus"
 msgid "«%(name)s»: %(detail)s"
 msgstr "“%(name)s”: %(detail)s"
 
-#: apps/storage/views.py:272
-#: apps/storage/views.py:284
+#: apps/storage/views.py:273
+#: apps/storage/views.py:288
 #: apps/storage/views_office.py:44
 msgid "Файл у кошику."
 msgstr "File is in the trash."
 
-#: apps/storage/views.py:286
+#: apps/storage/views.py:290
 msgid "Файл недоступний для перегляду."
 msgstr "File can't be previewed."
 
-#: apps/storage/views.py:288
+#: apps/storage/views.py:292
+#: apps/storage/views_public.py:167
 msgid "Цей тип файлу не переглядається в браузері."
 msgstr "This file type can't be previewed in the browser."
 
-#: apps/storage/views.py:312
+#: apps/storage/views.py:319
 msgid "Посилання для перегляду прострочене. Відкрийте файл знову."
 msgstr "Preview link has expired. Open the file again."
 
-#: apps/storage/views.py:423
+#: apps/storage/views.py:447
 msgid "Поточну версію не можна видалити."
 msgstr "The current version cannot be deleted."
 
-#: apps/storage/views.py:441
+#: apps/storage/views.py:465
 msgid "Ця версія вже поточна."
 msgstr "This version is already current."
 
-#: apps/storage/views.py:504
+#: apps/storage/views.py:528
+#: apps/storage/views_organize.py:145
+#: apps/storage/views_organize.py:37
 msgid "Нічого не вибрано."
 msgstr "Nothing is selected."
 
-#: apps/storage/views.py:506
+#: apps/storage/views.py:530
+#: apps/storage/views_organize.py:147
 #, python-format
 msgid "Забагато елементів (максимум %(n)s)."
 msgstr "Too many items (maximum %(n)s)."
-
-#: apps/storage/views.py:556
-msgid "file або folder"
-msgstr "file or folder"
 
 #: apps/storage/views.py:58
 #: apps/storage/views.py:63
 msgid "Чанк завеликий."
 msgstr "Chunk is too large."
 
-#: apps/storage/views.py:623
+#: apps/storage/views.py:580
+msgid "file або folder"
+msgstr "file or folder"
+
+#: apps/storage/views.py:647
 msgid "Заражений файл не можна поширювати."
 msgstr "Infected files can't be shared."
 
-#: apps/storage/views.py:629
+#: apps/storage/views.py:653
 msgid "Не можна поширити кореневу папку."
 msgstr "You can't share the root folder."
 
-#: apps/storage/views.py:638
+#: apps/storage/views.py:662
 #, python-format
 msgid "%(user)s поділився з вами"
 msgstr "%(user)s shared with you"
 
-#: apps/storage/views.py:639
+#: apps/storage/views.py:663
 #, python-format
 msgid "%(name)s"
 msgstr "%(name)s"
 
-#: apps/storage/views.py:691
+#: apps/storage/views.py:720
 msgid "Файл ще не перевірено або заблоковано."
 msgstr "File hasn't been scanned yet or is blocked."
 
-#: apps/storage/views.py:722
-#: apps/storage/views.py:725
-#: apps/storage/views.py:810
+#: apps/storage/views.py:768
+#: apps/storage/views.py:771
+#: apps/storage/views.py:874
 msgid "Посилання недійсне або прострочене."
 msgstr "Link is invalid or has expired."
 
-#: apps/storage/views.py:752
+#: apps/storage/views.py:798
 msgid "Хтось підбирає пароль до вашого посилання"
 msgstr "Someone is trying to guess your link's password"
 
-#: apps/storage/views.py:753
+#: apps/storage/views.py:799
 #, python-format
 msgid "Посилання на «%(name)s» тимчасово заблоковано на годину. Можливо, варто його відкликати."
 msgstr "The link to “%(name)s” has been blocked for an hour. You may want to revoke it."
 
-#: apps/storage/views.py:758
+#: apps/storage/views.py:804
 msgid "Підбір пароля публічного посилання"
 msgstr "Public link password guessing"
 
-#: apps/storage/views.py:759
+#: apps/storage/views.py:805
 #, python-format
 msgid "Власник: %(username)s"
 msgstr "Owner: %(username)s"
 
-#: apps/storage/views.py:794
+#: apps/storage/views.py:852
 msgid "Забагато невдалих спроб. Спробуйте через годину."
 msgstr "Too many failed attempts. Try again in an hour."
 
-#: apps/storage/views.py:807
+#: apps/storage/views.py:871
+#: apps/storage/views_public.py:189
 msgid "Посилання для завантаження прострочене. Оновіть сторінку."
 msgstr "Download link has expired. Refresh the page."
 
-#: apps/storage/views.py:816
+#: apps/storage/views.py:889
 msgid "Ліміт завантажень вичерпано."
 msgstr "Download limit reached."
 
@@ -1253,6 +1267,51 @@ msgstr "This format can't be opened in the editor."
 #: apps/storage/views_office.py:48
 msgid "Файл ще перевіряється антивірусом або заблокований."
 msgstr "File is still being scanned by antivirus or is blocked."
+
+#: apps/storage/views_organize.py:101
+#: apps/storage/views_organize.py:117
+#: apps/storage/views_organize.py:106
+msgid "Такий тег уже є."
+msgstr "This tag already exists."
+
+#: apps/storage/views_organize.py:72
+msgid "Вкажіть назву тегу."
+msgstr "Enter a tag name."
+
+#: apps/storage/views_organize.py:77
+msgid "Невідомий колір."
+msgstr "Unknown color."
+
+#: apps/storage/views_organize.py:97
+#, python-format
+msgid "Забагато тегів (максимум %(n)s)."
+msgstr "Too many tags (maximum %(n)s)."
+
+#: apps/storage/views_public.py:228
+msgid "Вкажіть своє ім'я."
+msgstr "Enter your name."
+
+#: apps/storage/views_public.py:235
+msgid "Ліміт цієї скриньки вичерпано."
+msgstr "This file drop's limit is used up."
+
+#: apps/storage/views_public.py:251
+msgid "Сесія завантаження завершилась. Почніть знову."
+msgstr "The upload session has ended. Start again."
+
+#: apps/storage/views_public.py:285
+#, python-format
+msgid "%(sender)s надсилає файли"
+msgstr "%(sender)s is sending files"
+
+#: apps/storage/views_public.py:286
+#, python-format
+msgid "У скриньку «%(folder)s» надходять файли (перший: %(name)s)."
+msgstr "Files are arriving in the “%(folder)s” file drop (first: %(name)s)."
+
+#: apps/storage/views_public.py:56
+msgid "Сесія посилання завершилась. Відкрийте посилання знову."
+msgstr "The link session has ended. Open the link again."
 
 #: apps/storage/zipstream.py:123
 msgid "Ці файли не додано до архіву (ще не перевірені антивірусом або заблоковані):"

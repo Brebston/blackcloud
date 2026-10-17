@@ -129,3 +129,20 @@ def test_public_link_serves_without_gps_owner_keeps_it(alice, client_for):
     assert int(r["Content-Length"]) == len(data) == len(src)
     assert gps_of(data) == {}
     assert exif_of(data)[0x010F] == "Apple"
+
+
+@pytest.mark.django_db
+def test_range_requests_are_scrubbed_too(alice, client_for, settings):
+    """Перегляд із публічної теки (Range, як для відео в Safari) — теж без геолокації."""
+    from apps.storage import services
+    from apps.storage.models import File
+
+    settings.UPLOAD_CHUNK_SIZE = 512
+    src = jpeg(size=(300, 200))
+    f = File.objects.get(pk=upload(client_for(alice), src, "r.jpg")["id"])
+    expected = bytes(geoscrub.scrub(bytearray(src)))
+    assert expected != src
+    for start, end in [(0, 99), (10, 700), (511, 1100), (len(src) - 300, len(src) - 1)]:
+        r = services.file_response(f, inline=True, range_header=f"bytes={start}-{end}", scrub_location=True)
+        assert r.status_code == 206
+        assert body(r) == expected[start : end + 1], (start, end)

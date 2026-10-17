@@ -34,6 +34,8 @@ export interface Folder {
   created_at: string;
   updated_at: string;
   deleted_at: string | null;
+  starred?: boolean;
+  tags?: string[];
 }
 
 export type FileStatus = "uploading" | "scanning" | "clean" | "infected" | "unscanned" | "failed";
@@ -58,6 +60,17 @@ export interface FileItem {
   created_at: string;
   updated_at: string;
   deleted_at: string | null;
+  starred?: boolean;
+  tags?: string[];
+  recent_at?: string;
+  recent_reason?: "opened" | "uploaded" | "edited";
+}
+
+export interface FileTag {
+  id: string;
+  name: string;
+  color: string;
+  count?: number;
 }
 
 export interface BrowseResult {
@@ -83,8 +96,14 @@ export interface Share {
 
 export interface PublicLink {
   id: string;
-  file: string;
+  kind: "file" | "folder" | "drop";
+  file: string | null;
+  folder: string | null;
   file_name: string;
+  note: string;
+  upload_count: number;
+  upload_bytes: number;
+  max_upload_bytes: number | null;
   expires_at: string;
   max_downloads: number | null;
   download_count: number;

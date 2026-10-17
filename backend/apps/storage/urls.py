@@ -1,6 +1,6 @@
 from django.urls import path, re_path
 
-from . import views
+from . import views, views_organize
 
 urlpatterns = [
     path("browse/", views.BrowseView.as_view()),
@@ -30,4 +30,12 @@ urlpatterns = [
     path("shared-with-me/", views.SharedWithMeView.as_view()),
     path("links/", views.PublicLinksView.as_view()),
     path("links/<uuid:pk>/", views.PublicLinkDetailView.as_view()),
+    # Обране, теги, нещодавні
+    path("star/", views_organize.StarView.as_view()),
+    path("starred/", views_organize.StarredView.as_view()),
+    path("recent/", views_organize.RecentView.as_view()),
+    path("tags/", views_organize.TagsView.as_view()),
+    path("tags/assign/", views_organize.TagAssignView.as_view()),
+    path("tags/<uuid:pk>/", views_organize.TagDetailView.as_view()),
+    path("tags/<uuid:pk>/items/", views_organize.TagItemsView.as_view()),
 ]

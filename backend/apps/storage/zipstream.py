@@ -160,7 +160,7 @@ class _Sink:
         return data
 
 
-def iter_zip(plan: Plan, skipped_text: bytes | None):
+def iter_zip(plan: Plan, skipped_text: bytes | None, scrub_location: bool = False):
     sink = _Sink()
     with zipfile.ZipFile(sink, mode="w", compression=zipfile.ZIP_STORED, allowZip64=True) as zf:
         for entry in plan.entries:
@@ -175,7 +175,12 @@ def iter_zip(plan: Plan, skipped_text: bytes | None):
             info.file_size = f.size
             info.external_attr = 0o100644 << 16
             with zf.open(info, mode="w", force_zip64=f.size >= ZIP64_ENTRY_THRESHOLD) as dest:
-                for chunk in services.iter_plaintext(f):
+                chunks = services.iter_plaintext(f)
+                if scrub_location and f.mime_type.split("/")[0] in ("image", "video"):
+                    from . import geoscrub
+
+                    chunks = geoscrub.scrub_chunks(chunks)  # розмір той самий — заголовок ZIP вірний
+                for chunk in chunks:
                     dest.write(chunk)
                     yield sink.take()
             yield sink.take()
@@ -210,10 +215,10 @@ def build_plan(*, folders=(), files=()) -> Plan:
     return plan
 
 
-def zip_response(plan: Plan, filename: str) -> StreamingHttpResponse:
+def zip_response(plan: Plan, filename: str, *, scrub_location: bool = False) -> StreamingHttpResponse:
     # Текст _skipped.txt готуємо тут: мова активна лише в потоці запиту
     skipped = plan.skipped_text() if plan.skipped else None
-    response = StreamingHttpResponse(_aiter(iter_zip(plan, skipped)), content_type="application/zip")
+    response = StreamingHttpResponse(_aiter(iter_zip(plan, skipped, scrub_location)), content_type="application/zip")
     services._attachment_headers(response, filename)
     # Проксі не повинні буферизувати потік
     response["X-Accel-Buffering"] = "no"

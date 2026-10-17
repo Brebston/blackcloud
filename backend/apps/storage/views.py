@@ -107,16 +107,17 @@ class BrowseView(APIView):
             start = next(i for i, f in enumerate(chain) if f.pk in share_root_ids)
             breadcrumbs = [{"id": f.id, "name": f.name} for f in chain[start:]]
 
-        return Response(
-            {
-                "folder": FolderSerializer(folder).data if folder else None,
-                "writable": writable,
-                "owner": owner.username,
-                "breadcrumbs": breadcrumbs,
-                "folders": FolderSerializer(folders, many=True).data,
-                "files": FileSerializer(files, many=True).data,
-            }
-        )
+        from .organize import decorate
+
+        data = {
+            "folder": FolderSerializer(folder).data if folder else None,
+            "writable": writable,
+            "owner": owner.username,
+            "breadcrumbs": breadcrumbs,
+            "folders": FolderSerializer(folders, many=True).data,
+            "files": FileSerializer(files, many=True).data,
+        }
+        return Response(decorate(user, data))
 
 
 class SearchView(APIView):
@@ -272,6 +273,9 @@ class FileDownloadView(APIView):
             raise NotFound(_("Файл у кошику."))
         if f.owner_id != request.user.pk:
             audit(request, "file.shared_download", target=str(f.pk))
+        from .organize import record_access
+
+        record_access(request.user, f)
         return services.file_response(f)
 
 
@@ -286,6 +290,9 @@ class PreviewTicketView(APIView):
             raise PermissionDenied(_("Файл недоступний для перегляду."))
         if f.mime_type not in services.SAFE_INLINE_MIME:
             raise ValidationError({"detail": _("Цей тип файлу не переглядається в браузері.")})
+        from .organize import record_access
+
+        record_access(request.user, f)
         ticket = issue_ticket(
             "preview",
             {"f": str(f.pk), "u": str(request.user.pk), "v": f.content_version},
@@ -310,6 +317,23 @@ class PreviewServeView(APIView):
         data = peek_ticket("preview", ticket)
         if data is None:
             raise NotFound(_("Посилання для перегляду прострочене. Відкрийте файл знову."))
+        if "pl" in data:
+            # Перегляд із публічної теки: доступ перевіряється за посиланням, геолокація прибрана
+            from .views_public import file_in_link
+
+            link = PublicLink.objects.select_related("folder", "owner").filter(pk=data["pl"]).first()
+            if not link_target_ok(link) or link.kind != PublicLink.Kind.FOLDER:
+                raise NotFound()
+            f = file_in_link(link, data["f"])
+            if f.content_version != data["v"]:
+                raise NotFound()
+            return services.file_response(
+                f,
+                inline=True,
+                frame_ancestor=f"https://{settings.DOMAIN}",
+                range_header=request.META.get("HTTP_RANGE", ""),
+                scrub_location=True,
+            )
         user = User.objects.filter(pk=data["u"], is_active=True).first()
         if user is None:
             raise NotFound()
@@ -676,29 +700,42 @@ class SharedWithMeView(APIView):
 
 class PublicLinksView(APIView):
     def get(self, request):
-        links = PublicLink.objects.filter(owner=request.user, revoked_at__isnull=True).select_related("file")
+        links = PublicLink.objects.filter(owner=request.user, revoked_at__isnull=True).select_related("file", "folder")
         file_id = request.query_params.get("file")
         if file_id:
             links = links.filter(file_id=file_id)
+        folder_id = request.query_params.get("folder")
+        if folder_id:
+            links = links.filter(folder_id=folder_id)
         return Response(PublicLinkSerializer(links.order_by("-created_at"), many=True).data)
 
     def post(self, request):
         ser = CreatePublicLinkSerializer(data=request.data)
         ser.is_valid(raise_exception=True)
         d = ser.validated_data
-        f = services.get_own_file(request.user, d["file"])
-        if not f.is_downloadable:
-            raise ValidationError({"file": [_("Файл ще не перевірено або заблоковано.")]})
+        f = folder = None
+        if d["kind"] == PublicLink.Kind.FILE:
+            f = services.get_own_file(request.user, d["file"])
+            if not f.is_downloadable:
+                raise ValidationError({"file": [_("Файл ще не перевірено або заблоковано.")]})
+        else:
+            folder = services.get_own_folder(request.user, d["folder"])
+            if folder is None:
+                raise ValidationError({"folder": [_("Оберіть теку.")]})
         token = PublicLink.new_token()
         link = PublicLink.objects.create(
             owner=request.user,
+            kind=d["kind"],
             file=f,
+            folder=folder,
+            note=d.get("note", "").strip(),
+            max_upload_bytes=d["max_upload_mb"] * 1024 * 1024 if d.get("max_upload_mb") and d["kind"] == "drop" else None,
             token_hash=PublicLink.hash_token(token),
             password_hash=make_password(d["password"]) if d.get("password") else "",
             expires_at=services.public_link_expiry(d["expires_days"]),
-            max_downloads=d.get("max_downloads"),
+            max_downloads=d.get("max_downloads") if d["kind"] == PublicLink.Kind.FILE else None,
         )
-        audit(request, "public_link.created", target=str(f.pk), expires=link.expires_at.isoformat())
+        audit(request, "public_link.created", target=str((f or folder).pk), kind=link.kind, expires=link.expires_at.isoformat())
         data = PublicLinkSerializer(link).data
         # Токен — у фрагменті (#): браузер не надсилає його на сервер, тож він не
         # потрапляє в журнали проксі, заголовок Referer чи історію запитів
@@ -717,11 +754,20 @@ class PublicLinkDetailView(APIView):
         return Response(status=204)
 
 
+def link_target_ok(link: PublicLink) -> bool:
+    """Посилання дійсне, а файл чи тека на місці (не в кошику)."""
+    if link is None or not link.is_active:
+        return False
+    if link.kind == PublicLink.Kind.FILE:
+        return link.file is not None and link.file.deleted_at is None and link.file.is_downloadable
+    return link.folder is not None and link.folder.deleted_at is None and not services.is_in_trash(link.folder)
+
+
 def _get_active_link(token) -> PublicLink:
     if not isinstance(token, str) or not token or len(token) > 100:
         raise NotFound(_("Посилання недійсне або прострочене."))
-    link = PublicLink.objects.select_related("file", "owner").filter(token_hash=PublicLink.hash_token(token)).first()
-    if link is None or not link.is_active or link.file.deleted_at is not None or not link.file.is_downloadable:
+    link = PublicLink.objects.select_related("file", "folder", "owner").filter(token_hash=PublicLink.hash_token(token)).first()
+    if not link_target_ok(link):
         raise NotFound(_("Посилання недійсне або прострочене."))
     return link
 
@@ -752,7 +798,7 @@ def _link_register_failure(request, link) -> None:
             gettext_noop("Хтось підбирає пароль до вашого посилання"),
             gettext_noop("Посилання на «%(name)s» тимчасово заблоковано на годину. Можливо, варто його відкликати."),
             "/files",
-            params={"name": link.file.name},
+            params={"name": link.target_name},
         )
         alert_staff(
             gettext_noop("Підбір пароля публічного посилання"),
@@ -773,8 +819,20 @@ class PublicView(APIView):
 class PublicLinkInfoView(PublicView):
     def post(self, request):
         link = _get_active_link(request.data.get("token"))
+        if link.kind != PublicLink.Kind.FILE:
+            return Response(
+                {
+                    "kind": link.kind,
+                    "name": link.folder.name,
+                    "note": link.note,
+                    "owner_name": link.owner.display_name or link.owner.username,
+                    "requires_password": bool(link.password_hash),
+                    "expires_at": link.expires_at,
+                }
+            )
         return Response(
             {
+                "kind": link.kind,
                 "name": link.file.name,
                 "size": link.file.size,
                 "mime_type": link.file.mime_type,
@@ -796,8 +854,14 @@ class PublicLinkAuthorizeView(PublicView):
                 audit(request, "public_link.bad_password", user=link.owner, target=str(link.pk))
                 _link_register_failure(request, link)
                 return Response({"detail": _("Невірний пароль.")}, status=403)
+        if link.kind != PublicLink.Kind.FILE:
+            # Тека / скринька: короткоживучий «пропуск» замість пароля в кожному запиті
+            from .views_public import issue_grant
+
+            audit(request, "public_link.opened", user=link.owner, target=str(link.pk))
+            return Response({"kind": link.kind, "grant": issue_grant(link)})
         ticket = issue_ticket("public-dl", {"link": str(link.pk)}, settings.DOWNLOAD_TICKET_TTL)
-        return Response({"download_url": f"/api/public/dl/{ticket}/"})
+        return Response({"kind": link.kind, "download_url": f"/api/public/dl/{ticket}/"})
 
 
 class PublicLinkDownloadView(PublicView):
@@ -805,9 +869,18 @@ class PublicLinkDownloadView(PublicView):
         data = consume_ticket("public-dl", ticket)
         if data is None:
             raise PermissionDenied(_("Посилання для завантаження прострочене. Оновіть сторінку."))
-        link = PublicLink.objects.select_related("file", "owner").filter(pk=data["link"]).first()
-        if link is None or not link.is_active or link.file.deleted_at is not None or not link.file.is_downloadable:
+        link = PublicLink.objects.select_related("file", "folder", "owner").filter(pk=data["link"]).first()
+        if not link_target_ok(link):
             raise NotFound(_("Посилання недійсне або прострочене."))
+        if link.kind == PublicLink.Kind.FOLDER:
+            from .views_public import file_in_link
+
+            f = file_in_link(link, data.get("file"))
+            PublicLink.objects.filter(pk=link.pk).update(download_count=F("download_count") + 1)
+            audit(request, "public_link.download", user=link.owner, target=str(link.pk), file=str(f.pk))
+            return services.file_response(f, scrub_location=True)
+        if link.kind != PublicLink.Kind.FILE:
+            raise NotFound()
         # Атомарний лічильник з перевіркою ліміту
         q = PublicLink.objects.filter(pk=link.pk)
         if link.max_downloads is not None:

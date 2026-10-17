@@ -193,9 +193,25 @@ class Share(models.Model):
 
 
 class PublicLink(models.Model):
+    """Публічне посилання: на файл, на теку (перегляд і завантаження) або «скринька для файлів»
+    (drop: гості лише надсилають файли в теку, не бачачи її вмісту)."""
+
+    class Kind(models.TextChoices):
+        FILE = "file", "Файл"
+        FOLDER = "folder", "Тека"
+        DROP = "drop", "Скринька для файлів"
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="public_links")
-    file = models.ForeignKey(File, on_delete=models.CASCADE, related_name="public_links")
+    kind = models.CharField(max_length=8, choices=Kind.choices, default=Kind.FILE)
+    file = models.ForeignKey(File, null=True, blank=True, on_delete=models.CASCADE, related_name="public_links")
+    folder = models.ForeignKey(Folder, null=True, blank=True, on_delete=models.CASCADE, related_name="public_links")
+    # Підпис для гостей («Скиньте, будь ласка, фото з поїздки»)
+    note = models.CharField(max_length=300, blank=True)
+    # Скринька: скільки файлів і байтів уже надіслано та необов'язковий ліміт байтів
+    upload_count = models.PositiveIntegerField(default=0)
+    upload_bytes = models.BigIntegerField(default=0)
+    max_upload_bytes = models.BigIntegerField(null=True, blank=True)
     token_hash = models.CharField(max_length=64, unique=True)
     password_hash = models.CharField(max_length=200, blank=True)
     expires_at = models.DateTimeField()
@@ -212,6 +228,18 @@ class PublicLink(models.Model):
     def new_token() -> str:
         return secrets.token_urlsafe(32)
 
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                condition=(Q(kind="file", file__isnull=False, folder__isnull=True) | Q(~Q(kind="file"), file__isnull=True, folder__isnull=False)),
+                name="public_link_target",
+            )
+        ]
+
+    @property
+    def target_name(self) -> str:
+        return self.file.name if self.file_id else (self.folder.name if self.folder_id else "")
+
     @property
     def is_active(self) -> bool:
         if self.revoked_at or self.expires_at <= timezone.now():
@@ -219,3 +247,65 @@ class PublicLink(models.Model):
         if self.max_downloads is not None and self.download_count >= self.max_downloads:
             return False
         return True
+
+
+
+# ─────────────────────────── Обране, теги, нещодавні ───────────────────────────
+
+
+class Star(models.Model):
+    """«Обране»: зірочка на файлі чи теці (своїй або доступній через спільний доступ)."""
+
+    owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="+")
+    file = models.ForeignKey(File, null=True, blank=True, on_delete=models.CASCADE, related_name="stars")
+    folder = models.ForeignKey(Folder, null=True, blank=True, on_delete=models.CASCADE, related_name="stars")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["owner", "file"], condition=Q(file__isnull=False), name="uniq_star_file"),
+            models.UniqueConstraint(fields=["owner", "folder"], condition=Q(folder__isnull=False), name="uniq_star_folder"),
+            models.CheckConstraint(condition=Q(file__isnull=False) ^ Q(folder__isnull=False), name="star_one_target"),
+        ]
+
+
+class Tag(models.Model):
+    """Особистий кольоровий тег (як мітки у Finder). Інші користувачі тегів не бачать."""
+
+    COLORS = ["red", "orange", "yellow", "green", "teal", "blue", "violet", "pink", "gray"]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="file_tags")
+    name = models.CharField(max_length=40)
+    color = models.CharField(max_length=10, default="blue")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["name"]
+        constraints = [models.UniqueConstraint(fields=["owner", "name"], name="uniq_tag_name")]
+
+
+class ItemTag(models.Model):
+    tag = models.ForeignKey(Tag, on_delete=models.CASCADE, related_name="items")
+    file = models.ForeignKey(File, null=True, blank=True, on_delete=models.CASCADE, related_name="item_tags")
+    folder = models.ForeignKey(Folder, null=True, blank=True, on_delete=models.CASCADE, related_name="item_tags")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["tag", "file"], condition=Q(file__isnull=False), name="uniq_itemtag_file"),
+            models.UniqueConstraint(fields=["tag", "folder"], condition=Q(folder__isnull=False), name="uniq_itemtag_folder"),
+            models.CheckConstraint(condition=Q(file__isnull=False) ^ Q(folder__isnull=False), name="itemtag_one_target"),
+        ]
+
+
+class FileAccess(models.Model):
+    """Коли користувач востаннє відкривав файл — для «Нещодавніх»."""
+
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="+")
+    file = models.ForeignKey(File, on_delete=models.CASCADE, related_name="+")
+    accessed_at = models.DateTimeField()
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["user", "file"], name="uniq_file_access")]
+        indexes = [models.Index(fields=["user", "-accessed_at"])]

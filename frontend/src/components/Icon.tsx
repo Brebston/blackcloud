@@ -55,6 +55,7 @@ const paths: Record<string, string> = {
   alignCenter: "M4 6h16M7 10h10M4 14h16M7 18h10",
   alignRight: "M4 6h16M10 10h10M4 14h16M10 18h10",
   table: "M4 5h16v14H4zM4 10h16M4 15h16M10 5v14M15 5v14",
+  tag: "M3 12V4h8l9 9-8 8zM7.5 7.5h.01",
   info: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 11v6M12 7.5h.01",
   activity: "M3 12h4l3-8 4 16 3-8h4",
   clock: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 7v5l3 2",
