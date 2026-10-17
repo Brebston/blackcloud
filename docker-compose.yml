@@ -166,6 +166,8 @@ services:
       OFFICE_HOST: ${OFFICE_HOST:-}
       USERCONTENT_HOST: ${USERCONTENT_HOST:-}
       MAIL_HOSTNAME: ${MAIL_HOSTNAME:-}
+      MAIL_DOMAIN: ${MAIL_DOMAIN:-}
+      MTA_STS_MODE: ${MTA_STS_MODE:-}
     ports:
       - "80:80"
       - "443:443"

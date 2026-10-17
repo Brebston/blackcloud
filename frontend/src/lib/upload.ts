@@ -82,3 +82,21 @@ export async function uploadFile(
     if (!aborted) throw e;
   }
 }
+
+/** Скільки файлів вантажити одночасно: поки один чекає відповіді сервера, інші передаються. */
+export const PARALLEL_UPLOADS = 4;
+
+/**
+ * Виконує fn для кожного елемента, не більше limit одночасно (порядок старту — як у списку).
+ * Помилки обробляє сам fn; пул завжди доходить до кінця списку.
+ */
+export async function runPool<T>(items: T[], limit: number, fn: (item: T) => Promise<void>): Promise<void> {
+  let next = 0;
+  const worker = async () => {
+    while (next < items.length) {
+      const item = items[next++];
+      await fn(item);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+}

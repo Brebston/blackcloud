@@ -198,6 +198,8 @@ docker compose version             # має бути v2.x
 | TXT | `mail.example.com` | `v=spf1 a -all` | SPF для HELO |
 | TXT | `_dmarc.example.com` | `v=DMARC1; p=none; rua=mailto:dmarc@example.com; adkim=s; aspf=s` | DMARC (через тиждень — `p=quarantine`) |
 | TXT | `mail._domainkey.example.com` | з `make dkim` (крок 8) | DKIM |
+| A | `mta-sts.example.com` | IP сервера | MTA-STS (необов'язково, крок 8) |
+| TXT | `_mta-sts.example.com`, `_smtp._tls.example.com` | з `make mta-sts` (крок 8) | MTA-STS і TLS-RPT (необов'язково) |
 | PTR | IP сервера | `mail.example.com` | зворотний запис — **налаштовує провайдер** (напишіть у підтримку) |
 
 Перевірка:
@@ -276,6 +278,14 @@ make dkim          # покаже TXT-запис mail._domainkey — додай�
 ```bash
 dig +short TXT mail._domainkey.example.com
 ```
+
+Службові адреси (`postmaster@`, `abuse@`, `dmarc@`, `tlsrpt@` …) як псевдоніми на вашу скриньку:
+
+```bash
+docker compose exec backend python manage.py mail_service_aliases --to <ваш-логін>
+```
+
+**MTA-STS і TLS-RPT (рекомендовано):** обов'язковий TLS для вхідної пошти й звіти від Gmail/Outlook. Коротко: A-запис `mta-sts` → `MTA_STS_MODE=testing` у `.env` → деплой → TXT-записи з `make mta-sts`; через 2–4 тижні без помилок у звітах — `enforce`. Докладно — [docs/MAIL.md](docs/MAIL.md#mta-sts-і-tls-rpt).
 
 Надішліть лист зі своєї скриньки на адресу з [mail-tester.com](https://www.mail-tester.com) — ціль 9–10/10 (SPF, DKIM, DMARC, PTR). Перевірте IP на [check.spamhaus.org](https://check.spamhaus.org). Новий домен перші 1–3 тижні може потрапляти в «Спам» у Gmail: це репутація, а не налаштування. Докладно — [docs/MAIL.md](docs/MAIL.md).
 
@@ -477,6 +487,7 @@ cd ../frontend && npm install && npm run typecheck && npm run build
 | `MAIL_AUTO_CREATE`, `MAIL_DEFAULT_QUOTA_MB` | Автоматична скринька для нового користувача та її квота |
 | `SYSTEM_MAIL_FROM`, `SITE_NAME` | Відправник системних листів (запрошення) і назва сервісу в них |
 | `SPAMHAUS_DQS_KEY` | Ключ Spamhaus DQS для антиспаму |
+| `MTA_STS_MODE`, `MTA_STS_MX`, `MTA_STS_MAX_AGE`, `TLSRPT_RUA` | MTA-STS і TLS-RPT (порожній режим — вимкнено) |
 | `OFFICE_ENABLED`, `OFFICE_HOST`, `OFFICE_JWT_SECRET` | ONLYOFFICE; JWT — секрет |
 | `USERCONTENT_HOST` | Окремий origin для перегляду файлів |
 | `COMPOSE_PROFILES` | Додаткові сервіси: `office`, `mailcert`, `monitoring` |
@@ -517,6 +528,7 @@ cd ../frontend && npm install && npm run typecheck && npm run build
 | `make superuser` / `make shell` | адміністратор / Django shell |
 | `make migrate` / `make migrations` | застосувати / створити міграції |
 | `make dkim` | DKIM-запис для DNS |
+| `make mta-sts` | DNS-записи й політика MTA-STS / TLS-RPT |
 | `make thumbnails` | мініатюри для старих файлів |
 | `docker compose exec backend python manage.py index_photos` | додати всі фото в «Фото» одразу |
 | `make backup-install` / `backup-now` / `backup-check` / `backup-list` / `backup-enable` | резервні копії restic → Hetzner |
@@ -531,7 +543,7 @@ cd ../frontend && npm install && npm run typecheck && npm run build
 | [docs/MONITORING.md](docs/MONITORING.md) | Uptime Kuma, Telegram, монітори, `/api/health/deep/` |
 | [docs/FILES.md](docs/FILES.md) | Версії файлів, ZIP, публічні теки, скринька, обране й теги |
 | [docs/PHOTOS.md](docs/PHOTOS.md) | Галерея «Фото», EXIF, альбоми, прибирання геолокації |
-| [docs/MAIL.md](docs/MAIL.md) | Веб-пошта, групові дії, заблоковані відправники |
+| [docs/MAIL.md](docs/MAIL.md) | Веб-пошта, групові дії, заблоковані відправники, MTA-STS і TLS-RPT |
 | [docs/WEBDAV.md](docs/WEBDAV.md) | Мережевий диск у Finder, Windows, Linux, на телефоні |
 | [docs/PUSH.md](docs/PUSH.md) | PWA і Web Push |
 | [docs/BIMI.md](docs/BIMI.md) | Логотип у Gmail (BIMI) |

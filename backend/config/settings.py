@@ -427,6 +427,25 @@ DOVECOT_MASTER_USER = "webmail"
 DOVECOT_MASTER_PASSWORD = read_secret("DOVECOT_MASTER_PASSWORD")
 MAIL_MAX_ATTACHMENTS_BYTES = 15 * 1024 * 1024
 
+# ─── MTA-STS (RFC 8461) і TLS-RPT (RFC 8460) ────────────────────
+# Політика https://mta-sts.<MAIL_DOMAIN>/.well-known/mta-sts.txt каже іншим поштовим серверам
+# доставляти нам пошту лише через перевірений TLS. Порожньо — вимкнено (маршрут і сертифікат
+# не створюються); testing — лише звіти TLS-RPT; enforce — обов'язково; none — відкликати політику.
+MTA_STS_MODE = env("MTA_STS_MODE", "").strip().lower()
+if MTA_STS_MODE not in ("", "testing", "enforce", "none"):
+    raise RuntimeError("MTA_STS_MODE: допустимі значення — порожньо, testing, enforce, none")
+MTA_STS_HOST = f"mta-sts.{MAIL_DOMAIN.lower()}"
+# MX-хости, яким дозволено приймати пошту (кома між кількома; можна *.example.com)
+MTA_STS_MX = [h.strip().lower() for h in env("MTA_STS_MX", MAIL_HOSTNAME).split(",") if h.strip()]
+# Скільки секунд відправники кешують політику: тиждень для enforce, доба для testing/none
+MTA_STS_MAX_AGE = env_int("MTA_STS_MAX_AGE", 604800 if MTA_STS_MODE == "enforce" else 86400)
+if not 0 < MTA_STS_MAX_AGE <= 31557600:
+    raise RuntimeError("MTA_STS_MAX_AGE: від 1 до 31557600 секунд")
+# Куди надсилати щоденні звіти TLS-RPT (псевдонім tlsrpt@ створює mail_service_aliases)
+TLSRPT_RUA = env("TLSRPT_RUA", f"mailto:tlsrpt@{MAIL_DOMAIN.lower()}")
+if MTA_STS_MODE:
+    ALLOWED_HOSTS.append(MTA_STS_HOST)
+
 # ─── Push-сповіщення (Web Push, VAPID) ─────────────────────────
 # Приватний ключ є лише в сервісі pusher; backend віддає браузеру публічний.
 VAPID_PRIVATE_KEY = read_secret("VAPID_PRIVATE_KEY", "")

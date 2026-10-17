@@ -26,6 +26,7 @@ RESERVED_USERNAMES = {
     "mailer-daemon", "daemon", "nobody", "webmail", "mail", "smtp", "imap", "pop", "pop3",
     "support", "help", "helpdesk", "info", "contact", "billing", "sales", "office", "usercontent",
     "ssl-admin", "ssladmin", "ssladministrator", "admin-ssl", "dmarc", "dkim", "spf", "bounce",
+    "tlsrpt", "mta-sts",
     "bounces", "rspamd", "dovecot", "postfix", "clamav", "blackcloud", "api", "www", "ftp",
     "privacy", "legal", "team", "it", "owner", "test", "verify", "verification", "accounts",
 }
