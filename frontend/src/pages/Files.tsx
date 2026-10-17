@@ -1,13 +1,14 @@
 import { DragEvent, FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { del, errorText, get, patch, post } from "../api/client";
-import type { BrowseResult, FileItem, Folder } from "../api/types";
+import type { BrowseResult, FileItem, FileTag, Folder } from "../api/types";
 import FileViewer from "../components/FileViewer";
 import Icon from "../components/Icon";
 import Modal from "../components/Modal";
 import PullToRefresh from "../components/PullToRefresh";
 import ShareDialog from "../components/ShareDialog";
 import ShareImportDialog from "../components/ShareImportDialog";
+import TagsDialog, { TagDot } from "../components/TagsDialog";
 import VersionsDialog from "../components/VersionsDialog";
 import { useToast } from "../components/Toast";
 import { useAuth } from "../hooks/useAuth";
@@ -74,6 +75,10 @@ type Dialog =
 export default function FilesPage() {
   const [params, setParams] = useSearchParams();
   const folderId = params.get("folder") || "root";
+  // Добірки: ?view=starred | recent | tag&tag=<id> (замість вмісту теки)
+  const view = params.get("view") as "starred" | "recent" | "tag" | null;
+  const tagId = params.get("tag");
+  const collection = view === "starred" || view === "recent" || (view === "tag" && !!tagId);
   // ?share=<id> — дані з меню «Поділитися» Android (див. public/sw.js, lib/shareInbox.ts)
   const shareId = params.get("share");
   const mobile = useIsMobile();
@@ -97,15 +102,29 @@ export default function FilesPage() {
   const abortRef = useRef<AbortController | null>(null);
   // Телефон: дії з файлом/текою — у нижній шторці замість ряду дрібних іконок
   const [actionSheet, setActionSheet] = useState<{ file?: FileItem; folder?: Folder } | null>(null);
+  const [tags, setTags] = useState<FileTag[]>([]);
+  const [tagsDialog, setTagsDialog] = useState<{ type: "file" | "folder"; id: string; name: string; tags: string[] } | "manage" | null>(null);
+
+  const loadTags = useCallback(() => {
+    get<FileTag[]>("/api/files/tags/").then(setTags).catch(() => {});
+  }, []);
+  useEffect(loadTags, [loadTags]);
+  const tagById = new Map(tags.map((tg) => [tg.id, tg]));
 
   const load = useCallback(async () => {
     try {
       setError("");
-      setData(await get<BrowseResult>(`/api/files/browse/?folder=${encodeURIComponent(folderId)}`));
+      if (collection) {
+        const url = view === "starred" ? "/api/files/starred/" : view === "recent" ? "/api/files/recent/" : `/api/files/tags/${tagId}/items/`;
+        const r = await get<{ folders: Folder[]; files: FileItem[] }>(url);
+        setData({ folder: null, writable: false, owner: "", breadcrumbs: [], folders: r.folders, files: r.files });
+      } else {
+        setData(await get<BrowseResult>(`/api/files/browse/?folder=${encodeURIComponent(folderId)}`));
+      }
     } catch (e) {
       setError(errorText(e));
     }
-  }, [folderId]);
+  }, [folderId, collection, view, tagId]);
 
   useEffect(() => {
     load();
@@ -132,6 +151,59 @@ export default function FilesPage() {
     setQuery("");
     setParams(id ? { folder: id } : {});
   };
+
+  const openView = (v: "starred" | "recent" | "tag" | null, tag?: string) => {
+    setQuery("");
+    setParams(v ? { view: v, ...(tag ? { tag } : {}) } : {});
+  };
+
+  const toggleStar = async (type: "file" | "folder", item: { id: string; starred?: boolean }) => {
+    const starred = !item.starred;
+    // Одразу в інтерфейсі, потім на сервері
+    setData((cur) =>
+      cur && {
+        ...cur,
+        folders: type === "folder" ? cur.folders.map((x) => (x.id === item.id ? { ...x, starred } : x)) : cur.folders,
+        files: type === "file" ? cur.files.map((x) => (x.id === item.id ? { ...x, starred } : x)) : cur.files,
+      },
+    );
+    try {
+      await post("/api/files/star/", { [type]: item.id, starred });
+      if (view === "starred") load();
+    } catch (e) {
+      toast(errorText(e), "error");
+      load();
+    }
+  };
+
+  const starButton = (type: "file" | "folder", item: { id: string; name: string; starred?: boolean }) => (
+    <button
+      className={`icon-btn star-btn ${item.starred ? "on" : ""}`}
+      onClick={(e) => {
+        e.stopPropagation();
+        toggleStar(type, item);
+      }}
+      aria-pressed={!!item.starred}
+      aria-label={item.starred ? t("org.unstar") : t("org.star")}
+      title={item.starred ? t("org.unstar") : t("org.star")}
+    >
+      <Icon name="star" size={15} />
+    </button>
+  );
+
+  const tagDots = (ids?: string[]) => {
+    const list = (ids || []).map((id) => tagById.get(id)).filter((x): x is FileTag => !!x);
+    return list.length ? (
+      <span className="tag-dots" title={list.map((x) => x.name).join(", ")}>
+        {list.map((x) => (
+          <TagDot key={x.id} tag={x} size={9} />
+        ))}
+      </span>
+    ) : null;
+  };
+
+  const editTags = (type: "file" | "folder", item: { id: string; name: string; tags?: string[] }) =>
+    setTagsDialog({ type, id: item.id, name: item.name, tags: item.tags || [] });
 
   const startUploads = async (files: FileList | File[]) => {
     if (!data?.writable) return;
@@ -254,6 +326,14 @@ export default function FilesPage() {
 
   const fileActions = (f: FileItem) => mobile ? moreButton({ file: f }, f.name) : (
     <div className="row-actions">
+      {collection && (
+        <button className="icon-btn" title={t("org.openFolder")} aria-label={t("org.openFolder")} onClick={() => openFolder(f.folder)}>
+          <Icon name="folder" size={16} />
+        </button>
+      )}
+      <button className="icon-btn" title={t("org.editTags")} aria-label={t("org.editTags")} onClick={() => editTags("file", f)}>
+        <Icon name="tag" size={16} />
+      </button>
       {f.downloadable && (
         <a className="icon-btn" title={t("files.download")} href={downloadUrl(f)}>
           <Icon name="download" size={16} />
@@ -314,9 +394,15 @@ export default function FilesPage() {
     >
       <div className="page-head">
         <div className="breadcrumbs">
+          {collection ? (
+            <span className="crumb crumb-current">
+              {view === "starred" ? t("org.starred") : view === "recent" ? t("org.recent") : tagById.get(tagId || "")?.name || t("org.tags")}
+            </span>
+          ) : (
           <button className="crumb" onClick={() => openFolder(null)}>
             {data && !data.writable ? t("files.sharedFrom", { owner: data.owner }) : t("files.myFiles")}
           </button>
+          )}
           {data?.breadcrumbs.map((b) => (
             <span key={b.id}>
               <Icon name="chevronRight" size={14} />
@@ -325,7 +411,7 @@ export default function FilesPage() {
               </button>
             </span>
           ))}
-          {data && !data.writable && <span className="pill">{t("files.readOnly")}</span>}
+          {data && !data.writable && !collection && <span className="pill">{t("files.readOnly")}</span>}
         </div>
         <div className="toolbar">
           <div className="search">
@@ -393,6 +479,26 @@ export default function FilesPage() {
         </div>
       </div>
 
+      <nav className="org-nav" aria-label={t("org.tags")}>
+        <button className={`org-chip ${!collection && folderId === "root" ? "active" : ""}`} onClick={() => openFolder(null)}>
+          <Icon name="folder" size={14} /> {t("org.myFiles")}
+        </button>
+        <button className={`org-chip ${view === "starred" ? "active" : ""}`} onClick={() => openView("starred")}>
+          <Icon name="star" size={14} /> {t("org.starred")}
+        </button>
+        <button className={`org-chip ${view === "recent" ? "active" : ""}`} onClick={() => openView("recent")}>
+          <Icon name="clock" size={14} /> {t("org.recent")}
+        </button>
+        {tags.map((tg) => (
+          <button key={tg.id} className={`org-chip ${view === "tag" && tagId === tg.id ? "active" : ""}`} onClick={() => openView("tag", tg.id)}>
+            <TagDot tag={tg} /> {tg.name}
+          </button>
+        ))}
+        <button className="icon-btn" title={t("org.manageTags")} aria-label={t("org.manageTags")} onClick={() => setTagsDialog("manage")}>
+          <Icon name="tag" size={16} />
+        </button>
+      </nav>
+
       {error && <div className="banner banner-danger">{error}</div>}
 
       {(activeUploads.length > 0 || finishedUploads.length > 0) && (
@@ -441,12 +547,15 @@ export default function FilesPage() {
             </button>
           )}
           {listFolders.map((f) => (
-            <button key={f.id} className="grid-card" onClick={() => openFolder(f.id)}>
-              <div className="grid-preview">
+            <div key={f.id} className="grid-card">
+              <button className="grid-preview" onClick={() => openFolder(f.id)} aria-label={f.name}>
                 <Icon name="folder" size={52} className="ico-folder" />
+              </button>
+              <div className="grid-name truncate">
+                {tagDots(f.tags)} {f.name}
               </div>
-              <div className="grid-name truncate">{f.name}</div>
-            </button>
+              {starButton("folder", f)}
+            </div>
           ))}
           {listFiles.map((f) => (
             <div key={f.id} className="grid-card">
@@ -460,15 +569,29 @@ export default function FilesPage() {
               </div>
               <div className="grid-meta">
                 <span className="muted small">{formatBytes(f.size)}</span>
+                {tagDots(f.tags)}
                 {statusPills(f)}
               </div>
+              {starButton("file", f)}
               <div className="grid-actions">{fileActions(f)}</div>
             </div>
           ))}
           {data && listFolders.length === 0 && listFiles.length === 0 && (
             <div className="empty grid-empty">
               <Icon name={searchResults ? "search" : "upload"} size={32} />
-              <div>{searchResults ? t("files.nothingFound") : data.writable ? t("files.dropHint") : t("files.emptyFolder")}</div>
+              <div>
+                {searchResults
+                  ? t("files.nothingFound")
+                  : view === "starred"
+                    ? t("org.starredEmpty")
+                    : view === "recent"
+                      ? t("org.recentEmpty")
+                      : view === "tag"
+                        ? t("org.tagEmpty")
+                        : data.writable
+                          ? t("files.dropHint")
+                          : t("files.emptyFolder")}
+              </div>
             </div>
           )}
         </div>
@@ -497,6 +620,8 @@ export default function FilesPage() {
                   <span className="name-cell">
                     <Icon name="folder" className="ico-folder" />
                     <span className="truncate">{f.name}</span>
+                    {tagDots(f.tags)}
+                    {starButton("folder", f)}
                   </span>
                 </td>
                 <td className="col-size muted">—</td>
@@ -504,6 +629,9 @@ export default function FilesPage() {
                 <td className="col-actions">
                   {mobile ? moreButton({ folder: f }, f.name) : (
                   <div className="row-actions">
+                    <button className="icon-btn" title={t("org.editTags")} aria-label={t("org.editTags")} onClick={() => editTags("folder", f)}>
+                      <Icon name="tag" size={16} />
+                    </button>
                     <button className="icon-btn" title={t("files2.zipFolder")} aria-label={t("files2.zipFolder")} onClick={() => downloadZip(`/api/files/folders/${f.id}/zip/`)}>
                       <Icon name="archive" size={16} />
                     </button>
@@ -540,10 +668,21 @@ export default function FilesPage() {
                     </button>
                     {statusPills(f)}
                     {f.shared && <Icon name="share" size={13} className="muted" />}
+                    {tagDots(f.tags)}
+                    {starButton("file", f)}
                   </span>
                 </td>
                 <td className="col-size muted">{formatBytes(f.size)}</td>
-                <td className="col-date muted">{formatDate(f.updated_at)}</td>
+                <td className="col-date muted">
+                  {f.recent_at ? (
+                    <>
+                      {formatDate(f.recent_at)}
+                      <div className="recent-reason">{t(`org.reason.${f.recent_reason || "opened"}` as const)}</div>
+                    </>
+                  ) : (
+                    formatDate(f.updated_at)
+                  )}
+                </td>
                 <td className="col-actions">{fileActions(f)}</td>
               </tr>
             ))}
@@ -552,7 +691,19 @@ export default function FilesPage() {
                 <td colSpan={4}>
                   <div className="empty">
                     <Icon name={searchResults ? "search" : "upload"} size={32} />
-                    <div>{searchResults ? t("files.nothingFound") : data.writable ? t("files.dropHint") : t("files.emptyFolder")}</div>
+                    <div>
+                      {searchResults
+                        ? t("files.nothingFound")
+                        : view === "starred"
+                          ? t("org.starredEmpty")
+                          : view === "recent"
+                            ? t("org.recentEmpty")
+                            : view === "tag"
+                              ? t("org.tagEmpty")
+                              : data.writable
+                                ? t("files.dropHint")
+                                : t("files.emptyFolder")}
+                    </div>
                   </div>
                 </td>
               </tr>
@@ -596,6 +747,17 @@ export default function FilesPage() {
         />
       )}
       {dialog?.kind === "share" && <ShareDialog target={dialog} onClose={() => { setDialog(null); load(); }} />}
+      {tagsDialog && (
+        <TagsDialog
+          target={tagsDialog === "manage" ? null : tagsDialog}
+          tags={tags}
+          onClose={() => setTagsDialog(null)}
+          onChanged={() => {
+            loadTags();
+            load();
+          }}
+        />
+      )}
       {viewerIndex !== null && viewable[viewerIndex] && (
         <FileViewer
           files={viewable}
@@ -649,6 +811,17 @@ export default function FilesPage() {
                       </button>
                     </>
                   )}
+                  <button className="menu-item" onClick={run(() => toggleStar("file", f))}>
+                    <Icon name="star" /> {f.starred ? t("org.unstar") : t("org.star")}
+                  </button>
+                  <button className="menu-item" onClick={run(() => editTags("file", f))}>
+                    <Icon name="tag" /> {t("org.editTags")}
+                  </button>
+                  {collection && (
+                    <button className="menu-item" onClick={run(() => openFolder(f.folder))}>
+                      <Icon name="folder" /> {t("org.openFolder")}
+                    </button>
+                  )}
                   <button className="menu-item" onClick={run(() => setDialog({ kind: "info", file: f }))}>
                     <Icon name="file" /> {t("mobile.details")} · {formatBytes(f.size)}
                   </button>
@@ -665,6 +838,12 @@ export default function FilesPage() {
                 <>
                   <button className="menu-item" onClick={run(() => openFolder(f.id))}>
                     <Icon name="folder" /> {t("mobile.open")}
+                  </button>
+                  <button className="menu-item" onClick={run(() => toggleStar("folder", f))}>
+                    <Icon name="star" /> {f.starred ? t("org.unstar") : t("org.star")}
+                  </button>
+                  <button className="menu-item" onClick={run(() => editTags("folder", f))}>
+                    <Icon name="tag" /> {t("org.editTags")}
                   </button>
                   <button className="menu-item" onClick={run(() => downloadZip(`/api/files/folders/${f.id}/zip/`))}>
                     <Icon name="archive" /> {t("files2.zipFolder")}

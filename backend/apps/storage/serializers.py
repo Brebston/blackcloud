@@ -94,7 +94,7 @@ class CreateShareSerializer(serializers.Serializer):
 
 
 class PublicLinkSerializer(serializers.ModelSerializer):
-    file_name = serializers.CharField(source="file.name", read_only=True)
+    file_name = serializers.CharField(source="target_name", read_only=True)
     has_password = serializers.SerializerMethodField()
     active = serializers.BooleanField(source="is_active", read_only=True)
 
@@ -102,11 +102,17 @@ class PublicLinkSerializer(serializers.ModelSerializer):
         model = PublicLink
         fields = [
             "id",
+            "kind",
             "file",
+            "folder",
             "file_name",
+            "note",
             "expires_at",
             "max_downloads",
             "download_count",
+            "upload_count",
+            "upload_bytes",
+            "max_upload_bytes",
             "has_password",
             "active",
             "created_at",
@@ -117,7 +123,12 @@ class PublicLinkSerializer(serializers.ModelSerializer):
 
 
 class CreatePublicLinkSerializer(serializers.Serializer):
-    file = serializers.UUIDField()
+    kind = serializers.ChoiceField(choices=["file", "folder", "drop"], default="file")
+    file = serializers.UUIDField(required=False, allow_null=True)
+    folder = serializers.UUIDField(required=False, allow_null=True)
+    note = serializers.CharField(max_length=300, required=False, allow_blank=True, default="")
+    # Скринька: ліміт на всі надіслані файли разом (МБ); без нього — лише квота власника
+    max_upload_mb = serializers.IntegerField(min_value=1, max_value=10_000_000, required=False, allow_null=True)
     expires_days = serializers.IntegerField(min_value=1, max_value=365, default=7)
     password = serializers.CharField(max_length=200, required=False, allow_blank=True, trim_whitespace=False)
     max_downloads = serializers.IntegerField(min_value=1, max_value=100000, required=False, allow_null=True)
@@ -130,3 +141,10 @@ class CreatePublicLinkSerializer(serializers.Serializer):
                 _("Пароль посилання — щонайменше %(n)s символів.") % {"n": settings.PUBLIC_LINK_MIN_PASSWORD}
             )
         return value
+
+    def validate(self, attrs):
+        if attrs["kind"] == "file" and not attrs.get("file"):
+            raise serializers.ValidationError({"file": [_("Оберіть файл.")]})
+        if attrs["kind"] != "file" and not attrs.get("folder"):
+            raise serializers.ValidationError({"folder": [_("Оберіть теку.")]})
+        return attrs

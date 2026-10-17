@@ -46,6 +46,9 @@ class OfficeConfigView(APIView):
             raise ValidationError({"detail": _("Цей формат не відкривається в редакторі.")})
         if not f.is_downloadable:
             raise ValidationError({"detail": _("Файл ще перевіряється антивірусом або заблокований.")})
+        from .organize import record_access
+
+        record_access(request.user, f)
         can_edit = (
             f.owner_id == request.user.pk
             and f.extension in office.EDITABLE

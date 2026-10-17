@@ -297,6 +297,28 @@ async def aiter_range(f: File, start: int, end: int):
         yield chunk[max(start - base, 0) : min(end - base + 1, len(chunk))]
 
 
+async def aiter_range_scrubbed(f: File, start: int, end: int):
+    """Діапазон без геолокації: затирання (geoscrub) не змінює зсувів, тож досить обробити
+    чанки діапазону разом із сусідніми (структура могла перетнути межу чанка)."""
+    from . import geoscrub
+
+    data_key = crypto.unwrap_key(f.wrapped_key, f.key_version, f.id)
+    cs = f.chunk_size
+    lo = max(0, start // cs - 1)
+    hi = min(f.chunks_total - 1, end // cs + 1)
+
+    async def chunks():
+        for index in range(lo, hi + 1):
+            yield await sync_to_async(read_chunk, thread_sensitive=False)(f, data_key, index)
+
+    pos = lo * cs
+    async for piece in geoscrub.ascrub_chunks(chunks()):
+        segment = piece[max(start - pos, 0) : max(0, min(end - pos + 1, len(piece)))]
+        if segment:
+            yield segment
+        pos += len(piece)
+
+
 def content_disposition(disposition: str, filename: str) -> str:
     ascii_name = filename.encode("ascii", "ignore").decode().replace('"', "").replace("\\", "") or "file"
     return f"{disposition}; filename=\"{ascii_name}\"; filename*=UTF-8''{urllib.parse.quote(filename)}"
@@ -324,19 +346,20 @@ def file_response(
         response = HttpResponse(status=416)
         response["Content-Range"] = f"bytes */{f.size}"
         return response
-    if scrub_location and f.mime_type.split("/")[0] in ("image", "video"):
-        from . import geoscrub
-
-        rng = None  # затирання — для всього файлу
-        body = geoscrub.ascrub_chunks(aiter_plaintext(f))
-    else:
-        body = aiter_plaintext(f)
+    scrub = scrub_location and f.mime_type.split("/")[0] in ("image", "video")
     if rng is None:
+        if scrub:
+            from . import geoscrub
+
+            body = geoscrub.ascrub_chunks(aiter_plaintext(f))
+        else:
+            body = aiter_plaintext(f)
         response = StreamingHttpResponse(body, content_type=content_type)
         response["Content-Length"] = str(f.size)
     else:
         start, end = rng
-        response = StreamingHttpResponse(aiter_range(f, start, end), content_type=content_type, status=206)
+        body = aiter_range_scrubbed(f, start, end) if scrub else aiter_range(f, start, end)
+        response = StreamingHttpResponse(body, content_type=content_type, status=206)
         response["Content-Range"] = f"bytes {start}-{end}/{f.size}"
         response["Content-Length"] = str(end - start + 1)
     if not show_inline:

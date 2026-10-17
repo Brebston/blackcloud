@@ -294,6 +294,9 @@ REST_FRAMEWORK = {
         "register": "5/hour",
         "upload_chunk": "1200/min",
         "public_link": "60/min",
+        "public_browse": "300/min",
+        "public_thumb": "1200/min",
+        "public_upload": "1200/min",
         "chat_send": "120/min",
         "mail_send": "30/hour",
         # автозбереження чернетки — раз на кілька секунд під час набору
