@@ -3,9 +3,12 @@ from django.urls import include, path
 
 from apps.core.admin_site import admin_site
 from apps.core.views import HealthDeepView, health
+from apps.mail.mta_sts import mta_sts_policy
 from apps.storage.views import PreviewServeView
 
 urlpatterns = [
+    # MTA-STS: віддається лише на хості mta-sts.<MAIL_DOMAIN> (apps/mail/mta_sts.py)
+    path(".well-known/mta-sts.txt", mta_sts_policy),
     path("api/health/", health),
     path("api/health/deep/", HealthDeepView.as_view()),
     path("api/auth/", include("apps.accounts.urls_auth")),

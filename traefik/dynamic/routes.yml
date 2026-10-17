@@ -111,6 +111,23 @@ http:
           - main: '{{ $mail }}'
     {{ end }}
 
+    {{ $mtasts := env "MTA_STS_MODE" }}
+    {{ $maildomain := env "MAIL_DOMAIN" | lower }}
+    {{ if and $resolver $mtasts $maildomain }}
+    # MTA-STS (docs/MAIL.md): на хості mta-sts.<MAIL_DOMAIN> доступний ЛИШЕ файл політики,
+    # решта шляхів — 404. Вмикається MTA_STS_MODE у .env (спершу A-запис mta-sts → сервер).
+    mta-sts:
+      rule: 'Host(`mta-sts.{{ $maildomain }}`) && Path(`/.well-known/mta-sts.txt`)'
+      entryPoints: [websecure]
+      service: backend
+      middlewares: [security-headers, api-csp]
+      priority: 400
+      tls:
+        certResolver: {{ $resolver }}
+        domains:
+          - main: 'mta-sts.{{ $maildomain }}'
+    {{ end }}
+
     frontend:
       rule: 'Host(`{{ $domain }}`)'
       entryPoints: [websecure]

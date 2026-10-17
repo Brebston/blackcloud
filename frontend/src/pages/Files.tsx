@@ -17,7 +17,7 @@ import { useIsMobile } from "../hooks/useIsMobile";
 import { useT } from "../i18n";
 import type { TFunc } from "../i18n";
 import { fileIcon, formatBytes, formatDate } from "../lib/format";
-import { uploadFile, UploadProgress } from "../lib/upload";
+import { PARALLEL_UPLOADS, runPool, uploadFile, UploadProgress } from "../lib/upload";
 import { downloadUrl, thumbnailUrl, viewKind } from "../lib/viewer";
 
 type ViewMode = "list" | "grid";
@@ -219,20 +219,24 @@ export default function FilesPage() {
       asVersions = window.confirm(t("files2.replaceConfirm", { n: conflicts.length, names }));
     }
     abortRef.current = new AbortController();
-    for (const file of list) {
+    const signal = abortRef.current.signal;
+    // Кілька файлів паралельно: на сотнях дрібних фото послідовне завантаження впиралося
+    // в очікування відповідей сервера (3+ запити на файл), а не в швидкість каналу
+    await runPool(list, PARALLEL_UPLOADS, async (file) => {
+      if (signal.aborted) return;
       const replace = asVersions ? existing.get(file.name) : undefined;
       try {
         await uploadFile(
           file,
           target,
           (p) => setUploads((u) => ({ ...u, [p.id]: p })),
-          abortRef.current.signal,
+          signal,
           replace ? { replaceFileId: replace.id } : {},
         );
       } catch (e) {
         toast(`${file.name}: ${errorText(e)}`, "error");
       }
-    }
+    });
     load();
     refreshUser();
   };

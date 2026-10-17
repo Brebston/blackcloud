@@ -1,7 +1,7 @@
 """Створює службові адреси postmaster@, abuse@, dmarc@ … як псевдоніми на скриньку адміністратора.
 
 RFC 5321 вимагає, щоб postmaster@домен існував; abuse@ перевіряють списки блокування,
-а на dmarc@ приходять звіти DMARC. Звичайні користувачі ці імена зареєструвати не можуть.
+на dmarc@ приходять звіти DMARC, на tlsrpt@ — звіти TLS-RPT (MTA-STS). Звичайні користувачі ці імена зареєструвати не можуть.
 
     python manage.py mail_service_aliases --to yurii
 """
@@ -11,7 +11,7 @@ from django.core.management.base import BaseCommand, CommandError
 
 from apps.mail.models import Alias, Mailbox
 
-SERVICE_NAMES = ["postmaster", "abuse", "hostmaster", "webmaster", "dmarc", "security", "noreply"]
+SERVICE_NAMES = ["postmaster", "abuse", "hostmaster", "webmaster", "dmarc", "tlsrpt", "security", "noreply"]
 
 
 class Command(BaseCommand):
